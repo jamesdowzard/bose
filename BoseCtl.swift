@@ -15,9 +15,50 @@ var knownDevices: [String: [UInt8]] = [
     "mac":    [0xBC, 0xD0, 0x74, 0x11, 0xDB, 0x27],
     "phone":  [0xA8, 0x76, 0x50, 0xD3, 0xB1, 0x1B],
     "ipad":   [0xF4, 0x81, 0xC4, 0xB5, 0xFA, 0xAB],
-    // "dev4": [0xF8, 0x4D, 0x89, 0xC4, 0xB6, 0xED],
-    // "dev5": [0x14, 0xC1, 0x4E, 0xB7, 0xCB, 0x68],
+    "iphone": [0xF8, 0x4D, 0x89, 0xC4, 0xB6, 0xED],
+    // "unknown": [0x14, 0xC1, 0x4E, 0xB7, 0xCB, 0x68],
 ]
+
+// === Wispr Flow management ===
+// Wispr Flow holds RFCOMM channel 2 for HFP — pause it during our operations
+var wisprWasRunning = false
+
+func pauseWispr() {
+    let pipe = Pipe()
+    let task = Process()
+    task.launchPath = "/usr/bin/pgrep"
+    task.arguments = ["-f", "Wispr Flow"]
+    task.standardOutput = pipe
+    task.standardError = FileHandle.nullDevice
+    try? task.run()
+    task.waitUntilExit()
+    let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    wisprWasRunning = !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    if wisprWasRunning {
+        let kill = Process()
+        kill.launchPath = "/usr/bin/pkill"
+        kill.arguments = ["-9", "-f", "Wispr Flow"]
+        try? kill.run()
+        kill.waitUntilExit()
+        Thread.sleep(forTimeInterval: 2.0)
+        // Kill again in case of respawn
+        let kill2 = Process()
+        kill2.launchPath = "/usr/bin/pkill"
+        kill2.arguments = ["-9", "-f", "Wispr Flow"]
+        try? kill2.run()
+        kill2.waitUntilExit()
+        Thread.sleep(forTimeInterval: 1.0)
+    }
+}
+
+func resumeWispr() {
+    if wisprWasRunning {
+        let task = Process()
+        task.launchPath = "/usr/bin/open"
+        task.arguments = ["-a", "Wispr Flow"]
+        try? task.run()
+    }
+}
 
 // === Protocol handler ===
 class BoseConnection: NSObject, IOBluetoothRFCOMMChannelDelegate {
@@ -45,16 +86,49 @@ class BoseConnection: NSObject, IOBluetoothRFCOMMChannelDelegate {
             print("Error: Headphones not connected to Mac.")
             return false
         }
-        var chRef: IOBluetoothRFCOMMChannel? = nil
-        let result = device.openRFCOMMChannelSync(&chRef, withChannelID: RFCOMM_CHANNEL, delegate: self)
-        guard result == 0 || chRef != nil else {
-            print("Error: Could not open protocol channel (code \(result)).")
-            return false
+        // Try multiple RFCOMM channels — audioaccessoryd swaps between them
+        let channels: [UInt8] = [2, 14, 22, 25]
+        for chId in channels {
+            var chRef: IOBluetoothRFCOMMChannel? = nil
+            let result = device.openRFCOMMChannelSync(&chRef, withChannelID: chId, delegate: self)
+            if result == 0, let ch = chRef, ch.isOpen() {
+                channel = ch
+                _ = semaphore.wait(timeout: .now() + 2)
+                RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.5))
+                // Verify channel responds to Bose protocol
+                if let r = send([0x00, 0x05, 0x01, 0x00], timeout: 2), r.count >= 4, r[0] == 0x00, r[1] == 0x05 {
+                    return true
+                }
+                ch.close()
+                channel = nil
+            } else {
+                chRef?.close()
+            }
         }
-        channel = chRef
-        _ = semaphore.wait(timeout: .now() + 3)
-        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.5))
-        return true
+        // All channels locked — cycle BT connection and retry
+        fputs("Cycling Bluetooth connection...\n", stderr)
+        device.closeConnection()
+        Thread.sleep(forTimeInterval: 3)
+        device.openConnection()
+        Thread.sleep(forTimeInterval: 5)
+        for chId in channels {
+            var chRef: IOBluetoothRFCOMMChannel? = nil
+            let result = device.openRFCOMMChannelSync(&chRef, withChannelID: chId, delegate: self)
+            if result == 0, let ch = chRef, ch.isOpen() {
+                channel = ch
+                _ = semaphore.wait(timeout: .now() + 2)
+                RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.5))
+                if let r = send([0x00, 0x05, 0x01, 0x00], timeout: 2), r.count >= 4, r[0] == 0x00, r[1] == 0x05 {
+                    return true
+                }
+                ch.close()
+                channel = nil
+            } else {
+                chRef?.close()
+            }
+        }
+        print("Error: No available RFCOMM channel. Try toggling Bluetooth off/on in System Settings.")
+        return false
     }
 
     func send(_ bytes: [UInt8], timeout: TimeInterval = 3) -> Data? {
@@ -204,14 +278,23 @@ if cmd == "devices" {
     exit(0)
 }
 
+pauseWispr()
 let bose = BoseConnection()
-guard bose.connect() else { exit(1) }
-defer { bose.close() }
+guard bose.connect() else { resumeWispr(); exit(1) }
+defer { bose.close(); resumeWispr() }
 
 switch cmd {
 case "status", "s":       status(bose)
 case "connect", "c":      guard args.count >= 3 else { print("Usage: bose-ctl connect <device>"); exit(1) }; connectDevice(bose, args[2])
 case "disconnect", "d":   guard args.count >= 3 else { print("Usage: bose-ctl disconnect <device>"); exit(1) }; disconnectDevice(bose, args[2])
 case "swap":              guard args.count >= 3 else { print("Usage: bose-ctl swap <device>"); exit(1) }; swap(bose, args[2])
+case "raw":
+    guard args.count >= 3 else { print("Usage: bose-ctl raw <hex,bytes e.g. 04,07,01,00>"); exit(1) }
+    let hexBytes = args[2].split(separator: ",").compactMap { UInt8($0, radix: 16) }
+    guard !hexBytes.isEmpty else { print("Invalid hex"); exit(1) }
+    print("Sending: \(hexBytes.map { String(format: "%02x", $0) }.joined(separator: " "))")
+    if let r = bose.send(hexBytes, timeout: 5) {
+        print("Response (\(r.count) bytes): \(r.map { String(format: "%02x", $0) }.joined(separator: " "))")
+    } else { print("No response.") }
 default:                  print("Unknown command: \(cmd)")
 }
