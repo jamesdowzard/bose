@@ -13,7 +13,7 @@ M.hotkey = nil
 M.chooser = nil
 
 -- Known devices (must match BoseCtl.swift knownDevices)
-local devices = { "mac", "phone", "ipad", "iphone" }
+local devices = { "mac", "phone", "ipad", "iphone", "tv" }
 
 -- Icons for display
 local icons = {
@@ -21,6 +21,7 @@ local icons = {
   phone = "📱",
   ipad = "📱",
   iphone = "📱",
+  tv = "📺",
 }
 
 -- State from last status query
