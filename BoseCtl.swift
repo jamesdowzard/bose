@@ -19,46 +19,7 @@ var knownDevices: [String: [UInt8]] = [
     "tv":     [0x14, 0xC1, 0x4E, 0xB7, 0xCB, 0x68],  // Watkin Lounge TV (Google/Chromecast)
 ]
 
-// === Wispr Flow management ===
-// Wispr Flow holds RFCOMM channel 2 for HFP — pause it during our operations
-var wisprWasRunning = false
-
-func pauseWispr() {
-    let pipe = Pipe()
-    let task = Process()
-    task.launchPath = "/usr/bin/pgrep"
-    task.arguments = ["-f", "Wispr Flow"]
-    task.standardOutput = pipe
-    task.standardError = FileHandle.nullDevice
-    try? task.run()
-    task.waitUntilExit()
-    let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-    wisprWasRunning = !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    if wisprWasRunning {
-        let kill = Process()
-        kill.launchPath = "/usr/bin/pkill"
-        kill.arguments = ["-9", "-f", "Wispr Flow"]
-        try? kill.run()
-        kill.waitUntilExit()
-        Thread.sleep(forTimeInterval: 2.0)
-        // Kill again in case of respawn
-        let kill2 = Process()
-        kill2.launchPath = "/usr/bin/pkill"
-        kill2.arguments = ["-9", "-f", "Wispr Flow"]
-        try? kill2.run()
-        kill2.waitUntilExit()
-        Thread.sleep(forTimeInterval: 1.0)
-    }
-}
-
-func resumeWispr() {
-    if wisprWasRunning {
-        let task = Process()
-        task.launchPath = "/usr/bin/open"
-        task.arguments = ["-a", "Wispr Flow"]
-        try? task.run()
-    }
-}
+// No Wispr Flow management needed — multi-channel fallback handles coexistence
 
 // === Protocol handler ===
 class BoseConnection: NSObject, IOBluetoothRFCOMMChannelDelegate {
@@ -266,10 +227,9 @@ if cmd == "devices" {
     exit(0)
 }
 
-pauseWispr()
 let bose = BoseConnection()
-guard bose.connect() else { resumeWispr(); exit(1) }
-defer { bose.close(); resumeWispr() }
+guard bose.connect() else { exit(1) }
+defer { bose.close() }
 
 switch cmd {
 case "status", "s":       status(bose)
