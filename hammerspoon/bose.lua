@@ -270,10 +270,10 @@ function M.show()
 end
 
 function M.start()
-  M.hotkey = hs.hotkey.bind({ "ctrl", "alt" }, "b", function()
+  M.hotkey = hs.hotkey.bind({ "alt" }, "b", function()
     M.show()
   end)
-  log.i("Bose controller started (Ctrl+Alt+B)")
+  log.i("Bose controller started (⌥B)")
 end
 
 function M.stop()
