@@ -6,28 +6,23 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
 import android.util.Log
 import android.widget.RemoteViews
 
 /**
  * Home screen widget (4x1) showing device buttons.
- * Active device is highlighted in green (#00ff88).
- * Tapping any device sends CONNECT command via BoseService.
+ * Active device is highlighted in green, connected in orange, disconnected in grey.
+ * Tapping any device starts BoseService directly via PendingIntent.getForegroundService()
+ * to avoid Android 12+ background service start restrictions.
  */
 class BoseWidgetProvider : AppWidgetProvider() {
 
     companion object {
         private const val TAG = "BoseWidget"
-        private const val COLOR_ACTIVE = 0xFF00FF88.toInt()       // Green
-        private const val COLOR_CONNECTED = 0xFFFF9F43.toInt()    // Orange
-        private const val COLOR_DISCONNECTED = 0xFF333333.toInt() // Dark grey
-        private const val COLOR_BG = 0xFF1A1A1A.toInt()
-        private const val ACTION_WIDGET_CLICK = "dev.bose.ctl.WIDGET_CLICK"
+        private const val COLOR_ACTIVE = 0xFF00FF88.toInt()
+        private const val COLOR_CONNECTED = 0xFFFF9F43.toInt()
+        private const val COLOR_DISCONNECTED = 0xFF333333.toInt()
 
-        /**
-         * Update all widget instances with current active device and connected list.
-         */
         fun updateAll(context: Context, activeDevice: String?, connectedDevices: List<String> = emptyList()) {
             val manager = AppWidgetManager.getInstance(context)
             val component = ComponentName(context, BoseWidgetProvider::class.java)
@@ -62,14 +57,14 @@ class BoseWidgetProvider : AppWidgetProvider() {
                 }
                 views.setTextColor(viewId, color)
 
-                // Set click intent
-                val intent = Intent(context, BoseWidgetProvider::class.java).apply {
-                    action = ACTION_WIDGET_CLICK
-                    putExtra("device_name", name)
+                // Start foreground service directly — avoids background start restriction
+                val intent = Intent(context, BoseService::class.java).apply {
+                    action = BoseService.ACTION_CONNECT_DEVICE
+                    putExtra(BoseService.EXTRA_DEVICE_NAME, name)
                 }
-                val pi = PendingIntent.getBroadcast(
+                val pi = PendingIntent.getForegroundService(
                     context, viewId, intent,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
                 )
                 views.setOnClickPendingIntent(viewId, pi)
             }
@@ -79,7 +74,6 @@ class BoseWidgetProvider : AppWidgetProvider() {
     }
 
     override fun onUpdate(context: Context, manager: AppWidgetManager, widgetIds: IntArray) {
-        // Get saved active device and connected list
         val prefs = context.getSharedPreferences("bose_ctl", Context.MODE_PRIVATE)
         val activeDevice = prefs.getString("active_device", null)
         val connectedDevices = prefs.getStringSet("connected_devices", emptySet())?.toList() ?: emptyList()
@@ -87,41 +81,22 @@ class BoseWidgetProvider : AppWidgetProvider() {
         for (id in widgetIds) {
             updateWidget(context, manager, id, activeDevice, connectedDevices)
         }
-
-        // Request fresh status
-        val intent = Intent(context, BoseService::class.java).apply {
-            action = BoseService.ACTION_REFRESH
-        }
-        context.startService(intent)
     }
 
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
 
-        when (intent.action) {
-            ACTION_WIDGET_CLICK -> {
-                val deviceName = intent.getStringExtra("device_name") ?: return
-                Log.i(TAG, "Widget click: $deviceName")
-
-                val serviceIntent = Intent(context, BoseService::class.java).apply {
-                    action = BoseService.ACTION_CONNECT_DEVICE
-                    putExtra(BoseService.EXTRA_DEVICE_NAME, deviceName)
-                }
-                context.startService(serviceIntent)
-            }
-            BoseService.BROADCAST_STATUS -> {
-                val success = intent.getBooleanExtra(BoseService.EXTRA_SUCCESS, false)
-                if (success) {
-                    val activeDevice = intent.getStringExtra(BoseService.EXTRA_ACTIVE_DEVICE)
-                    val connectedDevices = intent.getStringArrayListExtra(BoseService.EXTRA_CONNECTED_DEVICES) ?: arrayListOf()
-                    // Save for widget updates
-                    context.getSharedPreferences("bose_ctl", Context.MODE_PRIVATE)
-                        .edit()
-                        .putString("active_device", activeDevice)
-                        .putStringSet("connected_devices", connectedDevices.toSet())
-                        .apply()
-                    updateAll(context, activeDevice, connectedDevices)
-                }
+        if (intent.action == BoseService.BROADCAST_STATUS) {
+            val success = intent.getBooleanExtra(BoseService.EXTRA_SUCCESS, false)
+            if (success) {
+                val activeDevice = intent.getStringExtra(BoseService.EXTRA_ACTIVE_DEVICE)
+                val connectedDevices = intent.getStringArrayListExtra(BoseService.EXTRA_CONNECTED_DEVICES) ?: arrayListOf()
+                context.getSharedPreferences("bose_ctl", Context.MODE_PRIVATE)
+                    .edit()
+                    .putString("active_device", activeDevice)
+                    .putStringSet("connected_devices", connectedDevices.toSet())
+                    .apply()
+                updateAll(context, activeDevice, connectedDevices)
             }
         }
     }
