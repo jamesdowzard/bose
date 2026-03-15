@@ -241,6 +241,14 @@ class SocketServer {
 log.log("bosed starting (pid \(ProcessInfo.processInfo.processIdentifier)) — TCP relay mode")
 log.log("Forwarding to phone at \(PHONE_HOST):\(PHONE_PORT)")
 
+// Keep Mac BT-connected to headphones so it's switchable
+let btConnect = Process()
+btConnect.launchPath = "/opt/homebrew/bin/blueutil"
+btConnect.arguments = ["--connect", "E4:58:BC:C0:2F:72"]
+try? btConnect.run()
+btConnect.waitUntilExit()
+log.log("BT connect to headphones: \(btConnect.terminationStatus == 0 ? "ok" : "failed")")
+
 let phoneClient = PhoneClient(host: PHONE_HOST, port: PHONE_PORT)
 let socketServer = SocketServer(phoneClient: phoneClient)
 
