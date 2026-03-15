@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+
+    <application
+        android:allowBackup="false"
+        android:label="BoseCtl"
+        android:icon="@drawable/ic_launcher"
+        android:theme="@style/AppTheme">
+
+        <!-- Main activity for permission granting and manual control -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:theme="@style/AppTheme">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Quick Settings Tile -->
+        <service
+            android:name=".BoseTileService"
+            android:label="Bose Source"
+            android:icon="@drawable/ic_headphones"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <!-- Home Screen Widget -->
+        <receiver
+            android:name=".BoseWidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info" />
+        </receiver>
+
+        <!-- Background Bluetooth service -->
+        <service
+            android:name=".BoseService"
+            android:exported="false" />
+
+        <!-- Device picker dialog -->
+        <activity
+            android:name=".DevicePickerActivity"
+            android:exported="false"
+            android:theme="@style/DialogTheme"
+            android:excludeFromRecents="true"
+            android:taskAffinity="" />
+
+    </application>
+
+</manifest>
