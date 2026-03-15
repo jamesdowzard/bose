@@ -198,7 +198,6 @@ object BoseProtocol {
     /**
      * Get list of currently connected (active BT link) devices.
      * Command: [0x05, 0x01, 0x01, 0x00]
-     * Response: [0x05, 0x01, 0x03, len, 0x00, flags, count, ...MACs]
      */
     fun getConnectedDevices(): List<ByteArray> {
         val resp = send(byteArrayOf(0x05, 0x01, OP_GET, 0x00)) ?: return emptyList()

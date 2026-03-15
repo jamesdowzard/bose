@@ -105,15 +105,6 @@ class BoseService : Service() {
         return BoseProtocol.connect()
     }
 
-    /**
-     * The phone is always connected (it's running the RFCOMM control channel).
-     * Combined with the active device, these are the two multipoint slots.
-     */
-    private fun connectedDeviceNames(activeDevice: String): ArrayList<String> {
-        val connected = linkedSetOf(activeDevice, "phone")
-        return ArrayList(connected)
-    }
-
     private fun switchDevice(deviceName: String) {
         try {
             if (!ensureConnected()) {
@@ -131,7 +122,10 @@ class BoseService : Service() {
             val success = BoseProtocol.connectDevice(mac)
 
             if (success) {
-                val connected = connectedDeviceNames(deviceName)
+
+                // Query actual connected state from headphones
+                val others = BoseProtocol.getConnectedDevices().map { BoseProtocol.nameForMac(it) }
+                val connected = ArrayList(listOf(deviceName) + others)
                 broadcastStatus(deviceName, true, connected)
             } else {
                 broadcastError("Failed to switch to $deviceName")
@@ -152,7 +146,11 @@ class BoseService : Service() {
             val activeMac = BoseProtocol.getActiveDevice()
             if (activeMac != null) {
                 val name = BoseProtocol.nameForMac(activeMac)
-                val connected = connectedDeviceNames(name)
+
+                // getConnectedDevices returns non-active connected devices
+                // Combined with active device = full connected list
+                val others = BoseProtocol.getConnectedDevices().map { BoseProtocol.nameForMac(it) }
+                val connected = ArrayList(listOf(name) + others)
                 broadcastStatus(name, true, connected)
             } else {
                 broadcastError("Could not get active device")
