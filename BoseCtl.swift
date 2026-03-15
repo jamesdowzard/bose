@@ -1,5 +1,6 @@
 /// bose-ctl: Manage Bose QC Ultra connections via RFCOMM protocol
-/// Reverse-engineered from the Bose Music protocol (deca-fade UUID)
+/// Tries bosed daemon (Unix socket) first for instant response (<100ms),
+/// falls back to direct RFCOMM if daemon is not running.
 /// Protocol: [block, function, operator, length, ...payload]
 /// Operators: 0x01=GET, 0x03=RESP, 0x04=ERR, 0x05=START, 0x06=SET, 0x07=ACK
 
@@ -9,6 +10,7 @@ import IOBluetooth
 // === Configuration ===
 let BOSE_MAC = "E4:58:BC:C0:2F:72"
 let RFCOMM_CHANNEL: UInt8 = 2
+let DAEMON_SOCKET = "/tmp/bosed.sock"
 
 // Known device names — add yours here
 var knownDevices: [String: [UInt8]] = [
@@ -19,9 +21,144 @@ var knownDevices: [String: [UInt8]] = [
     "tv":     [0x14, 0xC1, 0x4E, 0xB7, 0xCB, 0x68],  // Watkin Lounge TV (Google/Chromecast)
 ]
 
-// No Wispr Flow management needed — multi-channel fallback handles coexistence
+// === Daemon Client ===
+/// Try daemon first, return true if command was handled
+func tryDaemon(_ cmd: String, _ args: [String]) -> Bool {
+    var request: [String: Any]
 
-// === Protocol handler ===
+    switch cmd {
+    case "status", "s":
+        request = ["cmd": "status"]
+    case "connect", "c":
+        guard args.count >= 3 else { return false }
+        request = ["cmd": "connect", "device": args[2]]
+    case "disconnect", "d":
+        guard args.count >= 3 else { return false }
+        request = ["cmd": "disconnect", "device": args[2]]
+    case "swap":
+        guard args.count >= 3 else { return false }
+        // Swap may take >2s, use longer timeout via raw socket
+        request = ["cmd": "swap", "device": args[2]]
+    case "raw":
+        guard args.count >= 3 else { return false }
+        request = ["cmd": "raw", "bytes": args[2]]
+    default:
+        return false
+    }
+
+    // For swap/connect which take longer, we need a longer timeout
+    let needsLongTimeout = (cmd == "swap" || cmd == "connect" || cmd == "c")
+
+    guard let response = daemonRequestWithTimeout(request, timeout: needsLongTimeout ? 15 : 5) else {
+        return false
+    }
+
+    guard let ok = response["ok"] as? Bool else { return false }
+
+    if !ok {
+        if let error = response["error"] as? String {
+            // "not connected" means daemon is running but RFCOMM isn't established —
+            // fall back to direct RFCOMM which can try channel cycling
+            if error == "not connected" { return false }
+            print("Error: \(error)")
+        }
+        return true
+    }
+
+    guard let data = response["data"] as? [String: Any] else {
+        print("OK")
+        return true
+    }
+
+    // Format output to match original bose-ctl style
+    switch cmd {
+    case "status", "s":
+        if let active = data["active"] as? String, let activeMac = data["active_mac"] as? String {
+            print("Active:   \(active) (\(activeMac))")
+        }
+        if let slots = data["slots"] as? Int {
+            print("Slots:    \(slots)/2 connected")
+        }
+        if let paired = data["paired"] as? [String], let macs = data["paired_macs"] as? [String] {
+            print("Paired:   \(paired.count) devices")
+            for (i, name) in paired.enumerated() {
+                let mac = i < macs.count ? macs[i] : "?"
+                print("  \(i+1). \(name) (\(mac))")
+            }
+        }
+        if let fw = data["firmware"] as? String {
+            print("Firmware: \(fw)")
+        }
+    case "connect", "c":
+        if let device = data["connected"] as? String {
+            print("OK — \(device) connected.")
+        }
+    case "disconnect", "d":
+        if let device = data["disconnected"] as? String {
+            print("OK — \(device) disconnected.")
+        }
+    case "swap":
+        if let device = data["swapped"] as? String {
+            print("Swapped to \(device)!")
+        }
+    case "raw":
+        if let bytes = data["bytes"] as? String, let length = data["length"] as? Int {
+            print("Response (\(length) bytes): \(bytes)")
+        }
+    default:
+        break
+    }
+
+    return true
+}
+
+/// Send daemon request with configurable timeout
+func daemonRequestWithTimeout(_ json: [String: Any], timeout: Int) -> [String: Any]? {
+    let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+    guard fd >= 0 else { return nil }
+    defer { close(fd) }
+
+    var addr = sockaddr_un()
+    addr.sun_family = sa_family_t(AF_UNIX)
+    withUnsafeMutablePointer(to: &addr.sun_path) { ptr in
+        DAEMON_SOCKET.withCString { cstr in
+            ptr.withMemoryRebound(to: CChar.self, capacity: 104) { dest in
+                _ = strcpy(dest, cstr)
+            }
+        }
+    }
+
+    let connectResult = withUnsafePointer(to: &addr) { ptr in
+        ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
+            Foundation.connect(fd, sockPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
+        }
+    }
+    guard connectResult == 0 else { return nil }
+
+    var tv = timeval(tv_sec: timeout, tv_usec: 0)
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+
+    guard let requestData = try? JSONSerialization.data(withJSONObject: json),
+          let requestStr = String(data: requestData, encoding: .utf8) else { return nil }
+
+    let sent = requestStr.withCString { ptr in
+        write(fd, ptr, requestStr.utf8.count)
+    }
+    guard sent > 0 else { return nil }
+
+    var buffer = [UInt8](repeating: 0, count: 8192)
+    let bytesRead = read(fd, &buffer, buffer.count)
+    guard bytesRead > 0 else { return nil }
+
+    let responseStr = String(bytes: buffer[0..<bytesRead], encoding: .utf8) ?? ""
+    guard let responseData = responseStr.data(using: .utf8),
+          let parsed = try? JSONSerialization.jsonObject(with: responseData) as? [String: Any] else { return nil }
+
+    return parsed
+}
+
+// === Direct RFCOMM (fallback) ===
 class BoseConnection: NSObject, IOBluetoothRFCOMMChannelDelegate {
     var channel: IOBluetoothRFCOMMChannel?
     var responses: [Data] = []
@@ -122,7 +259,7 @@ func parsePaired(_ data: Data) -> [[UInt8]] {
     return devices
 }
 
-// === Commands ===
+// === Direct RFCOMM Commands ===
 func status(_ b: BoseConnection) {
     if let r = b.send([0x04, 0x09, 0x01, 0x00]), r.count >= 10, r[2] == 0x03 {
         print("Active:   \(nameFor(Array(r[4..<10]))) (\(macStr(Array(r[4..<10]))))")
@@ -227,6 +364,12 @@ if cmd == "devices" {
     exit(0)
 }
 
+// Try daemon first (instant, <100ms)
+if tryDaemon(cmd, args) {
+    exit(0)
+}
+
+// Daemon not available — fall back to direct RFCOMM (slow, 5-7s)
 let bose = BoseConnection()
 guard bose.connect() else { exit(1) }
 defer { bose.close() }
