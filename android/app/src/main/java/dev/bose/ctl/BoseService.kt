@@ -105,9 +105,13 @@ class BoseService : Service() {
         return BoseProtocol.connect()
     }
 
-    private fun queryConnectedNames(): ArrayList<String> {
-        val connectedMacs = BoseProtocol.getConnectedDevices()
-        return ArrayList(connectedMacs.map { BoseProtocol.nameForMac(it) })
+    /**
+     * The phone is always connected (it's running the RFCOMM control channel).
+     * Combined with the active device, these are the two multipoint slots.
+     */
+    private fun connectedDeviceNames(activeDevice: String): ArrayList<String> {
+        val connected = linkedSetOf(activeDevice, "phone")
+        return ArrayList(connected)
     }
 
     private fun switchDevice(deviceName: String) {
@@ -127,7 +131,7 @@ class BoseService : Service() {
             val success = BoseProtocol.connectDevice(mac)
 
             if (success) {
-                val connected = queryConnectedNames()
+                val connected = connectedDeviceNames(deviceName)
                 broadcastStatus(deviceName, true, connected)
             } else {
                 broadcastError("Failed to switch to $deviceName")
@@ -148,7 +152,7 @@ class BoseService : Service() {
             val activeMac = BoseProtocol.getActiveDevice()
             if (activeMac != null) {
                 val name = BoseProtocol.nameForMac(activeMac)
-                val connected = queryConnectedNames()
+                val connected = connectedDeviceNames(name)
                 broadcastStatus(name, true, connected)
             } else {
                 broadcastError("Could not get active device")
