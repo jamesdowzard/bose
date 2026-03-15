@@ -10,6 +10,8 @@ let BOSE_MAC = "E4:58:BC:C0:2F:72"
 let RFCOMM_CHANNELS: [UInt8] = [2, 14, 22, 25]
 let SOCKET_PATH = "/tmp/bosed.sock"
 let RECONNECT_INTERVAL: TimeInterval = 5
+let CHANNEL_OPEN_TIMEOUT: TimeInterval = 3
+let MAX_LEAKED_THREADS = 8
 let LOG_PATH = NSHomeDirectory() + "/Library/Logs/bosed.log"
 
 let knownDevices: [String: [UInt8]] = [
@@ -59,11 +61,14 @@ let log = Logger.shared
 // === RFCOMM Connection Manager ===
 class RFCOMMManager: NSObject, IOBluetoothRFCOMMChannelDelegate {
     var channel: IOBluetoothRFCOMMChannel?
+    var hasCycledBT = false
     var isConnected = false
     private var responseData: [Data] = []
     private var responseSemaphore = DispatchSemaphore(value: 0)
     private var reconnectTimer: DispatchSourceTimer?
     private let lock = NSLock()
+    private var blockedThreads = 0
+    private let threadLock = NSLock()
 
     override init() {
         super.init()
@@ -88,6 +93,84 @@ class RFCOMMManager: NSObject, IOBluetoothRFCOMMChannelDelegate {
         }
     }
 
+    // MARK: - Channel Open with Timeout
+    /// Wraps openRFCOMMChannelSync in a background thread with a semaphore timeout.
+    /// If audioaccessoryd is holding channels, the background thread blocks but the caller
+    /// returns after CHANNEL_OPEN_TIMEOUT seconds. The leaked thread self-resolves when
+    /// BT state changes and is capped at MAX_LEAKED_THREADS.
+    private func tryOpenChannel(device: IOBluetoothDevice, channelID: UInt8) -> (IOReturn, IOBluetoothRFCOMMChannel?) {
+        threadLock.lock()
+        if blockedThreads >= MAX_LEAKED_THREADS {
+            let count = blockedThreads
+            threadLock.unlock()
+            log.log("Channel \(channelID): skipped — \(count) blocked threads at cap")
+            return (kIOReturnBusy, nil)
+        }
+        blockedThreads += 1
+        threadLock.unlock()
+
+        let sem = DispatchSemaphore(value: 0)
+        var openResult: IOReturn = kIOReturnTimeout
+        var openChannel: IOBluetoothRFCOMMChannel? = nil
+        var callerTimedOut = false
+
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            var ch: IOBluetoothRFCOMMChannel? = nil
+            let r = device.openRFCOMMChannelSync(&ch, withChannelID: channelID, delegate: self)
+
+            threadLock.lock()
+            blockedThreads -= 1
+            let wasTimedOut = callerTimedOut
+            threadLock.unlock()
+
+            if wasTimedOut {
+                // Caller already moved on — close any channel we accidentally opened
+                log.log("Channel \(channelID): leaked thread returned (result=\(r))")
+                ch?.close()
+            } else {
+                openResult = r
+                openChannel = ch
+            }
+            sem.signal()
+        }
+
+        if sem.wait(timeout: .now() + CHANNEL_OPEN_TIMEOUT) == .timedOut {
+            threadLock.lock()
+            callerTimedOut = true
+            let count = blockedThreads
+            threadLock.unlock()
+            log.log("Channel \(channelID): timed out — blocked by audioaccessoryd (blocked=\(count))")
+            return (kIOReturnTimeout, nil)
+        }
+
+        return (openResult, openChannel)
+    }
+
+    // MARK: - Bluetooth Power Cycle
+    /// Cycles BT power off/on and reconnects, using asyncAfter to keep the main RunLoop responsive.
+    private func powerCycleBluetooth(completion: @escaping () -> Void) {
+        log.log("All channels locked — power cycling Bluetooth")
+
+        runBlueutil(["--power", "0"])
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [self] in
+            runBlueutil(["--power", "1"])
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [self] in
+                runBlueutil(["--connect", BOSE_MAC])
+                DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                    completion()
+                }
+            }
+        }
+    }
+
+    private func runBlueutil(_ args: [String]) {
+        let p = Process()
+        p.launchPath = "/opt/homebrew/bin/blueutil"
+        p.arguments = args
+        try? p.run()
+        p.waitUntilExit()
+    }
+
     // MARK: - RFCOMM Connection
     func connectRFCOMM() {
         guard !isConnected else {
@@ -101,39 +184,59 @@ class RFCOMMManager: NSObject, IOBluetoothRFCOMMChannelDelegate {
             return
         }
 
-        // Check if BT is connected; if not, just schedule a retry without logging every time
         guard device.isConnected() else {
             scheduleReconnect()
             return
         }
 
+        var anyTimedOut = false
+
         for chId in RFCOMM_CHANNELS {
-            var chRef: IOBluetoothRFCOMMChannel? = nil
-            let result = device.openRFCOMMChannelSync(&chRef, withChannelID: chId, delegate: self)
+            let (result, chRef) = tryOpenChannel(device: device, channelID: chId)
+
+            if result == kIOReturnTimeout {
+                anyTimedOut = true
+                continue
+            }
+
+            if result == kIOReturnBusy {
+                continue
+            }
+
             if result == 0, let ch = chRef, ch.isOpen() {
                 channel = ch
-                // Wait for open complete
                 _ = responseSemaphore.wait(timeout: .now() + 2)
                 RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.3))
 
-                // Verify with a ping (get firmware version)
                 if let r = sendCommand([0x00, 0x05, 0x01, 0x00], timeout: 2),
                    r.count >= 4, r[0] == 0x00, r[1] == 0x05 {
                     isConnected = true
-                    log.log("RFCOMM channel \(chId) acquired and verified")
+                    hasCycledBT = false
+                    log.log("Channel \(chId): acquired and verified")
                     cancelReconnect()
                     return
                 }
-                log.log("Channel \(chId) opened but verification failed, trying next")
+                log.log("Channel \(chId): opened but verification failed")
                 ch.close()
                 channel = nil
             } else {
-                log.log("Channel \(chId) failed (result=\(result))")
+                log.log("Channel \(chId): failed (result=\(result))")
                 chRef?.close()
             }
         }
 
-        log.log("All RFCOMM channels failed, will retry in \(Int(RECONNECT_INTERVAL))s")
+        // If channels timed out and we haven't power cycled yet, do it now
+        if anyTimedOut && !hasCycledBT {
+            hasCycledBT = true
+            powerCycleBluetooth { [weak self] in
+                self?.connectRFCOMM()
+            }
+            return
+        }
+
+        if hasCycledBT {
+            log.log("All RFCOMM channels failed after power cycle, retrying in \(Int(RECONNECT_INTERVAL))s")
+        }
         scheduleReconnect()
     }
 

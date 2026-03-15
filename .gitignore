@@ -25,6 +25,7 @@ xcuserdata/
 .Spotlight-V100
 .Trashes
 
-# Binary (compiled separately)
+# Binaries (compiled separately)
 bose-ctl
+bosed
 .worktrees/
