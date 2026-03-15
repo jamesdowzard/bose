@@ -5,6 +5,9 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="false"
@@ -38,9 +41,11 @@
         <!-- Home Screen Widget -->
         <receiver
             android:name=".BoseWidgetProvider"
-            android:exported="true">
+            android:exported="false">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="dev.bose.ctl.STATUS_UPDATE" />
+                <action android:name="dev.bose.ctl.WIDGET_CLICK" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
@@ -50,7 +55,8 @@
         <!-- Background Bluetooth service -->
         <service
             android:name=".BoseService"
-            android:exported="false" />
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
 
         <!-- Device picker dialog -->
         <activity
