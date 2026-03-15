@@ -189,17 +189,10 @@ class RFCOMMManager: NSObject, IOBluetoothRFCOMMChannelDelegate {
             return
         }
 
-        var anyTimedOut = false
-
         for chId in RFCOMM_CHANNELS {
             let (result, chRef) = tryOpenChannel(device: device, channelID: chId)
 
-            if result == kIOReturnTimeout {
-                anyTimedOut = true
-                continue
-            }
-
-            if result == kIOReturnBusy {
+            if result == kIOReturnTimeout || result == kIOReturnBusy {
                 continue
             }
 
@@ -225,8 +218,8 @@ class RFCOMMManager: NSObject, IOBluetoothRFCOMMChannelDelegate {
             }
         }
 
-        // If channels timed out and we haven't power cycled yet, do it now
-        if anyTimedOut && !hasCycledBT {
+        // All channels failed — power cycle BT to clear audioaccessoryd locks
+        if !hasCycledBT {
             hasCycledBT = true
             powerCycleBluetooth { [weak self] in
                 self?.connectRFCOMM()
@@ -234,9 +227,7 @@ class RFCOMMManager: NSObject, IOBluetoothRFCOMMChannelDelegate {
             return
         }
 
-        if hasCycledBT {
-            log.log("All RFCOMM channels failed after power cycle, retrying in \(Int(RECONNECT_INTERVAL))s")
-        }
+        log.log("All RFCOMM channels failed after power cycle, retrying in \(Int(RECONNECT_INTERVAL))s")
         scheduleReconnect()
     }
 
