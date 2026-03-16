@@ -225,9 +225,9 @@ class SubscribeClient {
             return
         }
 
-        // Clear timeout for push listening (block indefinitely)
-        var noTimeout = timeval(tv_sec: 0, tv_usec: 0)
-        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &noTimeout, socklen_t(MemoryLayout<timeval>.size))
+        // Set read timeout to detect missing heartbeats (phone sends every 30s)
+        var listenTv = timeval(tv_sec: 60, tv_usec: 0)
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &listenTv, socklen_t(MemoryLayout<timeval>.size))
 
         log.log("Subscribe: listening for push commands...")
 
@@ -238,7 +238,11 @@ class SubscribeClient {
         while true {
             let n = read(fd, &readBuf, readBuf.count)
             if n <= 0 {
-                log.log("Subscribe: connection closed (read=\(n))")
+                if n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    log.log("Subscribe: no heartbeat for 60s — connection stale, reconnecting")
+                } else {
+                    log.log("Subscribe: connection closed (read=\(n))")
+                }
                 return
             }
 
@@ -258,14 +262,21 @@ class SubscribeClient {
     }
 
     private func handlePushCommand(_ json: String) {
-        log.log("Push received: \(json)")
-
         guard let data = json.data(using: .utf8),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let push = obj["push"] as? String else {
-            log.log("Push: invalid format")
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            log.log("Push: invalid format — \(json)")
             return
         }
+
+        // Heartbeat — silently acknowledge
+        if obj["heartbeat"] != nil { return }
+
+        guard let push = obj["push"] as? String else {
+            log.log("Push: no 'push' key — \(json)")
+            return
+        }
+
+        log.log("Push received: \(push)")
 
         switch push {
         case "bt_connect":
