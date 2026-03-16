@@ -1,0 +1,10 @@
+# Agent Progress - subscribe-heartbeat
+# Format: KEY=VALUE, one per line. Agents append, last value wins.
+# Created: 2026-03-16T04:18:57Z
+
+feature=subscribe-heartbeat
+name=Add heartbeat to subscribe channel
+status=pending
+step=0
+step_name=Not started
+created=2026-03-16T04:18:57Z
