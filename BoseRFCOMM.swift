@@ -125,14 +125,22 @@ class BoseRFCOMM {
 
     init() {
         // Wait for CoreBluetooth to reach poweredOn state — required for
-        // IOBluetooth RFCOMM in short-lived CLI processes.
+        // IOBluetooth RFCOMM in short-lived CLI processes. Also do SDP
+        // query to warm up the connection so RFCOMM opens immediately.
         let waiter = BTReadyWaiter()
         waiter.waitForReady()
+
+        // SDP query warms the L2CAP connection — without this, the first
+        // openRFCOMMChannelSync fails with error 913 on cold processes.
+        if let device = IOBluetoothDevice(addressString: BOSE_MAC) {
+            device.performSDPQuery(nil)
+            RunLoop.current.run(until: Date().addingTimeInterval(1.0))
+        }
     }
 
     // MARK: - Core RFCOMM
 
-    /// Opens RFCOMM channel 8 to headphones, runs body, then closes.
+    /// Opens RFCOMM channel to headphones, runs body, then closes.
     /// Drains 300ms of initial data (Bose firmware quirk) before calling body.
     @discardableResult
     func withRFCOMM<T>(_ body: (IOBluetoothRFCOMMChannel) throws -> T) throws -> T {
@@ -140,21 +148,12 @@ class BoseRFCOMM {
             throw BoseError.deviceNotFound
         }
 
-        // Retry RFCOMM open — CoreBluetooth may need a moment after poweredOn
         var channel: IOBluetoothRFCOMMChannel?
-        var status: IOReturn = kIOReturnError
-        for attempt in 1...3 {
-            status = device.openRFCOMMChannelSync(
-                &channel,
-                withChannelID: RFCOMM_CHANNEL,
-                delegate: delegate
-            )
-            if status == kIOReturnSuccess && channel != nil { break }
-            if attempt < 3 {
-                Thread.sleep(forTimeInterval: 1.0)
-                RunLoop.current.run(until: Date().addingTimeInterval(0.5))
-            }
-        }
+        let status = device.openRFCOMMChannelSync(
+            &channel,
+            withChannelID: RFCOMM_CHANNEL,
+            delegate: delegate
+        )
         guard status == kIOReturnSuccess, let ch = channel else {
             throw BoseError.connectionFailed(status)
         }
