@@ -16,11 +16,12 @@ local webview = nil
 local activeTask = nil
 local autoHideTimer = nil
 
--- Switchable devices (mac excluded — always connected as control channel)
-local switchableDevices = { "phone", "ipad", "iphone", "tv" }
+-- All switchable devices (Mac is now a normal device with direct RFCOMM)
+local switchableDevices = { "mac", "phone", "ipad", "iphone", "tv" }
 
 -- Device display info
 local deviceMeta = {
+  mac    = { icon = "\xF0\x9F\x92\xBB", label = "Mac" },
   phone  = { icon = "\xF0\x9F\x93\xB1", label = "Phone" },
   ipad   = { icon = "\xF0\x9F\x93\xB1", label = "iPad" },
   iphone = { icon = "\xF0\x9F\x93\xB1", label = "iPhone" },
@@ -35,8 +36,6 @@ local function parseStatus(output)
   local status = {
     active = nil,
     connected = {},
-    slots = { used = 0, total = 2 },
-    paired = {},
   }
 
   for line in output:gmatch("[^\r\n]+") do
@@ -45,22 +44,12 @@ local function parseStatus(output)
       status.active = active
     end
 
+    -- Parse "Connected: mac, phone" or "Connected: mac"
     local connList = line:match("^Connected:%s+(.+)")
     if connList then
-      for name in connList:gmatch("(%S+)%s+%b()") do
+      for name in connList:gmatch("(%w+)") do
         table.insert(status.connected, name)
       end
-    end
-
-    local used, total = line:match("^Slots:%s+(%d+)/(%d+)")
-    if used then
-      status.slots.used = tonumber(used)
-      status.slots.total = tonumber(total)
-    end
-
-    local _, name = line:match("^%s+(%d+)%.%s+(%S+)")
-    if name then
-      table.insert(status.paired, name)
     end
   end
 
@@ -408,11 +397,7 @@ local function handleSwap(device)
           local st = parseStatus(stdout2)
           local active = st.active or newActive
           local connJS = buildConnectedJS(st.connected)
-          if active == "mac" then
-            evalJS("onSwapComplete(null, " .. connJS .. ")")
-          else
-            evalJS("onSwapComplete('" .. active:gsub("'", "\\'") .. "', " .. connJS .. ")")
-          end
+          evalJS("onSwapComplete('" .. active:gsub("'", "\\'") .. "', " .. connJS .. ")")
         else
           local safe = newActive:gsub("'", "\\'")
           evalJS("onSwapComplete('" .. safe .. "', [])")
@@ -431,7 +416,7 @@ end
 local function showPanel()
   local screen = hs.screen.mainScreen()
   local frame = screen:frame()
-  local w = 540
+  local w = 670
   local h = 90
   local x = frame.x + (frame.w - w) / 2
   local y = frame.y + frame.h * 0.30
@@ -463,13 +448,14 @@ local function showPanel()
   webview:alpha(0.97)
   webview:shadow(true)
 
-  -- Hide panel when focus is lost (click outside)
+  -- Hide panel when focus is lost (click outside), but not while loading
   webview:windowCallback(function(action, _, ...)
     if action == "focusChange" then
       local args = { ... }
       if not args[1] then
-        -- Lost focus — hide after a tiny delay to avoid race with tile click
-        hs.timer.doAfter(0.05, function()
+        -- Don't close while status query is in flight
+        if activeTask and activeTask:isRunning() then return end
+        hs.timer.doAfter(0.1, function()
           if webview then hidePanel() end
         end)
       end
@@ -496,11 +482,7 @@ local function showPanel()
       local status = parseStatus(stdout)
       local active = status.active or "none"
       local connJS = buildConnectedJS(status.connected)
-      if active == "mac" then
-        evalJS("onStatusLoaded(null, " .. connJS .. ")")
-      else
-        evalJS("onStatusLoaded('" .. active:gsub("'", "\\'") .. "', " .. connJS .. ")")
-      end
+      evalJS("onStatusLoaded('" .. active:gsub("'", "\\'") .. "', " .. connJS .. ")")
     else
       log.w("Status query failed: " .. (stderr or ""))
       evalJS("onError('headphones not connected')")
