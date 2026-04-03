@@ -13,7 +13,7 @@ M.hotkey = nil
 
 -- Webview state
 local webview = nil
-local activeTask = nil
+local busy = false  -- true while bose-ctl is running
 local autoHideTimer = nil
 
 -- All switchable devices (Mac is now a normal device with direct RFCOMM)
@@ -319,24 +319,20 @@ local function buildHTML()
 end
 
 -- =============================================================================
--- Command execution (async via hs.task)
+-- Command execution (background thread via hs.timer to avoid hs.task callback bugs)
 -- =============================================================================
 
 local function runBoseCtl(args, callback)
-  local task = hs.task.new(M.boseCtl, function(exitCode, stdout, stderr)
+  local cmd = M.boseCtl .. " " .. table.concat(args, " ")
+  -- Run on a delayed timer so we don't block the UI thread.
+  -- Use hs.execute without shell (false) to avoid ANSI escape pollution.
+  hs.timer.doAfter(0.01, function()
+    local output, status, _, rc = hs.execute(cmd)
+    local exitCode = status and 0 or (rc or 1)
     if callback then
-      callback(exitCode, stdout, stderr)
+      callback(exitCode, output or "", "")
     end
-  end, args)
-
-  if not task then
-    log.e("Failed to create task for bose-ctl")
-    if callback then callback(-1, "", "Failed to create task") end
-    return nil
-  end
-
-  task:start()
-  return task
+  end)
 end
 
 -- =============================================================================
@@ -356,10 +352,8 @@ local function hidePanel()
     webview:delete()
     webview = nil
   end
-  if activeTask and activeTask:isRunning() then
-    activeTask:terminate()
-    activeTask = nil
-  end
+  -- Don't kill activeTask — bose-ctl exits naturally in ~2s.
+  -- Callbacks safely no-op when webview is nil (evalJS checks).
 end
 
 local function evalJS(js)
@@ -376,14 +370,14 @@ local function autoHideAfter(seconds)
 end
 
 local function handleSwap(device)
-  if activeTask and activeTask:isRunning() then
+  if busy then
     log.w("Command already in progress, ignoring")
     return
   end
 
   log.i("Swapping to " .. device)
-  activeTask = runBoseCtl({ "swap", device }, function(exitCode, stdout, stderr)
-    activeTask = nil
+  busy = true
+  runBoseCtl({ "swap", device }, function(exitCode, stdout, stderr)
     if exitCode == 0 then
       local swappedTo = stdout:match("Swapped to (%S+)")
       local connMatch = stdout:match("OK %— (%S+) connected")
@@ -391,8 +385,8 @@ local function handleSwap(device)
 
       log.i("Swap complete: " .. newActive)
       -- After swap, re-query status to get accurate connected list
-      activeTask = runBoseCtl({ "status" }, function(exitCode2, stdout2, stderr2)
-        activeTask = nil
+      runBoseCtl({ "status" }, function(exitCode2, stdout2, stderr2)
+        busy = false
         if exitCode2 == 0 then
           local st = parseStatus(stdout2)
           local active = st.active or newActive
@@ -448,45 +442,27 @@ local function showPanel()
   webview:alpha(0.97)
   webview:shadow(true)
 
-  -- Hide panel when focus is lost (click outside), but not while loading
-  webview:windowCallback(function(action, _, ...)
-    if action == "focusChange" then
-      local args = { ... }
-      if not args[1] then
-        -- Don't close while status query is in flight
-        if activeTask and activeTask:isRunning() then return end
-        hs.timer.doAfter(0.1, function()
-          if webview then hidePanel() end
-        end)
-      end
-    end
-  end)
+  -- Panel closes via ⌥B toggle or Escape only — not on focus loss.
+  -- Focus loss caused race conditions with the async bose-ctl query.
 
   webview:html(buildHTML())
 
-  -- Timeout: if status query takes >15s, show error
-  hs.timer.doAfter(15, function()
-    if activeTask and activeTask:isRunning() then
-      activeTask:terminate()
-      activeTask = nil
-      evalJS("onError('timeout — try again')")
-    end
-  end)
   webview:show()
   webview:hswindow():focus()
 
-  -- Query status asynchronously
-  activeTask = runBoseCtl({ "status" }, function(exitCode, stdout, stderr)
-    activeTask = nil
+  -- Query status (hs.execute runs synchronously on a timer callback)
+  busy = true
+  runBoseCtl({ "status" }, function(exitCode, stdout, stderr)
+    busy = false
+    log.i("bose-ctl returned: exit=" .. tostring(exitCode))
     if exitCode == 0 then
       local status = parseStatus(stdout)
       local active = status.active or "none"
       local connJS = buildConnectedJS(status.connected)
       evalJS("onStatusLoaded('" .. active:gsub("'", "\\'") .. "', " .. connJS .. ")")
     else
-      log.w("Status query failed: " .. (stderr or ""))
+      log.w("Status query failed: " .. tostring(stderr))
       evalJS("onError('headphones not connected')")
-      hs.alert.show("Bose: headphones not connected", nil, nil, 2)
     end
   end)
 end
