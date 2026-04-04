@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Dark circle background -->
+    <path
+        android:fillColor="#1A1A1A"
+        android:pathData="M54,54m-54,0a54,54 0,1 1,108 0a54,54 0,1 1,-108 0" />
+    <!-- Headphones shape -->
+    <path
+        android:fillColor="#00FF88"
+        android:pathData="M54,22C41.3,22 31,32.3 31,45v18c0,3.3 2.7,6 6,6h3c3.3,0 6,-2.7 6,-6v-12c0,-3.3 -2.7,-6 -6,-6h-3v-0c0,-9.4 7.6,-17 17,-17s17,7.6 17,17v0h-3c-3.3,0 -6,2.7 -6,6v12c0,3.3 2.7,6 6,6h3c3.3,0 6,-2.7 6,-6v-18C77,32.3 66.7,22 54,22z" />
+</vector>
