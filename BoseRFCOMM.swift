@@ -473,6 +473,494 @@ class BoseRFCOMM {
         }
     }
 
+    // MARK: - Volume & Media
+
+    /// Get volume (max, current).
+    /// Send: [0x05, 0x05, 0x01, 0x00]
+    /// Response byte 4 = max, byte 5 = current
+    func getVolume() -> (max: Int, current: Int)? {
+        do {
+            return try withRFCOMM { channel in
+                guard let resp = sendBMAP(channel, bytes: [0x05, 0x05, OP_GET, 0x00]) else {
+                    return nil
+                }
+                guard resp.count >= 6, resp[2] == OP_RESP else { return nil }
+                return (max: Int(resp[4]), current: Int(resp[5]))
+            }
+        } catch {
+            return nil
+        }
+    }
+
+    /// Set volume level (0-31).
+    /// Send: [0x05, 0x05, 0x02, 0x01, {level}]
+    func setVolume(_ level: Int) -> Bool {
+        guard level >= 0 && level <= 31 else { return false }
+        do {
+            return try withRFCOMM { channel in
+                guard let resp = sendBMAP(channel, bytes: [0x05, 0x05, OP_SET, 0x01, UInt8(level)]) else {
+                    return false
+                }
+                return resp.count >= 4 && (resp[2] == OP_RESP || resp[2] == OP_ACK)
+            }
+        } catch {
+            return false
+        }
+    }
+
+    /// Send media control command.
+    /// Send: [0x05, 0x03, 0x05, 0x01, {action}]
+    /// Actions: 0x01=play, 0x02=pause, 0x03=next, 0x04=prev
+    func sendMediaControl(_ action: UInt8) -> Bool {
+        do {
+            return try withRFCOMM { channel in
+                let resp = sendBMAP(channel, bytes: [0x05, 0x03, OP_START, 0x01, action])
+                return resp != nil
+            }
+        } catch {
+            return false
+        }
+    }
+
+    /// Get audio codec info.
+    /// Send: [0x05, 0x04, 0x01, 0x00]
+    func getAudioCodec() -> String? {
+        do {
+            return try withRFCOMM { channel in
+                guard let resp = sendBMAP(channel, bytes: [0x05, 0x04, OP_GET, 0x00]) else {
+                    return nil
+                }
+                guard resp.count >= 5, resp[2] == OP_RESP else { return nil }
+                let payload = Array(resp[4...])
+                // Try UTF-8 interpretation first
+                if let str = String(bytes: payload, encoding: .utf8)?
+                    .trimmingCharacters(in: CharacterSet(charactersIn: "\0")),
+                   !str.isEmpty {
+                    return str
+                }
+                // Fall back to hex representation
+                return payload.map { String(format: "%02X", $0) }.joined(separator: " ")
+            }
+        } catch {
+            return nil
+        }
+    }
+
+    // MARK: - Paired Devices
+
+    /// Get paired devices.
+    /// Send: [0x04, 0x04, 0x01, 0x00]
+    func getPairedDevices() -> [[UInt8]] {
+        do {
+            return try withRFCOMM { channel in
+                guard let resp = sendBMAP(channel, bytes: [0x04, 0x04, OP_GET, 0x00]) else {
+                    return []
+                }
+                guard resp.count >= 8, resp[2] == OP_RESP else { return [] }
+                let plen = Int(resp[3])
+                guard plen >= 7, resp.count >= 4 + plen else { return [] }
+                var devices: [[UInt8]] = []
+                for i in stride(from: 5, to: 4 + plen, by: 6) {
+                    if i + 6 <= resp.count {
+                        devices.append(Array(resp[i..<i+6]))
+                    }
+                }
+                return devices
+            }
+        } catch {
+            return []
+        }
+    }
+
+    // MARK: - Device Info Strings
+
+    /// Get serial number string.
+    /// Send: [0x00, 0x07, 0x01, 0x00]
+    func getSerialNumber() -> String? {
+        do {
+            return try withRFCOMM { channel in
+                guard let resp = sendBMAP(channel, bytes: [0x00, 0x07, OP_GET, 0x00]) else {
+                    return nil
+                }
+                guard resp.count >= 5, resp[2] == OP_RESP else { return nil }
+                return String(bytes: Array(resp[4...]), encoding: .utf8)?
+                    .trimmingCharacters(in: CharacterSet(charactersIn: "\0"))
+            }
+        } catch {
+            return nil
+        }
+    }
+
+    /// Get product name string.
+    /// Send: [0x00, 0x0F, 0x01, 0x00]
+    func getProductName() -> String? {
+        do {
+            return try withRFCOMM { channel in
+                guard let resp = sendBMAP(channel, bytes: [0x00, 0x0F, OP_GET, 0x00]) else {
+                    return nil
+                }
+                guard resp.count >= 5, resp[2] == OP_RESP else { return nil }
+                return String(bytes: Array(resp[4...]), encoding: .utf8)?
+                    .trimmingCharacters(in: CharacterSet(charactersIn: "\0"))
+            }
+        } catch {
+            return nil
+        }
+    }
+
+    /// Get platform string (e.g. "OTG-QCC-384").
+    /// Send: [0x12, 0x0D, 0x01, 0x00]
+    func getPlatform() -> String? {
+        do {
+            return try withRFCOMM { channel in
+                guard let resp = sendBMAP(channel, bytes: [0x12, 0x0D, OP_GET, 0x00]) else {
+                    return nil
+                }
+                guard resp.count >= 5, resp[2] == OP_RESP else { return nil }
+                return String(bytes: Array(resp[4...]), encoding: .utf8)?
+                    .trimmingCharacters(in: CharacterSet(charactersIn: "\0"))
+            }
+        } catch {
+            return nil
+        }
+    }
+
+    /// Get codename string (e.g. "wolverine").
+    /// Send: [0x12, 0x0C, 0x01, 0x00]
+    func getCodename() -> String? {
+        do {
+            return try withRFCOMM { channel in
+                guard let resp = sendBMAP(channel, bytes: [0x12, 0x0C, OP_GET, 0x00]) else {
+                    return nil
+                }
+                guard resp.count >= 5, resp[2] == OP_RESP else { return nil }
+                return String(bytes: Array(resp[4...]), encoding: .utf8)?
+                    .trimmingCharacters(in: CharacterSet(charactersIn: "\0"))
+            }
+        } catch {
+            return nil
+        }
+    }
+
+    // MARK: - Device Settings
+
+    /// Get device name (user-configurable name).
+    /// Send: [0x01, 0x02, 0x01, 0x00]
+    /// Response: 0x00 prefix + UTF-8 name bytes
+    func getDeviceName() -> String? {
+        do {
+            return try withRFCOMM { channel in
+                guard let resp = sendBMAP(channel, bytes: [0x01, 0x02, OP_GET, 0x00]) else {
+                    return nil
+                }
+                guard resp.count >= 6, resp[2] == OP_RESP else { return nil }
+                // Skip byte 4 (0x00 prefix) and read name from byte 5 onward
+                return String(bytes: Array(resp[5...]), encoding: .utf8)?
+                    .trimmingCharacters(in: CharacterSet(charactersIn: "\0"))
+            }
+        } catch {
+            return nil
+        }
+    }
+
+    /// Set device name.
+    /// Send: [0x01, 0x02, 0x06, len, 0x00, name_bytes...]
+    func setDeviceName(_ name: String) -> Bool {
+        guard let nameData = name.data(using: .utf8), nameData.count <= 30 else { return false }
+        do {
+            return try withRFCOMM { channel in
+                var cmd: [UInt8] = [0x01, 0x02, OP_SET, UInt8(nameData.count + 1), 0x00]
+                cmd.append(contentsOf: Array(nameData))
+                guard let resp = sendBMAP(channel, bytes: cmd) else {
+                    return false
+                }
+                return resp.count >= 4 && (resp[2] == OP_ACK || resp[2] == OP_RESP)
+            }
+        } catch {
+            return false
+        }
+    }
+
+    /// Get multipoint enabled state.
+    /// Send: [0x01, 0x0A, 0x01, 0x00]
+    /// Response byte 4: 0x07=on, 0x00=off
+    func getMultipoint() -> Bool? {
+        do {
+            return try withRFCOMM { channel in
+                guard let resp = sendBMAP(channel, bytes: [0x01, 0x0A, OP_GET, 0x00]) else {
+                    return nil
+                }
+                guard resp.count >= 5, resp[2] == OP_RESP else { return nil }
+                return resp[4] != 0
+            }
+        } catch {
+            return nil
+        }
+    }
+
+    /// Set multipoint on/off.
+    /// Send: [0x01, 0x0A, 0x02, 0x01, {0x07/0x00}]
+    func setMultipoint(_ enabled: Bool) -> Bool {
+        do {
+            return try withRFCOMM { channel in
+                let value: UInt8 = enabled ? 0x07 : 0x00
+                guard let resp = sendBMAP(channel, bytes: [0x01, 0x0A, OP_SET, 0x01, value]) else {
+                    return false
+                }
+                return resp.count >= 4 && (resp[2] == OP_ACK || resp[2] == OP_RESP)
+            }
+        } catch {
+            return false
+        }
+    }
+
+    /// Get auto-off timer bytes.
+    /// Send: [0x01, 0x0B, 0x01, 0x00]
+    func getAutoOffTimer() -> [UInt8]? {
+        do {
+            return try withRFCOMM { channel in
+                guard let resp = sendBMAP(channel, bytes: [0x01, 0x0B, OP_GET, 0x00]) else {
+                    return nil
+                }
+                guard resp.count >= 5, resp[2] == OP_RESP else { return nil }
+                return Array(resp[4...])
+            }
+        } catch {
+            return nil
+        }
+    }
+
+    /// Get immersion level bytes.
+    /// Send: [0x01, 0x09, 0x01, 0x00]
+    func getImmersionLevel() -> [UInt8]? {
+        do {
+            return try withRFCOMM { channel in
+                guard let resp = sendBMAP(channel, bytes: [0x01, 0x09, OP_GET, 0x00]) else {
+                    return nil
+                }
+                guard resp.count >= 5, resp[2] == OP_RESP else { return nil }
+                return Array(resp[4...])
+            }
+        } catch {
+            return nil
+        }
+    }
+
+    // MARK: - Sensors
+
+    /// Get wear state.
+    /// Send: [0x08, 0x07, 0x01, 0x00]
+    /// Response byte 4: 0x04 = on head
+    func getWearState() -> Bool? {
+        do {
+            return try withRFCOMM { channel in
+                guard let resp = sendBMAP(channel, bytes: [0x08, 0x07, OP_GET, 0x00]) else {
+                    return nil
+                }
+                guard resp.count >= 5, resp[2] == OP_RESP else { return nil }
+                return resp[4] == 0x04
+            }
+        } catch {
+            return nil
+        }
+    }
+
+    /// Get EQ settings.
+    /// Send: [0x01, 0x07, 0x01, 0x00]
+    /// Response: 12 bytes payload, 3x [0xF6, 0x0A, band_id, value]
+    func getEQ() -> (bass: Int, mid: Int, treble: Int)? {
+        do {
+            return try withRFCOMM { channel in
+                guard let resp = sendBMAP(channel, bytes: [0x01, 0x07, OP_GET, 0x00]) else {
+                    return nil
+                }
+                guard resp.count >= 16, resp[2] == OP_RESP else { return nil }
+                let bass = Int(Int8(bitPattern: resp[6]))
+                let mid = Int(Int8(bitPattern: resp[10]))
+                let treble = Int(Int8(bitPattern: resp[14]))
+                return (bass: bass, mid: mid, treble: treble)
+            }
+        } catch {
+            return nil
+        }
+    }
+
+    // MARK: - Bulk State Query
+
+    /// Complete headphone state snapshot, fetched in a single RFCOMM session.
+    struct HeadphoneState {
+        var batteryLevel: Int = 0
+        var batteryCharging: Bool = false
+        var ancMode: Int = 0  // 0=quiet, 1=aware, 2=custom1, 3=custom2
+        var volume: Int = 0
+        var volumeMax: Int = 31
+        var connectedDevices: [[UInt8]] = []
+        var activeDevice: [UInt8]? = nil
+        var firmware: String = ""
+        var serialNumber: String = ""
+        var productName: String = ""
+        var platform: String = ""
+        var codename: String = ""
+        var audioCodec: String = ""
+        var deviceName: String = ""
+        var multipointEnabled: Bool = false
+        var autoOffTimer: [UInt8] = []
+        var immersionLevel: [UInt8] = []
+        var onHead: Bool = false
+        var eq: (bass: Int, mid: Int, treble: Int) = (0, 0, 0)
+
+        var ancModeName: String {
+            switch ancMode {
+            case 0: return "quiet"
+            case 1: return "aware"
+            case 2: return "custom1"
+            case 3: return "custom2"
+            default: return "unknown"
+            }
+        }
+    }
+
+    /// Fetch all state in a single RFCOMM session (minimizes connect/disconnect cycles).
+    func getAllState() -> HeadphoneState? {
+        do {
+            return try withRFCOMM { channel in
+                var state = HeadphoneState()
+
+                // Battery
+                if let resp = sendBMAP(channel, bytes: [0x02, 0x02, OP_GET, 0x00]),
+                   resp.count >= 5, resp[2] == OP_RESP {
+                    state.batteryLevel = min(100, max(0, Int(resp[4])))
+                    state.batteryCharging = resp.count >= 8 ? resp[7] != 0 : false
+                }
+
+                // ANC mode
+                if let resp = sendBMAP(channel, bytes: [0x1F, 0x03, OP_GET, 0x00]),
+                   resp.count >= 5, resp[2] == OP_RESP {
+                    state.ancMode = Int(resp[4])
+                }
+
+                // Volume
+                if let resp = sendBMAP(channel, bytes: [0x05, 0x05, OP_GET, 0x00]),
+                   resp.count >= 6, resp[2] == OP_RESP {
+                    state.volumeMax = Int(resp[4])
+                    state.volume = Int(resp[5])
+                }
+
+                // Connected devices (ground truth)
+                if let resp = sendBMAP(channel, bytes: [0x05, 0x01, OP_GET, 0x00]),
+                   resp.count >= 7, resp[0] == 0x05, resp[1] == 0x01, resp[2] == OP_RESP {
+                    let count = Int(resp[6])
+                    for i in 0..<count {
+                        let offset = 7 + (i * 6)
+                        guard offset + 6 <= resp.count else { break }
+                        state.connectedDevices.append(Array(resp[offset..<(offset + 6)]))
+                    }
+                }
+
+                // Active device
+                if let resp = sendBMAP(channel, bytes: [0x04, 0x09, OP_GET, 0x00]),
+                   resp.count >= 10, resp[2] == OP_RESP {
+                    state.activeDevice = Array(resp[4..<10])
+                }
+
+                // Firmware
+                if let resp = sendBMAP(channel, bytes: [0x00, 0x05, OP_GET, 0x00]),
+                   resp.count >= 5, resp[2] == OP_RESP {
+                    state.firmware = String(bytes: Array(resp[4...]), encoding: .utf8)?
+                        .trimmingCharacters(in: CharacterSet(charactersIn: "\0")) ?? ""
+                }
+
+                // Serial number
+                if let resp = sendBMAP(channel, bytes: [0x00, 0x07, OP_GET, 0x00]),
+                   resp.count >= 5, resp[2] == OP_RESP {
+                    state.serialNumber = String(bytes: Array(resp[4...]), encoding: .utf8)?
+                        .trimmingCharacters(in: CharacterSet(charactersIn: "\0")) ?? ""
+                }
+
+                // Product name
+                if let resp = sendBMAP(channel, bytes: [0x00, 0x0F, OP_GET, 0x00]),
+                   resp.count >= 5, resp[2] == OP_RESP {
+                    state.productName = String(bytes: Array(resp[4...]), encoding: .utf8)?
+                        .trimmingCharacters(in: CharacterSet(charactersIn: "\0")) ?? ""
+                }
+
+                // Platform
+                if let resp = sendBMAP(channel, bytes: [0x12, 0x0D, OP_GET, 0x00]),
+                   resp.count >= 5, resp[2] == OP_RESP {
+                    state.platform = String(bytes: Array(resp[4...]), encoding: .utf8)?
+                        .trimmingCharacters(in: CharacterSet(charactersIn: "\0")) ?? ""
+                }
+
+                // Codename
+                if let resp = sendBMAP(channel, bytes: [0x12, 0x0C, OP_GET, 0x00]),
+                   resp.count >= 5, resp[2] == OP_RESP {
+                    state.codename = String(bytes: Array(resp[4...]), encoding: .utf8)?
+                        .trimmingCharacters(in: CharacterSet(charactersIn: "\0")) ?? ""
+                }
+
+                // Audio codec
+                if let resp = sendBMAP(channel, bytes: [0x05, 0x04, OP_GET, 0x00]),
+                   resp.count >= 5, resp[2] == OP_RESP {
+                    let payload = Array(resp[4...])
+                    if let str = String(bytes: payload, encoding: .utf8)?
+                        .trimmingCharacters(in: CharacterSet(charactersIn: "\0")),
+                       !str.isEmpty {
+                        state.audioCodec = str
+                    } else {
+                        state.audioCodec = payload.map { String(format: "%02X", $0) }.joined(separator: " ")
+                    }
+                }
+
+                // Device name
+                if let resp = sendBMAP(channel, bytes: [0x01, 0x02, OP_GET, 0x00]),
+                   resp.count >= 6, resp[2] == OP_RESP {
+                    state.deviceName = String(bytes: Array(resp[5...]), encoding: .utf8)?
+                        .trimmingCharacters(in: CharacterSet(charactersIn: "\0")) ?? ""
+                }
+
+                // Multipoint
+                if let resp = sendBMAP(channel, bytes: [0x01, 0x0A, OP_GET, 0x00]),
+                   resp.count >= 5, resp[2] == OP_RESP {
+                    state.multipointEnabled = resp[4] != 0
+                }
+
+                // Auto-off timer
+                if let resp = sendBMAP(channel, bytes: [0x01, 0x0B, OP_GET, 0x00]),
+                   resp.count >= 5, resp[2] == OP_RESP {
+                    state.autoOffTimer = Array(resp[4...])
+                }
+
+                // Immersion level
+                if let resp = sendBMAP(channel, bytes: [0x01, 0x09, OP_GET, 0x00]),
+                   resp.count >= 5, resp[2] == OP_RESP {
+                    state.immersionLevel = Array(resp[4...])
+                }
+
+                // Wear state
+                if let resp = sendBMAP(channel, bytes: [0x08, 0x07, OP_GET, 0x00]),
+                   resp.count >= 5, resp[2] == OP_RESP {
+                    state.onHead = resp[4] == 0x04
+                }
+
+                // EQ
+                if let resp = sendBMAP(channel, bytes: [0x01, 0x07, OP_GET, 0x00]),
+                   resp.count >= 16, resp[2] == OP_RESP {
+                    state.eq = (
+                        bass: Int(Int8(bitPattern: resp[6])),
+                        mid: Int(Int8(bitPattern: resp[10])),
+                        treble: Int(Int8(bitPattern: resp[14]))
+                    )
+                }
+
+                return state
+            }
+        } catch {
+            return nil
+        }
+    }
+
+    // MARK: - Raw
+
     /// Send arbitrary BMAP bytes and return the raw response.
     func sendRaw(_ bytes: [UInt8]) -> [UInt8]? {
         do {

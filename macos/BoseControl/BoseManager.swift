@@ -1,0 +1,381 @@
+/// BoseManager: Observable state manager for Bose QC Ultra 2 headphones.
+/// Handles polling, auto-reconnect, and all BMAP command dispatch.
+
+import Foundation
+import Combine
+
+class BoseManager: ObservableObject {
+
+    // MARK: - Published State
+
+    @Published var isConnected: Bool = false
+    @Published var batteryLevel: Int = 0
+    @Published var batteryCharging: Bool = false
+    @Published var ancMode: Int = 0  // 0=quiet, 1=aware, 2=custom1, 3=custom2
+    @Published var volume: Int = 0
+    @Published var volumeMax: Int = 31
+    @Published var deviceName: String = "verBosita"
+    @Published var firmware: String = ""
+    @Published var serialNumber: String = ""
+    @Published var productName: String = ""
+    @Published var platform: String = ""
+    @Published var codename: String = ""
+    @Published var audioCodec: String = ""
+    @Published var multipointEnabled: Bool = false
+    @Published var autoOffTimer: String = ""
+    @Published var immersionLevel: String = ""
+    @Published var onHead: Bool = false
+    @Published var eq: (bass: Int, mid: Int, treble: Int) = (0, 0, 0)
+
+    // Device connection states: "active", "connected", "offline"
+    @Published var deviceStates: [String: String] = [
+        "phone": "offline",
+        "mac": "offline",
+        "ipad": "offline",
+        "iphone": "offline",
+        "tv": "offline",
+    ]
+
+    @Published var isRefreshing: Bool = false
+
+    /// Callback for AppDelegate to update menu bar display
+    var onStateChange: (() -> Void)?
+
+    // MARK: - Private
+
+    private let bose = BoseRFCOMM()
+    private var pollTimer: Timer?
+    private var reconnectTimer: Timer?
+    private var disconnectedAt: Date?
+    private let reconnectWindow: TimeInterval = 30.0
+    private let reconnectInterval: TimeInterval = 3.0
+    private let pollInterval: TimeInterval = 10.0
+
+    private let blueutil = "/opt/homebrew/bin/blueutil"
+    private let boseMac = "E4:58:BC:C0:2F:72"
+
+    // MARK: - Polling
+
+    func startPolling() {
+        // Initial check
+        checkConnectionAndRefresh()
+
+        // Poll every 10 seconds
+        pollTimer = Timer.scheduledTimer(withTimeInterval: pollInterval, repeats: true) { [weak self] _ in
+            self?.checkConnectionAndRefresh()
+        }
+    }
+
+    func stopPolling() {
+        pollTimer?.invalidate()
+        pollTimer = nil
+        reconnectTimer?.invalidate()
+        reconnectTimer = nil
+    }
+
+    // MARK: - Connection Check
+
+    private func checkConnectionAndRefresh() {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            let connected = self.isBluetoothConnected()
+
+            DispatchQueue.main.async {
+                let wasConnected = self.isConnected
+
+                if connected {
+                    self.isConnected = true
+                    self.disconnectedAt = nil
+                    self.reconnectTimer?.invalidate()
+                    self.reconnectTimer = nil
+                    // Refresh state from headphones
+                    self.fetchAllState()
+                } else {
+                    self.isConnected = false
+
+                    // Auto-reconnect logic (replaces bosed daemon)
+                    if wasConnected && self.disconnectedAt == nil {
+                        // Just disconnected — start reconnect window
+                        self.disconnectedAt = Date()
+                        self.startReconnectTimer()
+                    }
+
+                    // Reset device states
+                    for key in self.deviceStates.keys {
+                        self.deviceStates[key] = "offline"
+                    }
+
+                    self.onStateChange?()
+                }
+            }
+        }
+    }
+
+    // MARK: - Auto-Reconnect
+
+    private func startReconnectTimer() {
+        reconnectTimer?.invalidate()
+        reconnectTimer = Timer.scheduledTimer(withTimeInterval: reconnectInterval, repeats: true) { [weak self] timer in
+            guard let self = self else { timer.invalidate(); return }
+
+            if let disconnectTime = self.disconnectedAt {
+                let elapsed = Date().timeIntervalSince(disconnectTime)
+                if elapsed >= self.reconnectWindow {
+                    // Window expired — stop trying
+                    timer.invalidate()
+                    self.reconnectTimer = nil
+                    self.disconnectedAt = nil
+                    return
+                }
+            }
+
+            // Try reconnect
+            DispatchQueue.global(qos: .userInitiated).async {
+                self.btConnect()
+            }
+        }
+    }
+
+    // MARK: - State Refresh
+
+    func refreshState() {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            DispatchQueue.main.async { self.isRefreshing = true }
+
+            let connected = self.isBluetoothConnected()
+            DispatchQueue.main.async {
+                self.isConnected = connected
+                if connected {
+                    self.fetchAllState()
+                } else {
+                    for key in self.deviceStates.keys {
+                        self.deviceStates[key] = "offline"
+                    }
+                    self.isRefreshing = false
+                    self.onStateChange?()
+                }
+            }
+        }
+    }
+
+    private func fetchAllState() {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+
+            let state = self.bose.getAllState()
+
+            DispatchQueue.main.async {
+                if let s = state {
+                    self.batteryLevel = s.batteryLevel
+                    self.batteryCharging = s.batteryCharging
+                    self.ancMode = s.ancMode
+                    self.volume = s.volume
+                    self.volumeMax = s.volumeMax
+                    self.firmware = s.firmware
+                    self.serialNumber = s.serialNumber
+                    self.productName = s.productName
+                    self.platform = s.platform
+                    self.codename = s.codename
+                    self.audioCodec = s.audioCodec
+                    self.deviceName = s.deviceName.isEmpty ? "verBosita" : s.deviceName
+                    self.multipointEnabled = s.multipointEnabled
+                    self.onHead = s.onHead
+                    self.eq = s.eq
+                    self.isConnected = true
+
+                    // Parse auto-off timer
+                    if !s.autoOffTimer.isEmpty {
+                        let minutes = s.autoOffTimer.count >= 2
+                            ? Int(s.autoOffTimer[0]) * 256 + Int(s.autoOffTimer[1])
+                            : Int(s.autoOffTimer[0])
+                        if minutes == 0 {
+                            self.autoOffTimer = "Never"
+                        } else {
+                            self.autoOffTimer = "\(minutes) min"
+                        }
+                    }
+
+                    // Parse immersion level
+                    if !s.immersionLevel.isEmpty {
+                        self.immersionLevel = s.immersionLevel
+                            .map { String(format: "%02X", $0) }.joined(separator: " ")
+                    }
+
+                    // Build device states from connected devices + active device
+                    var newStates: [String: String] = [:]
+                    for key in self.deviceStates.keys {
+                        newStates[key] = "offline"
+                    }
+
+                    let connectedMacStrings = Set(s.connectedDevices.map {
+                        self.bose.macToString($0)
+                    })
+
+                    let activeMacString = s.activeDevice.map { self.bose.macToString($0) }
+
+                    for (name, mac) in boseKnownDevices {
+                        let macStr = self.bose.macToString(mac)
+                        if macStr == activeMacString {
+                            newStates[name] = "active"
+                        } else if connectedMacStrings.contains(macStr) {
+                            newStates[name] = "connected"
+                        } else {
+                            newStates[name] = "offline"
+                        }
+                    }
+                    self.deviceStates = newStates
+                } else {
+                    self.isConnected = false
+                }
+
+                self.isRefreshing = false
+                self.onStateChange?()
+            }
+        }
+    }
+
+    // MARK: - Commands
+
+    func setAncMode(_ mode: Int) {
+        let modeNames = ["quiet", "aware", "custom1", "custom2"]
+        guard mode >= 0 && mode < modeNames.count else { return }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            let success = self.bose.setAncMode(modeNames[mode])
+            if success {
+                DispatchQueue.main.async {
+                    self.ancMode = mode
+                    self.onStateChange?()
+                }
+            }
+        }
+    }
+
+    func setVolume(_ level: Int) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            let success = self.bose.setVolume(level)
+            if success {
+                DispatchQueue.main.async {
+                    self.volume = level
+                    self.onStateChange?()
+                }
+            }
+        }
+    }
+
+    func connectDevice(_ name: String) {
+        guard let mac = bose.macForName(name) else { return }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+
+            // If connecting Mac, blueutil connect first for A2DP
+            if name == "mac" {
+                self.runBlueutil(["--connect", self.boseMac])
+                Thread.sleep(forTimeInterval: 1.5)
+            }
+
+            let success = self.bose.connectDevice(mac)
+            if success {
+                // Small delay then refresh to get updated state
+                Thread.sleep(forTimeInterval: 0.5)
+                DispatchQueue.main.async {
+                    self.refreshState()
+                }
+            }
+        }
+    }
+
+    func disconnectDevice(_ name: String) {
+        guard let mac = bose.macForName(name) else { return }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+
+            let success = self.bose.disconnectDevice(mac)
+            if success {
+                // If disconnecting Mac, also disconnect Mac BT stack
+                if name == "mac" {
+                    self.runBlueutil(["--disconnect", self.boseMac])
+                }
+
+                Thread.sleep(forTimeInterval: 0.5)
+                DispatchQueue.main.async {
+                    self.refreshState()
+                }
+            }
+        }
+    }
+
+    func sendMediaControl(_ action: UInt8) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            _ = self?.bose.sendMediaControl(action)
+        }
+    }
+
+    func setDeviceName(_ name: String) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            let success = self.bose.setDeviceName(name)
+            if success {
+                DispatchQueue.main.async {
+                    self.deviceName = name
+                }
+            }
+        }
+    }
+
+    func setMultipoint(_ enabled: Bool) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            let success = self.bose.setMultipoint(enabled)
+            if success {
+                DispatchQueue.main.async {
+                    self.multipointEnabled = enabled
+                }
+            }
+        }
+    }
+
+    // MARK: - Bluetooth Helpers
+
+    private func isBluetoothConnected() -> Bool {
+        let (status, output) = runBlueutil(["--is-connected", boseMac])
+        return status == 0 && output.trimmingCharacters(in: .whitespacesAndNewlines) == "1"
+    }
+
+    private func btConnect() {
+        runBlueutil(["--connect", boseMac])
+    }
+
+    @discardableResult
+    private func runBlueutil(_ args: [String]) -> (Int32, String) {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: blueutil)
+        proc.arguments = args
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        proc.standardError = pipe
+        do {
+            try proc.run()
+            proc.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let output = String(data: data, encoding: .utf8) ?? ""
+            return (proc.terminationStatus, output)
+        } catch {
+            return (1, "")
+        }
+    }
+
+    // MARK: - Computed Properties
+
+    var ancModeName: String {
+        switch ancMode {
+        case 0: return "Quiet"
+        case 1: return "Aware"
+        case 2: return "Custom 1"
+        case 3: return "Custom 2"
+        default: return "Unknown"
+        }
+    }
+}
