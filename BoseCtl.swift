@@ -28,54 +28,6 @@ func runBlueutil(_ args: [String]) -> (Int32, String) {
     }
 }
 
-// === Phone TCP (Tailscale) ===
-
-let PHONE_IP = "100.97.121.67"
-let PHONE_TCP_PORT: UInt16 = 8899
-
-/// Send a command to the phone's BoseService TCP server
-@discardableResult
-func phoneTcp(_ json: String) -> String? {
-    let fd = socket(AF_INET, SOCK_STREAM, 0)
-    guard fd >= 0 else { return nil }
-    defer { close(fd) }
-
-    var addr = sockaddr_in()
-    addr.sin_family = sa_family_t(AF_INET)
-    addr.sin_port = PHONE_TCP_PORT.bigEndian
-    inet_pton(AF_INET, PHONE_IP, &addr.sin_addr)
-
-    // 15-second timeout (EQ SET via GATT takes ~8s)
-    var tv = timeval(tv_sec: 15, tv_usec: 0)
-    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
-    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
-
-    let result = withUnsafePointer(to: &addr) {
-        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-            Darwin.connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
-        }
-    }
-    guard result == 0 else { return nil }
-
-    let data = json.data(using: .utf8)!
-    _ = data.withUnsafeBytes { send(fd, $0.baseAddress!, data.count, 0) }
-
-    var buf = [UInt8](repeating: 0, count: 4096)
-    let n = recv(fd, &buf, buf.count, 0)
-    guard n > 0 else { return nil }
-    return String(bytes: buf[0..<n], encoding: .utf8)
-}
-
-/// Tell phone to claim A2DP audio routing
-func phoneAudioClaim() {
-    if let resp = phoneTcp("{\"cmd\":\"audio_claim\"}") {
-        if resp.contains("\"ok\":true") {
-            // Success — phone will route audio to Bose
-        }
-    }
-    // Best effort — don't fail the whole command if phone is unreachable
-}
-
 // === Helpers ===
 
 func fail(_ message: String) -> Never {
@@ -96,10 +48,6 @@ func nameForMac(_ mac: [UInt8]) -> String {
 
 func isMacDevice(_ mac: [UInt8]) -> Bool {
     return bose.macToString(mac) == "BC:D0:74:11:DB:27"
-}
-
-func isPhoneDevice(_ mac: [UInt8]) -> Bool {
-    return bose.macToString(mac) == "A8:76:50:D3:B1:1B"
 }
 
 // === Commands ===
@@ -232,11 +180,6 @@ func cmdConnect(_ deviceName: String) {
         fail("failed to connect \(deviceName)")
     }
 
-    // If switching to phone, tell phone to connect + claim A2DP
-    if isPhoneDevice(mac) {
-        phoneAudioClaim()
-    }
-
     print("Switched to \(deviceName)")
 }
 
@@ -269,11 +212,6 @@ func cmdSwap(_ targetName: String) {
     // No need to BMAP-disconnect others (kills ACL, disrupts A2DP).
     if !bose.connectDevice(targetMac) {
         fail("failed to swap to \(targetName)")
-    }
-
-    // If switching to phone, tell phone to connect + claim A2DP
-    if isPhoneDevice(targetMac) {
-        phoneAudioClaim()
     }
 
     print("Swapped to \(targetName)")
@@ -324,54 +262,20 @@ func cmdMedia(_ action: UInt8) {
 
 func cmdEq(_ eqArgs: [String]) {
     if eqArgs.isEmpty {
-        // GET via phone TCP
-        if let resp = phoneTcp("{\"cmd\":\"eq\"}"),
-           let data = try? JSONSerialization.jsonObject(with: Data(resp.utf8)) as? [String: Any],
-           let eq = data["data"] as? [String: Any] {
-            let bass = eq["bass"] as? Int ?? 0
-            let mid = eq["mid"] as? Int ?? 0
-            let treble = eq["treble"] as? Int ?? 0
+        // GET via RFCOMM
+        guard let resp = bose.sendRaw([0x01, 0x07, 0x01, 0x00]) else {
+            fail("EQ query failed")
+        }
+        if resp.count >= 16 && resp[2] == OP_RESP {
+            let bass = Int(Int8(bitPattern: resp[6]))
+            let mid = Int(Int8(bitPattern: resp[10]))
+            let treble = Int(Int8(bitPattern: resp[14]))
             print("bass: \(bass)  mid: \(mid)  treble: \(treble)  (range: -10 to +10)")
-        } else {
-            // Fallback to RFCOMM GET
-            guard let resp = bose.sendRaw([0x01, 0x07, 0x01, 0x00]) else {
-                fail("EQ query failed")
-            }
-            if resp.count >= 16 && resp[2] == OP_RESP {
-                let bass = Int(Int8(bitPattern: resp[6]))
-                let mid = Int(Int8(bitPattern: resp[10]))
-                let treble = Int(Int8(bitPattern: resp[14]))
-                print("bass: \(bass)  mid: \(mid)  treble: \(treble)  (range: -10 to +10)")
-            }
         }
     } else {
-        // SET via phone TCP (requires BLE GATT on phone)
-        // Parse: bose-ctl eq bass=5 mid=2 treble=-3
-        // Or:    bose-ctl eq 5 2 -3
-        var json = "{\"cmd\":\"eq\""
-        if eqArgs.count == 3, let b = Int(eqArgs[0]), let m = Int(eqArgs[1]), let t = Int(eqArgs[2]) {
-            json += ",\"bass\":\(b),\"mid\":\(m),\"treble\":\(t)"
-        } else {
-            for arg in eqArgs {
-                let parts = arg.split(separator: "=")
-                guard parts.count == 2, let val = Int(parts[1]) else {
-                    fail("Usage: bose-ctl eq bass=5 mid=2 treble=-3  OR  bose-ctl eq 5 2 -3")
-                }
-                json += ",\"\(parts[0])\":\(val)"
-            }
-        }
-        json += "}"
-
-        if let resp = phoneTcp(json) {
-            if resp.contains("\"ok\":true") {
-                // Re-read to show new values
-                cmdEq([])
-            } else {
-                print("EQ set failed: \(resp)")
-            }
-        } else {
-            fail("Phone unreachable (EQ SET requires BLE GATT via phone)")
-        }
+        // EQ SET not supported via RFCOMM (requires BLE GATT).
+        // Use the Android or Mac app instead.
+        fail("EQ SET requires BLE GATT — use the Bose Control app")
     }
 }
 
