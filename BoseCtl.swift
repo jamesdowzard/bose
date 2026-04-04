@@ -221,17 +221,18 @@ func cmdDevices() {
 func cmdConnect(_ deviceName: String) {
     let mac = macForName(deviceName)
 
-    // If connecting Mac, also connect Mac BT stack for A2DP
+    // If connecting Mac, blueutil connect first for A2DP
     if isMacDevice(mac) {
         runBlueutil(["--connect", MAC_BOSE])
         Thread.sleep(forTimeInterval: 1.5)
     }
 
+    // BMAP connect — multipoint keeps both devices connected
     if !bose.connectDevice(mac) {
         fail("failed to connect \(deviceName)")
     }
 
-    // If switching to phone, tell phone to claim A2DP audio routing
+    // If switching to phone, tell phone to connect + claim A2DP
     if isPhoneDevice(mac) {
         phoneAudioClaim()
     }
@@ -257,34 +258,20 @@ func cmdDisconnect(_ deviceName: String) {
 func cmdSwap(_ targetName: String) {
     let targetMac = macForName(targetName)
 
-    // Get connected devices
-    let connectedMacs = bose.getConnectedDevices()
-
-    // Disconnect all others (except phone — RFCOMM controller on Android)
-    for connMac in connectedMacs {
-        if connMac == targetMac { continue }
-        if isPhoneDevice(connMac) { continue }
-
-        // If leaving Mac, blueutil disconnect
-        if isMacDevice(connMac) {
-            runBlueutil(["--disconnect", MAC_BOSE])
-        }
-
-        _ = bose.disconnectDevice(connMac)
-    }
-
-    // If target is Mac, blueutil connect + wait
+    // If target is Mac, blueutil connect first so A2DP is ready
     if isMacDevice(targetMac) {
         runBlueutil(["--connect", MAC_BOSE])
         Thread.sleep(forTimeInterval: 1.5)
     }
 
-    // Connect target
+    // BMAP connect target — multipoint keeps both devices connected,
+    // audio routes to whichever got the last connect command.
+    // No need to BMAP-disconnect others (kills ACL, disrupts A2DP).
     if !bose.connectDevice(targetMac) {
         fail("failed to swap to \(targetName)")
     }
 
-    // If switching to phone, tell phone to claim A2DP audio routing
+    // If switching to phone, tell phone to connect + claim A2DP
     if isPhoneDevice(targetMac) {
         phoneAudioClaim()
     }
