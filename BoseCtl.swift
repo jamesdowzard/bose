@@ -45,8 +45,8 @@ func phoneTcp(_ json: String) -> String? {
     addr.sin_port = PHONE_TCP_PORT.bigEndian
     inet_pton(AF_INET, PHONE_IP, &addr.sin_addr)
 
-    // 3-second timeout
-    var tv = timeval(tv_sec: 3, tv_usec: 0)
+    // 15-second timeout (EQ SET via GATT takes ~8s)
+    var tv = timeval(tv_sec: 15, tv_usec: 0)
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
     setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
 

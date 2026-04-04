@@ -2,8 +2,8 @@
 # Max 20 lines. Updated by agent on Stop hook.
 
 ## Feature
-add EQ command to Mac CLI via phone TCP
-add EQ command to Mac CLI via phone TCP
+increase TCP timeout for EQ GATT operations
+increase TCP timeout for EQ GATT operations
 
 ## Current State
 Not started. No work has been done yet.

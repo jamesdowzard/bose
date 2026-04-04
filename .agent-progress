@@ -1,10 +1,10 @@
-# Agent Progress - bose-eq-mac
+# Agent Progress - bose-tcp-timeout
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-04-04T08:35:32Z
+# Created: 2026-04-04T08:48:44Z
 
-feature=bose-eq-mac
-name=add EQ command to Mac CLI via phone TCP
+feature=bose-tcp-timeout
+name=increase TCP timeout for EQ GATT operations
 status=pending
 step=0
 step_name=Not started
-created=2026-04-04T08:35:32Z
+created=2026-04-04T08:48:44Z
