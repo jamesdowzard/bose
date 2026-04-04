@@ -2,8 +2,8 @@
 # Max 20 lines. Updated by agent on Stop hook.
 
 ## Feature
-add phone audio claim and new BMAP commands
-add phone audio claim and new BMAP commands
+add EQ command to Mac CLI via phone TCP
+add EQ command to Mac CLI via phone TCP
 
 ## Current State
 Not started. No work has been done yet.

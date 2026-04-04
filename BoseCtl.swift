@@ -335,6 +335,59 @@ func cmdMedia(_ action: UInt8) {
     print(names[action] ?? "sent")
 }
 
+func cmdEq(_ eqArgs: [String]) {
+    if eqArgs.isEmpty {
+        // GET via phone TCP
+        if let resp = phoneTcp("{\"cmd\":\"eq\"}"),
+           let data = try? JSONSerialization.jsonObject(with: Data(resp.utf8)) as? [String: Any],
+           let eq = data["data"] as? [String: Any] {
+            let bass = eq["bass"] as? Int ?? 0
+            let mid = eq["mid"] as? Int ?? 0
+            let treble = eq["treble"] as? Int ?? 0
+            print("bass: \(bass)  mid: \(mid)  treble: \(treble)  (range: -10 to +10)")
+        } else {
+            // Fallback to RFCOMM GET
+            guard let resp = bose.sendRaw([0x01, 0x07, 0x01, 0x00]) else {
+                fail("EQ query failed")
+            }
+            if resp.count >= 16 && resp[2] == OP_RESP {
+                let bass = Int(Int8(bitPattern: resp[6]))
+                let mid = Int(Int8(bitPattern: resp[10]))
+                let treble = Int(Int8(bitPattern: resp[14]))
+                print("bass: \(bass)  mid: \(mid)  treble: \(treble)  (range: -10 to +10)")
+            }
+        }
+    } else {
+        // SET via phone TCP (requires BLE GATT on phone)
+        // Parse: bose-ctl eq bass=5 mid=2 treble=-3
+        // Or:    bose-ctl eq 5 2 -3
+        var json = "{\"cmd\":\"eq\""
+        if eqArgs.count == 3, let b = Int(eqArgs[0]), let m = Int(eqArgs[1]), let t = Int(eqArgs[2]) {
+            json += ",\"bass\":\(b),\"mid\":\(m),\"treble\":\(t)"
+        } else {
+            for arg in eqArgs {
+                let parts = arg.split(separator: "=")
+                guard parts.count == 2, let val = Int(parts[1]) else {
+                    fail("Usage: bose-ctl eq bass=5 mid=2 treble=-3  OR  bose-ctl eq 5 2 -3")
+                }
+                json += ",\"\(parts[0])\":\(val)"
+            }
+        }
+        json += "}"
+
+        if let resp = phoneTcp(json) {
+            if resp.contains("\"ok\":true") {
+                // Re-read to show new values
+                cmdEq([])
+            } else {
+                print("EQ set failed: \(resp)")
+            }
+        } else {
+            fail("Phone unreachable (EQ SET requires BLE GATT via phone)")
+        }
+    }
+}
+
 func cmdRaw(_ hex: String) {
     // Parse hex string to bytes
     let clean = hex.replacingOccurrences(of: " ", with: "")
@@ -428,6 +481,8 @@ struct BoseCtlApp {
             cmdMedia(0x03)
         case "prev":
             cmdMedia(0x04)
+        case "eq":
+            cmdEq(args.count >= 3 ? Array(args[2...]) : [])
         case "raw":
             guard args.count >= 3 else { print("Usage: bose-ctl raw <hex>"); exit(1) }
             cmdRaw(args[2])
