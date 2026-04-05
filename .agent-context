@@ -2,8 +2,8 @@
 # Max 20 lines. Updated by agent on Stop hook.
 
 ## Feature
-fix Option+B hotkey — replace Carbon with NSEvent monitors
-fix Option+B hotkey — replace Carbon with NSEvent monitors
+Fix Bose Control app stability - event tap, main thread blocking, concurrency
+Fix Bose Control app stability - event tap, main thread blocking, concurrency
 
 ## Current State
 Not started. No work has been done yet.
