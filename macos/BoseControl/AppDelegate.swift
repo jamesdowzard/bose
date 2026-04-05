@@ -117,6 +117,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private func installEventTap() {
         let mask: CGEventMask = (1 << CGEventType.keyDown.rawValue)
+            | (1 << CGEventType.tapDisabledByTimeout.rawValue)
+            | (1 << CGEventType.tapDisabledByUserInput.rawValue)
 
         // Store self as unretained pointer for the C callback
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
@@ -124,11 +126,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
-            options: .listenOnly,
+            options: .defaultTap,
             eventsOfInterest: mask,
             callback: { (proxy, type, event, refcon) -> Unmanaged<CGEvent>? in
                 guard let refcon = refcon else { return Unmanaged.passUnretained(event) }
                 let delegate = Unmanaged<AppDelegate>.fromOpaque(refcon).takeUnretainedValue()
+
+                // Re-enable tap if macOS disabled it (CPU spike, timeout, etc.)
+                if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+                    if let tap = delegate.eventTapPort {
+                        CGEvent.tapEnable(tap: tap, enable: true)
+                    }
+                    return Unmanaged.passUnretained(event)
+                }
 
                 // keyCode 11 = B, Option flag = 0x80000 (NSEvent.ModifierFlags.option)
                 let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
@@ -142,6 +152,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                     DispatchQueue.main.async {
                         delegate.togglePopover()
                     }
+                    return nil  // Consume event — don't type "∫"
                 }
 
                 return Unmanaged.passUnretained(event)

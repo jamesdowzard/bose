@@ -1,10 +1,10 @@
-# Agent Progress - fix-hotkey
+# Agent Progress - fix-app-stability
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-04-05T00:13:47Z
+# Created: 2026-04-05T01:32:37Z
 
-feature=fix-hotkey
-name=fix Option+B hotkey — replace Carbon with NSEvent monitors
+feature=fix-app-stability
+name=Fix Bose Control app stability - event tap, main thread blocking, concurrency
 status=pending
 step=0
 step_name=Not started
-created=2026-04-05T00:13:47Z
+created=2026-04-05T01:32:37Z
