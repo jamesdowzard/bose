@@ -157,7 +157,7 @@ fun BoseApp(vm: BoseViewModel = viewModel()) {
             ) {
                 // Header
                 Text(
-                    text = "BoseCtl",
+                    text = "Bose",
                     fontSize = 28.sp,
                     fontWeight = FontWeight.Bold,
                     color = BoseGreen,

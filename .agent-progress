@@ -1,10 +1,10 @@
-# Agent Progress - fix-device-detection
+# Agent Progress - app-rename-and-eq
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-04-05T02:11:12Z
+# Created: 2026-04-05T02:26:57Z
 
-feature=fix-device-detection
-name=Fix device detection to show all connected devices
+feature=app-rename-and-eq
+name=Rename to Bose, add EQ and custom level controls
 status=pending
 step=0
 step_name=Not started
-created=2026-04-05T02:11:12Z
+created=2026-04-05T02:26:57Z
