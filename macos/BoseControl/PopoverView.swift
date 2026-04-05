@@ -56,7 +56,7 @@ struct PopoverView: View {
         .frame(width: 320)
         .background(bgColor)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Bose Control")
+        .accessibilityLabel("Bose")
         .accessibilityIdentifier("bose-control-popover")
         .onAppear {
             volumeSliderValue = Double(manager.volume)

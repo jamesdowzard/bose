@@ -110,7 +110,7 @@ class BoseService : Service() {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_headphones)
-                .setContentTitle("BoseCtl")
+                .setContentTitle("Bose")
                 .setContentText(text)
                 .setContentIntent(pi)
                 .setOngoing(true)
@@ -119,7 +119,7 @@ class BoseService : Service() {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
                 .setSmallIcon(R.drawable.ic_headphones)
-                .setContentTitle("BoseCtl")
+                .setContentTitle("Bose")
                 .setContentText(text)
                 .setContentIntent(pi)
                 .setOngoing(true)

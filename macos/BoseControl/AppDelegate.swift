@@ -25,7 +25,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             button.action = #selector(togglePopover)
             button.target = self
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
-            button.setAccessibilityLabel("Bose Control menu bar")
+            button.setAccessibilityLabel("Bose menu bar")
             button.setAccessibilityRole(.button)
             button.setAccessibilityIdentifier("bose-control-status-button")
         }
@@ -38,7 +38,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let hostingController = NSHostingController(
             rootView: PopoverView(manager: manager)
         )
-        hostingController.view.setAccessibilityLabel("Bose Control popover")
+        hostingController.view.setAccessibilityLabel("Bose popover")
         hostingController.view.setAccessibilityIdentifier("bose-control-popover-view")
         popover.contentViewController = hostingController
 
@@ -72,7 +72,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private func updateStatusItemDisplay() {
         guard let button = statusItem.button else { return }
 
-        let image = NSImage(systemSymbolName: "headphones", accessibilityDescription: "Bose Control")
+        let image = NSImage(systemSymbolName: "headphones", accessibilityDescription: "Bose")
         image?.isTemplate = true
         button.image = image
 
@@ -81,10 +81,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             let charging = manager.batteryCharging
             let suffix = charging ? "\u{26A1}" : "%"  // bolt when charging
             button.title = " \(level)\(suffix)"
-            button.setAccessibilityLabel("Bose Control, battery \(level) percent\(charging ? " charging" : ""), \(manager.ancModeName) mode")
+            button.setAccessibilityLabel("Bose, battery \(level) percent\(charging ? " charging" : ""), \(manager.ancModeName) mode")
         } else {
             button.title = ""
-            button.setAccessibilityLabel("Bose Control, disconnected")
+            button.setAccessibilityLabel("Bose, disconnected")
         }
     }
 
@@ -159,7 +159,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             },
             userInfo: selfPtr
         ) else {
-            NSLog("Bose Control: CGEventTap failed — check Accessibility permission")
+            NSLog("Bose: CGEventTap failed — check Accessibility permission")
             return
         }
 
