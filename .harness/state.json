@@ -2,6 +2,115 @@
   "project": "bose",
   "version": "2.0.0",
   "created": "2026-03-14T23:57:46Z",
-  "updated": "2026-03-14T23:57:46Z",
-  "features": []
+  "updated": "2026-04-05T12:21:42Z",
+  "features": [
+    {
+      "id": "fix-app-stability",
+      "name": "Fix Bose Control app stability - event tap, main thread blocking, concurrency",
+      "description": "Fix Bose Control app stability - event tap, main thread blocking, concurrency",
+      "status": "archived",
+      "priority": 1,
+      "branch": "feature/fix-app-stability",
+      "pr": "https://github.com/jamesdowzard/bose/pull/44",
+      "depends_on": [],
+      "started": null,
+      "completed": null
+    },
+    {
+      "id": "fix-device-states",
+      "name": "Fix Android device state parsing offset",
+      "description": "Fix Android device state parsing offset",
+      "status": "pending",
+      "priority": 2,
+      "branch": "feature/fix-device-states",
+      "pr": null,
+      "depends_on": [],
+      "started": null,
+      "completed": null
+    },
+    {
+      "id": "fix-device-detection",
+      "name": "Fix device detection to show all connected devices",
+      "description": "Fix device detection to show all connected devices",
+      "status": "pending",
+      "priority": 3,
+      "branch": "feature/fix-device-detection",
+      "pr": null,
+      "depends_on": [],
+      "started": null,
+      "completed": null
+    },
+    {
+      "id": "app-rename-and-eq",
+      "name": "Rename to Bose, add EQ and custom level controls",
+      "description": "Rename to Bose, add EQ and custom level controls",
+      "status": "pending",
+      "priority": 4,
+      "branch": "feature/app-rename-and-eq",
+      "pr": null,
+      "depends_on": [],
+      "started": null,
+      "completed": null
+    },
+    {
+      "id": "doc-transport",
+      "name": "Document verified RFCOMM vs BLE GATT transport",
+      "description": "Document verified RFCOMM vs BLE GATT transport",
+      "status": "pending",
+      "priority": 5,
+      "branch": "feature/doc-transport",
+      "pr": null,
+      "depends_on": [],
+      "started": null,
+      "completed": null
+    },
+    {
+      "id": "ble-gatt-eq",
+      "name": "Add BLE GATT transport for EQ, immersion, auto-off",
+      "description": "Add BLE GATT transport for EQ, immersion, auto-off",
+      "status": "pending",
+      "priority": 6,
+      "branch": "feature/ble-gatt-eq",
+      "pr": null,
+      "depends_on": [],
+      "started": null,
+      "completed": null
+    },
+    {
+      "id": "doc-full-mapping",
+      "name": "Document complete BMAP mapping with AudioModes",
+      "description": "Document complete BMAP mapping with AudioModes",
+      "status": "pending",
+      "priority": 7,
+      "branch": "feature/doc-full-mapping",
+      "pr": null,
+      "depends_on": [],
+      "started": null,
+      "completed": null
+    },
+    {
+      "id": "cnc-level",
+      "name": "Add CNC level control to both apps",
+      "description": "Add CNC level control to both apps",
+      "status": "pending",
+      "priority": 8,
+      "branch": "feature/cnc-level",
+      "pr": null,
+      "depends_on": [],
+      "started": null,
+      "completed": null
+    },
+    {
+      "id": "add-quest3-device",
+      "name": "Add Quest 3 to device map",
+      "description": "Add Quest 3 to device map",
+      "status": "pending",
+      "priority": 9,
+      "branch": "feature/add-quest3-device",
+      "pr": null,
+      "depends_on": [],
+      "started": null,
+      "completed": null
+    }
+  ]
 }
