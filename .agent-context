@@ -2,8 +2,8 @@
 # Max 20 lines. Updated by agent on Stop hook.
 
 ## Feature
-Add BLE GATT transport for EQ, immersion, auto-off
-Add BLE GATT transport for EQ, immersion, auto-off
+Document complete BMAP mapping with AudioModes
+Document complete BMAP mapping with AudioModes
 
 ## Current State
 Not started. No work has been done yet.

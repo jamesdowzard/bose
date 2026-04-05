@@ -102,6 +102,73 @@ Response is the full 12-byte EQ state: `01 07 03 0C F6 0A {bass} 00 F6 0A {mid} 
 - Segmentation: prepend 0x00 byte for single-segment packets
 - FE2C12XX characteristics are Google Fast Pair, NOT Bose BMAP
 
+## AudioModes Block (0x1F) — ANC Mode Config (decoded from APK)
+
+The Custom 1/2 ANC depth is configured via `AudioModesModeConfig` (1F,06).
+
+### ModeConfig GET
+
+`1F 06 01 01 {modeIndex}` — returns 48-byte response with full mode configuration.
+
+Response payload (48 bytes):
+
+| Offset | Field | Notes |
+|--------|-------|-------|
+| 0 | modeIndex | 0=quiet, 1=aware, 2=custom1, 3=custom2 |
+| 1 | prompt.byte1 | Voice prompt identifier byte 1 |
+| 2 | prompt.byte2 | Voice prompt identifier byte 2 |
+| 3-5 | unknown | 3 bytes, often `00 00 01` |
+| 6-37 | modeName | 32-byte null-terminated UTF-8 name (e.g. "Immersion") |
+| 38-43 | padding/flags | 6 zero bytes |
+| 44 | spatialAudioType | 0=disabled, 1=fixedToRoom, 2=fixedToHead |
+| 45-46 | unknown | 00 00 |
+| 47 | ancToggle | 0=disabled, 1=enabled |
+
+Observed values:
+- Mode 1 (Aware): name="Aware", prompt=00,02, spatial=2, ancToggle=1
+- Mode 2 (Custom1): name="Immersion", prompt=00,22, spatial=2, ancToggle=1
+- Mode 3 (Custom2): name="Cinema", prompt=00,24, spatial=1, ancToggle=1
+
+### ModeConfig SET_GET (not yet verified — needs stable RFCOMM)
+
+`1F 06 02 {len} {payload}` using SET_GET operator.
+
+Payload from APK decompilation (`FBlockAudioModesKt.createAudioModesConfigSetGetPayload`):
+
+```
+Byte 0:     modeIndex (0-3)
+Byte 1-2:   prompt (byte1, byte2)
+Byte 3-34:  modeName (32 bytes, null-padded UTF-8)
+Byte 35:    cncLevel (noise cancellation level — THE KEY FIELD)
+Byte 36:    autoCNCEnabled (0 or 1)
+Byte 37+:   optional: spatialAudioType, windBlockEnabled, ancToggleEnabled
+```
+
+**cncLevel at byte 35 is how Custom 1/2 ANC depth is controlled.**
+
+Status: payload format decoded but SET not yet verified on headphones (connection
+instability during testing at 40% battery). The response payload has 3 extra bytes
+at offsets 3-5 that the SET payload doesn't include — the SET format is shorter.
+
+### AudioModes SettingsConfig (1F,0A)
+
+GET response: `1F 0A 03 05 00 00 00 00 01` — 5-byte payload. Purpose unclear.
+May be related to auto-off timer on QC Ultra 2 (since StandbyTimer 0x04 is not supported).
+
+## QC Ultra 2 Specific Quirks
+
+| Official Name | Func ID | QC Ultra 2 Status |
+|--------------|---------|-------------------|
+| StandbyTimer | 0x04 | **Not supported** (error on GET and SET) |
+| MotionInactivityAutoOff | 0x14 | **Not supported** (error) |
+| OnHeadDetection | 0x10 | **Not supported** (error) |
+| FlipToOff | 0x16 | **Not supported** (error) |
+| Sidetone | 0x0B | Returns data: `01 02 0F` — **read-only**, all SET operators fail |
+| AutoPlayPause | 0x18 | Returns data: `01` — may be settable |
+
+Auto-off on QC Ultra 2 may only be configurable via the Bose Music app's AudioModes
+settings flow, not via a standalone timer command.
+
 ## What we had wrong
 
 | What | Wrong | Correct |

@@ -97,7 +97,10 @@ BMAP operator (SET/0x06 instead of SET_GET/0x02).
 | Disconnect | 04,02 | START | `04,02,05,06,{MAC}` | |
 | Media control | 05,03 | START | `05,03,05,01,{action}` | 01=play 02=pause 03=next 04=prev |
 | **EQ band** | 01,07 | **SET_GET** | `01,07,02,02,{value},{band}` | band: 0=bass 1=mid 2=treble, value: signed -10 to +10 |
-| **StandbyTimer** | 01,04 | **SET_GET** | `01,04,02,01,{minutes}` | 0=never, or minutes (1 byte if <=255) |
+| **Custom ANC depth** | 1F,06 | **SET_GET** | See docs/plans/2026-04-05-bmap-complete-mapping.md | 37+ byte payload with cncLevel at byte 35. Not yet verified on device. |
+
+**Not supported on QC Ultra 2:** StandbyTimer (01,04), MotionAutoOff (01,14), OnHeadDetection SET (01,10).
+Auto-off timer may only be configurable via Bose Music app.
 
 ### ActiveDevice (04,09) is UNRELIABLE
 
