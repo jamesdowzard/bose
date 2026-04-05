@@ -24,6 +24,7 @@ class BoseManager: ObservableObject {
     @Published var multipointEnabled: Bool = false
     @Published var autoOffTimer: String = ""
     @Published var immersionLevel: String = ""
+    @Published var cncLevel: Int = 0
     @Published var onHead: Bool = false
     @Published var eq: (bass: Int, mid: Int, treble: Int) = (0, 0, 0)
 
@@ -365,6 +366,19 @@ class BoseManager: ObservableObject {
             if success {
                 DispatchQueue.main.async {
                     self.multipointEnabled = enabled
+                }
+            }
+        }
+    }
+
+    func setCncLevel(_ level: Int) {
+        rfcommQueue.async { [weak self] in
+            guard let self = self, let bose = self.bose else { return }
+            let success = bose.setCncLevel(level)
+            if success {
+                DispatchQueue.main.async {
+                    self.cncLevel = level
+                    self.onStateChange?()
                 }
             }
         }
