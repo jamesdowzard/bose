@@ -89,19 +89,17 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
                         )
                     }
 
-                    // Connected devices (ground truth)
+                    // Connected devices (ground truth) + active device
                     val connectedMacs = BoseProtocol.getConnectedDevices()
                     val connectedNames = connectedMacs.map { BoseProtocol.nameForMac(it) }.toSet()
+                    val activeMac = BoseProtocol.getActiveDevice()
+                    val activeName = activeMac?.let { BoseProtocol.nameForMac(it) }
 
-                    // Determine active: first connected device is typically active
                     val deviceStates = BoseProtocol.DEVICES.keys.associateWith { name ->
                         when {
-                            connectedNames.contains(name) && connectedNames.first() == name ->
-                                DeviceState.ACTIVE
-                            connectedNames.contains(name) ->
-                                DeviceState.CONNECTED
-                            else ->
-                                DeviceState.OFFLINE
+                            name == activeName -> DeviceState.ACTIVE
+                            connectedNames.contains(name) -> DeviceState.CONNECTED
+                            else -> DeviceState.OFFLINE
                         }
                     }
                     _state.value = _state.value.copy(deviceStates = deviceStates)

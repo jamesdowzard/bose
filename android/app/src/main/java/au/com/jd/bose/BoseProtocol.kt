@@ -11,6 +11,8 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.UUID
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 /**
  * Bose QC Ultra RFCOMM protocol handler.
@@ -59,6 +61,7 @@ object BoseProtocol {
 
     val CYCLE_ORDER = listOf("mac", "ipad", "iphone", "tv", "phone")
 
+    private val rfcommLock = ReentrantLock()
     private var socket: BluetoothSocket? = null
     private var inputStream: InputStream? = null
     private var outputStream: OutputStream? = null
@@ -76,10 +79,12 @@ object BoseProtocol {
      */
     @SuppressLint("MissingPermission")
     fun connect(): Boolean {
-        disconnect()
+        rfcommLock.lock()
+        closeSocket()
 
         val adapter = BluetoothAdapter.getDefaultAdapter() ?: run {
             Log.e(TAG, "No Bluetooth adapter")
+            rfcommLock.unlock()
             return false
         }
 
@@ -105,7 +110,14 @@ object BoseProtocol {
         }
     }
 
+    /** Close socket and release the RFCOMM lock. */
     fun disconnect() {
+        closeSocket()
+        if (rfcommLock.isHeldByCurrentThread) rfcommLock.unlock()
+    }
+
+    /** Close socket without releasing the lock (used internally by connect). */
+    private fun closeSocket() {
         try { inputStream?.close() } catch (_: Exception) {}
         try { outputStream?.close() } catch (_: Exception) {}
         try { socket?.close() } catch (_: Exception) {}
@@ -139,6 +151,7 @@ object BoseProtocol {
     /**
      * On-demand connection pattern: connect, execute block, disconnect.
      * Each command gets a fresh RFCOMM socket.
+     * connect() acquires rfcommLock, disconnect() releases it.
      */
     suspend fun <T> withConnection(block: suspend () -> T): T = withContext(Dispatchers.IO) {
         connect()
@@ -283,23 +296,28 @@ object BoseProtocol {
     // Connected devices (ground truth for connection state)
     // ======================================================================
 
-    /** GET connected devices. 05,01,01,00 -> count + MACs */
+    /** GET connected devices. 05,01,01,00 -> count at byte 6, MACs from byte 7 */
     fun getConnectedDevices(): List<ByteArray> {
         val resp = send(byteArrayOf(0x05, 0x01, OP_GET, 0x00)) ?: return emptyList()
-        if (resp.size < 5 || resp[2] != OP_RESP) return emptyList()
+        if (resp.size < 7 || resp[0] != 0x05.toByte() || resp[1] != 0x01.toByte()
+            || resp[2] != OP_RESP) return emptyList()
 
-        val payloadLen = resp[3].toInt() and 0xFF
-        if (payloadLen < 1) return emptyList()
-
-        val count = resp[4].toInt() and 0xFF
+        val count = resp[6].toInt() and 0xFF
         val devices = mutableListOf<ByteArray>()
-        var i = 5
+        var i = 7
         for (j in 0 until count) {
             if (i + 6 > resp.size) break
             devices.add(resp.copyOfRange(i, i + 6))
             i += 6
         }
         return devices
+    }
+
+    /** GET active device MAC. 04,09,01,00 -> MAC at bytes 4-9 */
+    fun getActiveDevice(): ByteArray? {
+        val resp = send(byteArrayOf(0x04, 0x09, OP_GET, 0x00)) ?: return null
+        if (resp.size < 10 || resp[2] != OP_RESP) return null
+        return resp.copyOfRange(4, 10)
     }
 
     // ======================================================================
