@@ -48,6 +48,7 @@ object BoseProtocol {
         "ipad" to byteArrayOf(0xF4.toByte(), 0x81.toByte(), 0xC4.toByte(), 0xB5.toByte(), 0xFA.toByte(), 0xAB.toByte()),
         "iphone" to byteArrayOf(0xF8.toByte(), 0x4D, 0x89.toByte(), 0xC4.toByte(), 0xB6.toByte(), 0xED.toByte()),
         "tv" to byteArrayOf(0x14, 0xC1.toByte(), 0x4E, 0xB7.toByte(), 0xCB.toByte(), 0x68),
+        "quest" to byteArrayOf(0x78, 0xC4.toByte(), 0xFA.toByte(), 0xC8.toByte(), 0x5C, 0x3D),
     )
 
     // Device MAC strings for display
@@ -57,9 +58,10 @@ object BoseProtocol {
         "ipad" to "F4:81:C4:B5:FA:AB",
         "iphone" to "F8:4D:89:C4:B6:ED",
         "tv" to "14:C1:4E:B7:CB:68",
+        "quest" to "78:C4:FA:C8:5C:3D",
     )
 
-    val CYCLE_ORDER = listOf("mac", "ipad", "iphone", "tv", "phone")
+    val CYCLE_ORDER = listOf("mac", "quest", "ipad", "iphone", "tv", "phone")
 
     private val rfcommLock = ReentrantLock()
     private var socket: BluetoothSocket? = null

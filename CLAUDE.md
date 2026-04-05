@@ -54,6 +54,7 @@ cd macos && ./build.sh
 | ipad | F4:81:C4:B5:FA:AB | Currently needs re-pairing |
 | iphone | F8:4D:89:C4:B6:ED | |
 | tv | 14:C1:4E:B7:CB:68 | Chromecast |
+| quest | 78:C4:FA:C8:5C:3D | Meta Quest 3 |
 
 ## BMAP Function IDs (Block 0x04 — DeviceManagement)
 

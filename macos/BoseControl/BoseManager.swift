@@ -35,6 +35,7 @@ class BoseManager: ObservableObject {
         "ipad": "offline",
         "iphone": "offline",
         "tv": "offline",
+        "quest": "offline",
     ]
 
     @Published var isRefreshing: Bool = false
