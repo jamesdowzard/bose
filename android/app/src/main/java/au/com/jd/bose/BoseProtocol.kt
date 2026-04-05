@@ -588,8 +588,29 @@ object BoseProtocol {
     }
 
     // ======================================================================
-    // EQ (read-only via RFCOMM -- SET is via BLE GATT)
+    // EQ (SET uses SET_GET operator 0x02, not SET 0x06)
     // ======================================================================
+
+    private const val OP_SET_GET: Byte = 0x02
+
+    /** SET one EQ band. 01,07,02,02,{value},{band}. band: 0=bass 1=mid 2=treble. value: -10 to +10 */
+    fun setEqBand(band: Int, value: Int): Boolean {
+        if (band !in 0..2 || value !in -10..10) return false
+        val cmd = byteArrayOf(0x01, 0x07, OP_SET_GET, 0x02, value.toByte(), band.toByte())
+        val resp = send(cmd) ?: return false
+        return resp.size >= 4 && resp[2] == OP_RESP
+    }
+
+    /** SET all three EQ bands. */
+    fun setEq(bass: Int, mid: Int, treble: Int): Boolean {
+        if (bass !in -10..10 || mid !in -10..10 || treble !in -10..10) return false
+        for ((band, value) in listOf(0 to bass, 1 to mid, 2 to treble)) {
+            val cmd = byteArrayOf(0x01, 0x07, OP_SET_GET, 0x02, value.toByte(), band.toByte())
+            val resp = send(cmd) ?: return false
+            if (resp.size < 4 || resp[2] != OP_RESP) return false
+        }
+        return true
+    }
 
     data class EqBand(val id: Int, val value: Int)
     data class EqSettings(val bass: EqBand, val mid: EqBand, val treble: EqBand)

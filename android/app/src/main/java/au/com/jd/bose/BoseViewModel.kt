@@ -269,6 +269,25 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun setEq(bass: Int, mid: Int, treble: Int) {
+        viewModelScope.launch {
+            try {
+                BoseProtocol.withConnection {
+                    BoseProtocol.setEq(bass, mid, treble)
+                }
+                _state.value = _state.value.copy(
+                    eqBass = bass,
+                    eqMid = mid,
+                    eqTreble = treble,
+                )
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(
+                    error = "Failed to set EQ: ${e.message}",
+                )
+            }
+        }
+    }
+
     fun toggleSettings() {
         _state.value = _state.value.copy(
             settingsExpanded = !_state.value.settingsExpanded,

@@ -67,66 +67,37 @@ cd macos && ./build.sh
 | PairingMode | 0x08 | |
 | ActiveDevice | 0x09 | Returns querying device, not necessarily streaming device |
 
-## Transport: RFCOMM vs BLE GATT (verified 2026-04-05)
+## Transport & Operators (verified 2026-04-05, corrected via APK decompilation)
 
-The QC Ultra 2 uses TWO Bluetooth transports. Most settings can be READ over
-RFCOMM, but some can only be WRITTEN over BLE GATT. This is a firmware design
-choice — not a bug.
+**Everything works over RFCOMM.** BLE GATT is NOT needed for any setting.
+The original "needs BLE GATT" assumption was wrong — we were using the wrong
+BMAP operator (SET/0x06 instead of SET_GET/0x02).
 
-### RFCOMM (Bluetooth Classic SPP) — what we use now
+### BMAP Operators
 
-On-demand connections via `withRFCOMM`/`withConnection`. Opens socket, sends
-BMAP bytes, reads response, closes. ~200-300ms per session.
+| Value | Name | When to use |
+|-------|------|------------|
+| 0x01 | GET | Query current value |
+| 0x02 | SET_GET | **Set value AND get response. Required for EQ, StandbyTimer, buttons** |
+| 0x03 | RESP | Response from device |
+| 0x04 | ERROR | Error from device |
+| 0x05 | START | Connect/disconnect/media commands |
+| 0x06 | SET | Simple set (name, multipoint, volume). **Does NOT work for EQ** |
+| 0x07 | ACK | Acknowledgement |
 
-**GET works for everything** — all blocks/functions below return valid data over RFCOMM.
+### All Settable Commands (RFCOMM, verified)
 
-**SET works for these (ACK/RESP confirmed):**
-
-| Setting | Block,Func | SET bytes | Notes |
-|---------|-----------|-----------|-------|
-| ANC mode | 1F,03 | `1F,03,05,02,{mode},01` | 0=quiet 1=aware 2=custom1 3=custom2 |
-| Volume | 05,05 | `05,05,06,01,{level}` | 0-31 |
-| Device name | 01,02 | `01,02,06,{len},00,{utf8}` | max 30 chars |
-| Multipoint | 01,0A | `01,0A,06,01,{07/00}` | 07=on, 00=off |
-| Connect device | 04,01 | `04,01,05,07,00,{MAC}` | Also routes audio |
-| Disconnect | 04,02 | `04,02,05,06,{MAC}` | |
-| Media control | 05,03 | `05,03,05,01,{action}` | 01=play 02=pause 03=next 04=prev |
-
-**SET returns ERROR (0x04) — requires BLE GATT instead:**
-
-| Setting | Block,Func | Error response | Notes |
-|---------|-----------|----------------|-------|
-| EQ (bass/mid/treble) | 01,07 | `00,00,04,01,05,10,00,04,01,03` | 3-band, range -10 to +10 |
-| Immersion level | 01,09 | `01,09,04,01,05` | Custom ANC depth |
-| Auto-off timer | 01,0B | `01,0B,04,01,05` | Minutes until auto-off |
-
-### BLE GATT — not yet implemented
-
-GATT services discovered on headphones (BLE scan 2026-04-05):
-
-| Service UUID | Type | Notes |
-|-------------|------|-------|
-| FEBE | Bose proprietary | No characteristics enumerated |
-| FE2C | Bose proprietary | No characteristics enumerated |
-| Battery | Standard + Bose | Contains FE2C12XX writable chars |
-
-Writable characteristics found under Battery service:
-
-| Characteristic UUID | Properties |
-|--------------------|-----------|
-| D417C028-9818-4354-99D1-2AC09D074591 | Read, Write, WriteNoResp, Notify |
-| C65B8F2F-AEE2-4C89-B758-BC4892D6F2D8 | Read, Write, WriteNoResp, Notify |
-| FE2C1234-8366-4814-8EB0-01DE32100BEA | Write, Indicate |
-| FE2C1235-8366-4814-8EB0-01DE32100BEA | Write, Indicate |
-| FE2C1236-8366-4814-8EB0-01DE32100BEA | Write |
-| FE2C1237-8366-4814-8EB0-01DE32100BEA | Write, Indicate |
-| FE2C1238-8366-4814-8EB0-01DE32100BEA | Read, Write, Notify |
-
-The FE2C12XX Write+Indicate characteristics are likely BMAP-over-BLE command
-channels (write command, receive response via indication). Not yet tested.
-
-To implement: CoreBluetooth (Mac), BluetoothGatt (Android). Write BMAP EQ/immersion
-SET bytes to the writable characteristics and check which one responds.
+| Setting | Block,Func | Operator | Bytes | Notes |
+|---------|-----------|----------|-------|-------|
+| ANC mode | 1F,03 | START | `1F,03,05,02,{mode},01` | 0=quiet 1=aware 2=custom1 3=custom2 |
+| Volume | 05,05 | SET | `05,05,06,01,{level}` | 0-31 |
+| Device name | 01,02 | SET | `01,02,06,{len},00,{utf8}` | max 30 chars |
+| Multipoint | 01,0A | SET | `01,0A,06,01,{07/00}` | 07=on, 00=off |
+| Connect device | 04,01 | START | `04,01,05,07,00,{MAC}` | Also routes audio |
+| Disconnect | 04,02 | START | `04,02,05,06,{MAC}` | |
+| Media control | 05,03 | START | `05,03,05,01,{action}` | 01=play 02=pause 03=next 04=prev |
+| **EQ band** | 01,07 | **SET_GET** | `01,07,02,02,{value},{band}` | band: 0=bass 1=mid 2=treble, value: signed -10 to +10 |
+| **StandbyTimer** | 01,04 | **SET_GET** | `01,04,02,01,{minutes}` | 0=never, or minutes (1 byte if <=255) |
 
 ### ActiveDevice (04,09) is UNRELIABLE
 

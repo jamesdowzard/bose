@@ -345,6 +345,19 @@ class BoseManager: ObservableObject {
         }
     }
 
+    func setEQ(bass: Int, mid: Int, treble: Int) {
+        rfcommQueue.async { [weak self] in
+            guard let self = self, let bose = self.bose else { return }
+            let success = bose.setEQ(bass: bass, mid: mid, treble: treble)
+            if success {
+                DispatchQueue.main.async {
+                    self.eq = (bass: bass, mid: mid, treble: treble)
+                    self.onStateChange?()
+                }
+            }
+        }
+    }
+
     func setMultipoint(_ enabled: Bool) {
         rfcommQueue.async { [weak self] in
             guard let self = self, let bose = self.bose else { return }

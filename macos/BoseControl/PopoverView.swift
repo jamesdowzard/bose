@@ -36,6 +36,9 @@ struct PopoverView: View {
     @State private var editingName = false
     @State private var nameField: String = ""
     @State private var volumeSliderValue: Double = 0
+    @State private var eqBass: Double = 0
+    @State private var eqMid: Double = 0
+    @State private var eqTreble: Double = 0
 
     var body: some View {
         ScrollView {
@@ -45,6 +48,7 @@ struct PopoverView: View {
                     devicesSection
                     ancSection
                     volumeSection
+                    eqSection
                     settingsSection
                     infoSection
                 } else {
@@ -60,10 +64,16 @@ struct PopoverView: View {
         .accessibilityIdentifier("bose-control-popover")
         .onAppear {
             volumeSliderValue = Double(manager.volume)
+            eqBass = Double(manager.eq.bass)
+            eqMid = Double(manager.eq.mid)
+            eqTreble = Double(manager.eq.treble)
         }
         .onChange(of: manager.volume) { newValue in
             volumeSliderValue = Double(newValue)
         }
+        .onChange(of: manager.eq.bass) { eqBass = Double($0) }
+        .onChange(of: manager.eq.mid) { eqMid = Double($0) }
+        .onChange(of: manager.eq.treble) { eqTreble = Double($0) }
     }
 
     // MARK: - Header
@@ -319,6 +329,76 @@ struct PopoverView: View {
         .accessibilityLabel("Volume section")
     }
 
+    // MARK: - EQ
+
+    private var eqSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionLabel("EQUALIZER")
+
+            // Presets
+            HStack(spacing: 6) {
+                eqPresetButton("Flat", bass: 0, mid: 0, treble: 0)
+                eqPresetButton("Bass+", bass: 6, mid: 0, treble: -2)
+                eqPresetButton("Treble+", bass: -2, mid: 0, treble: 6)
+                eqPresetButton("Vocal", bass: -2, mid: 4, treble: 2)
+            }
+
+            // Sliders
+            eqSlider("Bass", value: $eqBass, band: 0)
+            eqSlider("Mid", value: $eqMid, band: 1)
+            eqSlider("Treble", value: $eqTreble, band: 2)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Equalizer section")
+    }
+
+    private func eqPresetButton(_ label: String, bass: Int, mid: Int, treble: Int) -> some View {
+        let isSelected = manager.eq.bass == bass && manager.eq.mid == mid && manager.eq.treble == treble
+        return Button(action: {
+            eqBass = Double(bass)
+            eqMid = Double(mid)
+            eqTreble = Double(treble)
+            manager.setEQ(bass: bass, mid: mid, treble: treble)
+        }) {
+            Text(label)
+                .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
+                .foregroundColor(isSelected ? bgColor : textSecondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+                .background(isSelected ? accentGreen : cardColor)
+                .cornerRadius(6)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("EQ preset: \(label)\(isSelected ? " (selected)" : "")")
+    }
+
+    private func eqSlider(_ label: String, value: Binding<Double>, band: Int) -> some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundColor(textSecondary)
+                .frame(width: 42, alignment: .leading)
+
+            Slider(value: value, in: -10...10, step: 1) { editing in
+                if !editing {
+                    manager.setEQ(
+                        bass: Int(eqBass),
+                        mid: Int(eqMid),
+                        treble: Int(eqTreble)
+                    )
+                }
+            }
+            .accentColor(accentGreen)
+            .accessibilityLabel("\(label) equalizer")
+            .accessibilityValue("\(Int(value.wrappedValue))")
+
+            Text("\(Int(value.wrappedValue))")
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundColor(textPrimary)
+                .frame(width: 24, alignment: .trailing)
+        }
+    }
+
     // MARK: - Settings
 
     private var settingsSection: some View {
@@ -420,18 +500,6 @@ struct PopoverView: View {
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel("Wear detection: \(manager.onHead ? "on head" : "off head")")
 
-                    // EQ
-                    HStack {
-                        Text("EQ")
-                            .font(.system(size: 12))
-                            .foregroundColor(textSecondary)
-                        Spacer()
-                        Text("B:\(manager.eq.bass) M:\(manager.eq.mid) T:\(manager.eq.treble)")
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundColor(textPrimary)
-                    }
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Equalizer: bass \(manager.eq.bass), mid \(manager.eq.mid), treble \(manager.eq.treble)")
                 }
                 .padding(.top, 8)
             },

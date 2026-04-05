@@ -785,6 +785,42 @@ class BoseRFCOMM {
         }
     }
 
+    /// Set a single EQ band. Uses SET_GET operator (0x02).
+    /// Send: [0x01, 0x07, 0x02, 0x02, {value}, {band}]
+    /// band: 0=bass, 1=mid, 2=treble. value: signed byte -10 to +10.
+    func setEQBand(_ band: Int, value: Int) -> Bool {
+        guard band >= 0 && band <= 2 else { return false }
+        guard value >= -10 && value <= 10 else { return false }
+        let OP_SET_GET: UInt8 = 0x02
+        do {
+            return try withRFCOMM { channel in
+                let cmd: [UInt8] = [0x01, 0x07, OP_SET_GET, 0x02, UInt8(bitPattern: Int8(value)), UInt8(band)]
+                guard let resp = sendBMAP(channel, bytes: cmd) else { return false }
+                return resp.count >= 4 && resp[2] == OP_RESP
+            }
+        } catch {
+            return false
+        }
+    }
+
+    /// Set all three EQ bands in a single RFCOMM session.
+    func setEQ(bass: Int, mid: Int, treble: Int) -> Bool {
+        guard (-10...10).contains(bass), (-10...10).contains(mid), (-10...10).contains(treble) else { return false }
+        let OP_SET_GET: UInt8 = 0x02
+        do {
+            return try withRFCOMM { channel in
+                for (band, value) in [(0, bass), (1, mid), (2, treble)] {
+                    let cmd: [UInt8] = [0x01, 0x07, OP_SET_GET, 0x02, UInt8(bitPattern: Int8(value)), UInt8(band)]
+                    let resp = sendBMAP(channel, bytes: cmd)
+                    guard resp != nil && resp!.count >= 4 && resp![2] == OP_RESP else { return false }
+                }
+                return true
+            }
+        } catch {
+            return false
+        }
+    }
+
     // MARK: - Bulk State Query
 
     /// Complete headphone state snapshot, fetched in a single RFCOMM session.

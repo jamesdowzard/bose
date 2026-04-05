@@ -198,6 +198,11 @@ fun BoseApp(vm: BoseViewModel = viewModel()) {
                 VolumeSection(state, onSetVolume = { vm.setVolume(it) })
                 Spacer(modifier = Modifier.height(16.dp))
 
+                // 4.5. EQ section
+                SectionHeader("Equalizer")
+                EqSection(state, onSetEq = { b, m, t -> vm.setEq(b, m, t) })
+                Spacer(modifier = Modifier.height(16.dp))
+
                 // 5. Settings section (expandable)
                 ExpandableSection(
                     title = "Settings",
@@ -507,6 +512,112 @@ fun VolumeSection(
                 ),
             )
         }
+    }
+}
+
+// ======================================================================
+// 4.5. EQ section
+// ======================================================================
+
+data class EqPreset(val name: String, val bass: Int, val mid: Int, val treble: Int)
+
+private val EQ_PRESETS = listOf(
+    EqPreset("Flat", 0, 0, 0),
+    EqPreset("Bass+", 6, 0, -2),
+    EqPreset("Treble+", -2, 0, 6),
+    EqPreset("Vocal", -2, 4, 2),
+)
+
+@Composable
+fun EqSection(
+    state: BoseViewModel.UiState,
+    onSetEq: (Int, Int, Int) -> Unit,
+) {
+    var bass by remember(state.eqBass) { mutableStateOf(state.eqBass.toFloat()) }
+    var mid by remember(state.eqMid) { mutableStateOf(state.eqMid.toFloat()) }
+    var treble by remember(state.eqTreble) { mutableStateOf(state.eqTreble.toFloat()) }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = BoseCardBg,
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            // Presets
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                EQ_PRESETS.forEach { preset ->
+                    val selected = state.eqBass == preset.bass &&
+                        state.eqMid == preset.mid && state.eqTreble == preset.treble
+                    Surface(
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (selected) BoseGreen else Color(0xFF333333),
+                        onClick = {
+                            bass = preset.bass.toFloat()
+                            mid = preset.mid.toFloat()
+                            treble = preset.treble.toFloat()
+                            onSetEq(preset.bass, preset.mid, preset.treble)
+                        },
+                    ) {
+                        Text(
+                            preset.name,
+                            modifier = Modifier.padding(vertical = 8.dp),
+                            fontSize = 12.sp,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                            color = if (selected) Color.Black else BoseDim,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Sliders
+            EqBandSlider("Bass", bass, onValueChange = { bass = it },
+                onFinished = { onSetEq(bass.toInt(), mid.toInt(), treble.toInt()) })
+            EqBandSlider("Mid", mid, onValueChange = { mid = it },
+                onFinished = { onSetEq(bass.toInt(), mid.toInt(), treble.toInt()) })
+            EqBandSlider("Treble", treble, onValueChange = { treble = it },
+                onFinished = { onSetEq(bass.toInt(), mid.toInt(), treble.toInt()) })
+        }
+    }
+}
+
+@Composable
+private fun EqBandSlider(
+    label: String,
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    onFinished: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, fontSize = 12.sp, color = BoseDim, modifier = Modifier.width(48.dp))
+        Slider(
+            value = value,
+            onValueChange = onValueChange,
+            onValueChangeFinished = onFinished,
+            valueRange = -10f..10f,
+            steps = 19,
+            modifier = Modifier.weight(1f),
+            colors = SliderDefaults.colors(
+                thumbColor = BoseGreen,
+                activeTrackColor = BoseGreen,
+                inactiveTrackColor = Color(0xFF333333),
+            ),
+        )
+        Text(
+            "${value.toInt()}",
+            fontSize = 12.sp,
+            color = BoseText,
+            modifier = Modifier.width(28.dp),
+            textAlign = TextAlign.End,
+        )
     }
 }
 
