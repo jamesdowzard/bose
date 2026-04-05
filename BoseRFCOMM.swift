@@ -794,8 +794,8 @@ class BoseRFCOMM {
         var ancMode: Int = 0  // 0=quiet, 1=aware, 2=custom1, 3=custom2
         var volume: Int = 0
         var volumeMax: Int = 31
-        var connectedDevices: [[UInt8]] = []
-        var activeDevice: [UInt8]? = nil
+        var connectedDevices: [[UInt8]] = []   // audio-connected (from 05,01)
+        var aclConnectedDevices: [[UInt8]] = [] // BT-connected (from per-device 04,05)
         var firmware: String = ""
         var serialNumber: String = ""
         var productName: String = ""
@@ -857,10 +857,16 @@ class BoseRFCOMM {
                     }
                 }
 
-                // Active device
-                if let resp = sendBMAP(channel, bytes: [0x04, 0x09, OP_GET, 0x00]),
-                   resp.count >= 10, resp[2] == OP_RESP {
-                    state.activeDevice = Array(resp[4..<10])
+                // Per-device ACL connection status (04,05 per known device)
+                for (_, mac) in boseKnownDevices {
+                    let cmd: [UInt8] = [0x04, 0x05, OP_GET, 0x06] + mac
+                    if let resp = sendBMAP(channel, bytes: cmd, timeout: 2.0),
+                       resp.count >= 11, resp[2] == OP_RESP {
+                        let status = Int(resp[10])
+                        if (status & 0x01) != 0 {  // bit 0 = ACL connected
+                            state.aclConnectedDevices.append(mac)
+                        }
+                    }
                 }
 
                 // Firmware

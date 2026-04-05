@@ -89,16 +89,23 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
                         )
                     }
 
-                    // Connected devices (ground truth) + active device
-                    val connectedMacs = BoseProtocol.getConnectedDevices()
-                    val connectedNames = connectedMacs.map { BoseProtocol.nameForMac(it) }.toSet()
-                    val activeMac = BoseProtocol.getActiveDevice()
-                    val activeName = activeMac?.let { BoseProtocol.nameForMac(it) }
+                    // Audio-connected devices (05,01) = active (green)
+                    val audioMacs = BoseProtocol.getConnectedDevices()
+                    val audioNames = audioMacs.map { BoseProtocol.nameForMac(it) }.toSet()
+
+                    // Per-device ACL status (04,05) = connected (orange)
+                    val aclNames = mutableSetOf<String>()
+                    for ((name, mac) in BoseProtocol.DEVICES) {
+                        val info = BoseProtocol.getDeviceInfo(mac)
+                        if (info != null && info.connected) {
+                            aclNames.add(name)
+                        }
+                    }
 
                     val deviceStates = BoseProtocol.DEVICES.keys.associateWith { name ->
                         when {
-                            name == activeName -> DeviceState.ACTIVE
-                            connectedNames.contains(name) -> DeviceState.CONNECTED
+                            audioNames.contains(name) -> DeviceState.ACTIVE
+                            aclNames.contains(name) -> DeviceState.CONNECTED
                             else -> DeviceState.OFFLINE
                         }
                     }
