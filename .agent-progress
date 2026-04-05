@@ -1,0 +1,10 @@
+# Agent Progress - fix-hotkey
+# Format: KEY=VALUE, one per line. Agents append, last value wins.
+# Created: 2026-04-05T00:13:47Z
+
+feature=fix-hotkey
+name=fix Option+B hotkey — replace Carbon with NSEvent monitors
+status=pending
+step=0
+step_name=Not started
+created=2026-04-05T00:13:47Z

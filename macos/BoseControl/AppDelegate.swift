@@ -2,15 +2,15 @@
 
 import AppKit
 import SwiftUI
-import Carbon.HIToolbox
 
 class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
     private var manager: BoseManager!
-    private var eventMonitor: Any?
-    private var hotkeyRef: EventHotKeyRef?
+    private var clickMonitor: Any?
+    private var eventTapPort: CFMachPort?
+    private var eventTapSource: CFRunLoopSource?
 
     // MARK: - Lifecycle
 
@@ -36,11 +36,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             rootView: PopoverView(manager: manager)
         )
 
-        // --- Global hotkey: Option+B ---
-        registerHotkey()
+        // --- Global hotkey: Option+B via CGEventTap (needs Accessibility permission) ---
+        installEventTap()
 
         // --- Close popover on outside click ---
-        eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+        clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             self?.closePopover()
         }
 
@@ -57,10 +57,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         manager.stopPolling()
-        if let monitor = eventMonitor {
-            NSEvent.removeMonitor(monitor)
-        }
-        unregisterHotkey()
+        if let m = clickMonitor { NSEvent.removeMonitor(m) }
+        removeEventTap()
     }
 
     // MARK: - Status Item Display
@@ -107,48 +105,58 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
     }
 
-    // MARK: - Global Hotkey (Option+B)
+    // MARK: - Hotkey (CGEventTap — needs Accessibility, not Input Monitoring)
 
-    private func registerHotkey() {
-        let hotKeyID = EventHotKeyID(signature: OSType(0x424F5345), id: 1)  // "BOSE"
-        var ref: EventHotKeyRef?
+    private func installEventTap() {
+        let mask: CGEventMask = (1 << CGEventType.keyDown.rawValue)
 
-        // kVK_ANSI_B = 0x0B, optionKey = 0x0800
-        let status = RegisterEventHotKey(
-            UInt32(kVK_ANSI_B),
-            UInt32(optionKey),
-            hotKeyID,
-            GetApplicationEventTarget(),
-            0,
-            &ref
-        )
+        // Store self as unretained pointer for the C callback
+        let selfPtr = Unmanaged.passUnretained(self).toOpaque()
 
-        if status == noErr {
-            hotkeyRef = ref
+        guard let tap = CGEvent.tapCreate(
+            tap: .cgSessionEventTap,
+            place: .headInsertEventTap,
+            options: .listenOnly,
+            eventsOfInterest: mask,
+            callback: { (proxy, type, event, refcon) -> Unmanaged<CGEvent>? in
+                guard let refcon = refcon else { return Unmanaged.passUnretained(event) }
+                let delegate = Unmanaged<AppDelegate>.fromOpaque(refcon).takeUnretainedValue()
+
+                // keyCode 11 = B, Option flag = 0x80000 (NSEvent.ModifierFlags.option)
+                let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+                let flags = event.flags
+
+                if keyCode == 11
+                    && flags.contains(.maskAlternate)
+                    && !flags.contains(.maskCommand)
+                    && !flags.contains(.maskControl)
+                    && !flags.contains(.maskShift) {
+                    DispatchQueue.main.async {
+                        delegate.togglePopover()
+                    }
+                }
+
+                return Unmanaged.passUnretained(event)
+            },
+            userInfo: selfPtr
+        ) else {
+            NSLog("Bose Control: CGEventTap failed — check Accessibility permission")
+            return
         }
 
-        // Install Carbon event handler for hotkey
-        var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        InstallEventHandler(
-            GetApplicationEventTarget(),
-            { (_, event, userData) -> OSStatus in
-                guard let userData = userData else { return OSStatus(eventNotHandledErr) }
-                let delegate = Unmanaged<AppDelegate>.fromOpaque(userData).takeUnretainedValue()
-                DispatchQueue.main.async {
-                    delegate.togglePopover()
-                }
-                return noErr
-            },
-            1,
-            &eventType,
-            Unmanaged.passUnretained(self).toOpaque(),
-            nil
-        )
+        eventTapPort = tap
+        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+        eventTapSource = source
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        CGEvent.tapEnable(tap: tap, enable: true)
     }
 
-    private func unregisterHotkey() {
-        if let ref = hotkeyRef {
-            UnregisterEventHotKey(ref)
+    private func removeEventTap() {
+        if let source = eventTapSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
+        }
+        if let tap = eventTapPort {
+            CGEvent.tapEnable(tap: tap, enable: false)
         }
     }
 }
