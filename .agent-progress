@@ -1,10 +1,10 @@
-# Agent Progress - fix-device-states
+# Agent Progress - fix-device-detection
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-04-05T01:55:18Z
+# Created: 2026-04-05T02:11:12Z
 
-feature=fix-device-states
-name=Fix Android device state parsing offset
+feature=fix-device-detection
+name=Fix device detection to show all connected devices
 status=pending
 step=0
 step_name=Not started
-created=2026-04-05T01:55:18Z
+created=2026-04-05T02:11:12Z

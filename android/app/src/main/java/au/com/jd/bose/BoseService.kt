@@ -246,14 +246,21 @@ class BoseService : Service() {
                 return
             }
 
-            // Get connected devices (ground truth)
-            val connectedMacs = BoseProtocol.getConnectedDevices()
-            val connectedNames = connectedMacs.map { BoseProtocol.nameForMac(it) }
+            // Audio-connected devices (ground truth for active)
+            val audioMacs = BoseProtocol.getConnectedDevices()
+            val audioNames = audioMacs.map { BoseProtocol.nameForMac(it) }
+
+            // Per-device ACL status for all connected devices
+            val connectedNames = mutableListOf<String>()
+            for ((name, mac) in BoseProtocol.DEVICES) {
+                val info = BoseProtocol.getDeviceInfo(mac)
+                if (info != null && info.connected) connectedNames.add(name)
+            }
 
             // Battery
             val battery = BoseProtocol.getBattery()
 
-            val activeName = connectedNames.firstOrNull() ?: "none"
+            val activeName = audioNames.firstOrNull() ?: connectedNames.firstOrNull() ?: "none"
             updateNotification(buildString {
                 append("Active: $activeName")
                 battery?.let { append(" | ${it.level}%") }

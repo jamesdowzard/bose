@@ -347,24 +347,27 @@ object BoseProtocol {
     // Device info
     // ======================================================================
 
-    data class DeviceInfo(val status: Int, val name: String)
+    data class DeviceInfo(
+        val status: Int,
+        val name: String,
+        val connected: Boolean,  // bit 0 of status
+    )
 
-    /** GET device info. 04,05,01,06,{MAC} -> status + name */
+    /** GET device info. 04,05,01,06,{MAC} -> MAC at 4-9, status at 10, name from 13 */
     fun getDeviceInfo(mac: ByteArray): DeviceInfo? {
         val cmd = byteArrayOf(0x04, 0x05, OP_GET, 0x06) + mac
-        val resp = send(cmd) ?: return null
-        if (resp.size < 6 || resp[2] != OP_RESP) return null
+        val resp = send(cmd, timeoutMs = 2000) ?: return null
+        if (resp.size < 11 || resp[2] != OP_RESP) return null
 
-        val payloadLen = resp[3].toInt() and 0xFF
-        if (payloadLen < 1) return null
-
-        val status = resp[4].toInt() and 0xFF
-        val name = if (resp.size > 5) {
-            String(resp, 5, (resp.size - 5).coerceAtMost(payloadLen - 1), Charsets.UTF_8)
+        val status = resp[10].toInt() and 0xFF
+        val connected = (status and 0x01) != 0
+        val nameOffset = 13
+        val name = if (resp.size > nameOffset) {
+            String(resp, nameOffset, resp.size - nameOffset, Charsets.UTF_8)
                 .trim('\u0000')
         } else ""
 
-        return DeviceInfo(status, name)
+        return DeviceInfo(status, name, connected)
     }
 
     // ======================================================================

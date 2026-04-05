@@ -2,8 +2,8 @@
 # Max 20 lines. Updated by agent on Stop hook.
 
 ## Feature
-Fix Android device state parsing offset
-Fix Android device state parsing offset
+Fix device detection to show all connected devices
+Fix device detection to show all connected devices
 
 ## Current State
 Not started. No work has been done yet.

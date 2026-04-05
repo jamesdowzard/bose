@@ -229,23 +229,20 @@ class BoseManager: ObservableObject {
                     .map { String(format: "%02X", $0) }.joined(separator: " ")
             }
 
-            // Build device states from connected devices + active device
+            // Build device states: audio-connected = active, ACL-only = connected
             var newStates: [String: String] = [:]
             for key in self.deviceStates.keys {
                 newStates[key] = "offline"
             }
 
-            let connectedMacStrings = Set(s.connectedDevices.map {
-                bose.macToString($0)
-            })
-
-            let activeMacString = s.activeDevice.map { bose.macToString($0) }
+            let audioMacs = Set(s.connectedDevices.map { bose.macToString($0) })
+            let aclMacs = Set(s.aclConnectedDevices.map { bose.macToString($0) })
 
             for (name, mac) in boseKnownDevices {
                 let macStr = bose.macToString(mac)
-                if macStr == activeMacString {
+                if audioMacs.contains(macStr) {
                     newStates[name] = "active"
-                } else if connectedMacStrings.contains(macStr) {
+                } else if aclMacs.contains(macStr) {
                     newStates[name] = "connected"
                 } else {
                     newStates[name] = "offline"
