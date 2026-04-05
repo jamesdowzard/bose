@@ -2,6 +2,7 @@
 /// Dark theme, ~320px wide, sections: header, devices, ANC, volume, settings, info.
 
 import SwiftUI
+import Combine
 
 // MARK: - Color Constants
 
@@ -39,6 +40,7 @@ struct PopoverView: View {
     @State private var eqBass: Double = 0
     @State private var eqMid: Double = 0
     @State private var eqTreble: Double = 0
+    @State private var cncSliderValue: Double = 0
 
     var body: some View {
         ScrollView {
@@ -62,18 +64,10 @@ struct PopoverView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Bose")
         .accessibilityIdentifier("bose-control-popover")
-        .onAppear {
-            volumeSliderValue = Double(manager.volume)
-            eqBass = Double(manager.eq.bass)
-            eqMid = Double(manager.eq.mid)
-            eqTreble = Double(manager.eq.treble)
+        .onAppear { syncSliders() }
+        .onReceive(manager.objectWillChange) { _ in
+            DispatchQueue.main.async { syncSliders() }
         }
-        .onChange(of: manager.volume) { newValue in
-            volumeSliderValue = Double(newValue)
-        }
-        .onChange(of: manager.eq.bass) { eqBass = Double($0) }
-        .onChange(of: manager.eq.mid) { eqMid = Double($0) }
-        .onChange(of: manager.eq.treble) { eqTreble = Double($0) }
     }
 
     // MARK: - Header
@@ -478,9 +472,26 @@ struct PopoverView: View {
                     settingsRow("Auto-off", value: manager.autoOffTimer.isEmpty ? "-" : manager.autoOffTimer)
                         .accessibilityLabel("Auto-off timer: \(manager.autoOffTimer.isEmpty ? "not set" : manager.autoOffTimer)")
 
-                    // Immersion level
-                    settingsRow("Immersion", value: manager.immersionLevel.isEmpty ? "-" : manager.immersionLevel)
-                        .accessibilityLabel("Immersion level: \(manager.immersionLevel.isEmpty ? "not set" : manager.immersionLevel)")
+                    // CNC Level (custom ANC depth)
+                    HStack(spacing: 8) {
+                        Text("ANC Depth")
+                            .font(.system(size: 12))
+                            .foregroundColor(textSecondary)
+                            .frame(width: 65, alignment: .leading)
+
+                        Slider(value: $cncSliderValue, in: 0...10, step: 1) { editing in
+                            if !editing {
+                                manager.setCncLevel(Int(cncSliderValue))
+                            }
+                        }
+                        .accentColor(accentGreen)
+
+                        Text("\(Int(cncSliderValue))")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundColor(textPrimary)
+                            .frame(width: 20, alignment: .trailing)
+                    }
+                    .accessibilityLabel("ANC depth: \(Int(cncSliderValue))")
 
                     // Wear detection
                     HStack {
@@ -546,6 +557,14 @@ struct PopoverView: View {
     }
 
     // MARK: - Helpers
+
+    private func syncSliders() {
+        volumeSliderValue = Double(manager.volume)
+        eqBass = Double(manager.eq.bass)
+        eqMid = Double(manager.eq.mid)
+        eqTreble = Double(manager.eq.treble)
+        cncSliderValue = Double(manager.cncLevel)
+    }
 
     private func sectionLabel(_ text: String) -> some View {
         Text(text)

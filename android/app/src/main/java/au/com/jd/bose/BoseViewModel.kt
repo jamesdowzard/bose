@@ -35,6 +35,7 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
 
         // Settings
         val multipointEnabled: Boolean = false,
+        val cncLevel: Int = 0,
         val autoOffTimer: String = "",
         val immersionLevel: ByteArray? = null,
         val wearDetected: Boolean = false,
@@ -124,6 +125,11 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
                     // Multipoint
                     BoseProtocol.getMultipoint()?.let { mp ->
                         _state.value = _state.value.copy(multipointEnabled = mp)
+                    }
+
+                    // CNC Level
+                    BoseProtocol.getCncLevel()?.let { level ->
+                        _state.value = _state.value.copy(cncLevel = level)
                     }
 
                     // Auto-off
@@ -283,6 +289,21 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 _state.value = _state.value.copy(
                     error = "Failed to set EQ: ${e.message}",
+                )
+            }
+        }
+    }
+
+    fun setCncLevel(level: Int) {
+        viewModelScope.launch {
+            try {
+                BoseProtocol.withConnection {
+                    BoseProtocol.setCncLevel(level)
+                }
+                _state.value = _state.value.copy(cncLevel = level)
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(
+                    error = "Failed to set ANC depth: ${e.message}",
                 )
             }
         }

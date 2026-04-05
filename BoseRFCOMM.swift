@@ -746,6 +746,50 @@ class BoseRFCOMM {
         }
     }
 
+    // MARK: - CNC Level (AudioModes SettingsConfig)
+
+    /// Get AudioModes SettingsConfig: cncLevel, autoCNC, spatial, windBlock, ancToggle.
+    /// Send: [0x1F, 0x0A, 0x01, 0x00]
+    /// Response payload: 5 bytes [cncLevel, autoCNC, spatial, windBlock, ancToggle]
+    func getCncLevel() -> Int? {
+        do {
+            return try withRFCOMM { channel in
+                guard let resp = sendBMAP(channel, bytes: [0x1F, 0x0A, OP_GET, 0x00]) else {
+                    return nil
+                }
+                guard resp.count >= 5, resp[2] == OP_RESP else { return nil }
+                return Int(resp[4])
+            }
+        } catch {
+            return nil
+        }
+    }
+
+    /// Set CNC level (custom ANC depth). Preserves other SettingsConfig fields.
+    /// Send: [0x1F, 0x0A, 0x02, 0x05, {cncLevel}, {autoCNC}, {spatial}, {windBlock}, {ancToggle}]
+    func setCncLevel(_ level: Int) -> Bool {
+        guard level >= 0 && level <= 10 else { return false }
+        let OP_SET_GET: UInt8 = 0x02
+        do {
+            return try withRFCOMM { channel in
+                // Read current config first to preserve other fields
+                guard let current = sendBMAP(channel, bytes: [0x1F, 0x0A, OP_GET, 0x00]),
+                      current.count >= 9, current[2] == OP_RESP else { return false }
+                let autoCnc = current[5]
+                let spatial = current[6]
+                let windBlock = current[7]
+                let ancToggle = current[8]
+
+                let cmd: [UInt8] = [0x1F, 0x0A, OP_SET_GET, 0x05,
+                    UInt8(level), autoCnc, spatial, windBlock, ancToggle]
+                guard let resp = sendBMAP(channel, bytes: cmd) else { return false }
+                return resp.count >= 4 && resp[2] == OP_RESP
+            }
+        } catch {
+            return false
+        }
+    }
+
     // MARK: - Sensors
 
     /// Get wear state.

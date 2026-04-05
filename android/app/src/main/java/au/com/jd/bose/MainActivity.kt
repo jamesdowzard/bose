@@ -213,6 +213,7 @@ fun BoseApp(vm: BoseViewModel = viewModel()) {
                         state = state,
                         onSetName = { vm.setDeviceName(it) },
                         onSetMultipoint = { vm.setMultipoint(it) },
+                        onSetCncLevel = { vm.setCncLevel(it) },
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
@@ -672,6 +673,7 @@ fun SettingsSection(
     state: BoseViewModel.UiState,
     onSetName: (String) -> Unit,
     onSetMultipoint: (Boolean) -> Unit,
+    onSetCncLevel: (Int) -> Unit = {},
 ) {
     // Device name
     var editingName by remember { mutableStateOf(false) }
@@ -728,6 +730,34 @@ fun SettingsSection(
                 uncheckedThumbColor = BoseDim,
                 uncheckedTrackColor = Color(0xFF333333),
             ),
+        )
+    }
+
+    Spacer(modifier = Modifier.height(12.dp))
+
+    // CNC Level (custom ANC depth)
+    var cncValue by remember(state.cncLevel) { mutableStateOf(state.cncLevel.toFloat()) }
+    SettingRow("ANC Depth") {
+        Slider(
+            value = cncValue,
+            onValueChange = { cncValue = it },
+            onValueChangeFinished = { onSetCncLevel(cncValue.toInt()) },
+            valueRange = 0f..10f,
+            steps = 9,
+            modifier = Modifier.weight(1f),
+            colors = SliderDefaults.colors(
+                thumbColor = BoseGreen,
+                activeTrackColor = BoseGreen,
+                inactiveTrackColor = Color(0xFF333333),
+            ),
+        )
+        Text(
+            "${cncValue.toInt()}",
+            fontSize = 14.sp,
+            color = BoseGreen,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.width(28.dp),
+            textAlign = TextAlign.End,
         )
     }
 

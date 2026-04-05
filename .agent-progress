@@ -1,10 +1,10 @@
-# Agent Progress - doc-full-mapping
+# Agent Progress - cnc-level
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-04-05T04:03:12Z
+# Created: 2026-04-05T04:28:38Z
 
-feature=doc-full-mapping
-name=Document complete BMAP mapping with AudioModes
+feature=cnc-level
+name=Add CNC level control to both apps
 status=pending
 step=0
 step_name=Not started
-created=2026-04-05T04:03:12Z
+created=2026-04-05T04:28:38Z

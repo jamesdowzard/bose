@@ -567,6 +567,33 @@ object BoseProtocol {
     // Immersion level
     // ======================================================================
 
+    // ======================================================================
+    // CNC Level (AudioModes SettingsConfig 1F,0A)
+    // ======================================================================
+
+    /** GET CNC level (custom ANC depth). 1F,0A,01,00 -> 5-byte payload */
+    fun getCncLevel(): Int? {
+        val resp = send(byteArrayOf(0x1F, 0x0A, OP_GET, 0x00)) ?: return null
+        if (resp.size < 5 || resp[2] != OP_RESP) return null
+        return resp[4].toInt() and 0xFF
+    }
+
+    /** SET CNC level. Reads current config, changes cncLevel, preserves other fields. */
+    fun setCncLevel(level: Int): Boolean {
+        if (level !in 0..10) return false
+        // Read current to preserve other fields
+        val current = send(byteArrayOf(0x1F, 0x0A, OP_GET, 0x00)) ?: return false
+        if (current.size < 9 || current[2] != OP_RESP) return false
+        val cmd = byteArrayOf(0x1F, 0x0A, OP_SET_GET, 0x05,
+            level.toByte(), current[5], current[6], current[7], current[8])
+        val resp = send(cmd) ?: return false
+        return resp.size >= 4 && resp[2] == OP_RESP
+    }
+
+    // ======================================================================
+    // Immersion (Settings block)
+    // ======================================================================
+
     /** GET immersion level. 01,09,01,00 -> 7 bytes */
     fun getImmersionLevel(): ByteArray? {
         val resp = send(byteArrayOf(0x01, 0x09, OP_GET, 0x00)) ?: return null
