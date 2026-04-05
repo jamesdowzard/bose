@@ -67,12 +67,73 @@ cd macos && ./build.sh
 | PairingMode | 0x08 | |
 | ActiveDevice | 0x09 | Returns querying device, not necessarily streaming device |
 
-## Other Commands
+## Transport: RFCOMM vs BLE GATT (verified 2026-04-05)
 
-- Battery: `02,02,01,00` → level 0-100, charging flag
-- ANC: `1F,03` — GET/SET modes (Quiet=0, Aware=1, Custom=2,3)
-- Firmware: `00,05,01,00`
-- Product name: `00,0F,01,00`
+The QC Ultra 2 uses TWO Bluetooth transports. Most settings can be READ over
+RFCOMM, but some can only be WRITTEN over BLE GATT. This is a firmware design
+choice — not a bug.
+
+### RFCOMM (Bluetooth Classic SPP) — what we use now
+
+On-demand connections via `withRFCOMM`/`withConnection`. Opens socket, sends
+BMAP bytes, reads response, closes. ~200-300ms per session.
+
+**GET works for everything** — all blocks/functions below return valid data over RFCOMM.
+
+**SET works for these (ACK/RESP confirmed):**
+
+| Setting | Block,Func | SET bytes | Notes |
+|---------|-----------|-----------|-------|
+| ANC mode | 1F,03 | `1F,03,05,02,{mode},01` | 0=quiet 1=aware 2=custom1 3=custom2 |
+| Volume | 05,05 | `05,05,06,01,{level}` | 0-31 |
+| Device name | 01,02 | `01,02,06,{len},00,{utf8}` | max 30 chars |
+| Multipoint | 01,0A | `01,0A,06,01,{07/00}` | 07=on, 00=off |
+| Connect device | 04,01 | `04,01,05,07,00,{MAC}` | Also routes audio |
+| Disconnect | 04,02 | `04,02,05,06,{MAC}` | |
+| Media control | 05,03 | `05,03,05,01,{action}` | 01=play 02=pause 03=next 04=prev |
+
+**SET returns ERROR (0x04) — requires BLE GATT instead:**
+
+| Setting | Block,Func | Error response | Notes |
+|---------|-----------|----------------|-------|
+| EQ (bass/mid/treble) | 01,07 | `00,00,04,01,05,10,00,04,01,03` | 3-band, range -10 to +10 |
+| Immersion level | 01,09 | `01,09,04,01,05` | Custom ANC depth |
+| Auto-off timer | 01,0B | `01,0B,04,01,05` | Minutes until auto-off |
+
+### BLE GATT — not yet implemented
+
+GATT services discovered on headphones (BLE scan 2026-04-05):
+
+| Service UUID | Type | Notes |
+|-------------|------|-------|
+| FEBE | Bose proprietary | No characteristics enumerated |
+| FE2C | Bose proprietary | No characteristics enumerated |
+| Battery | Standard + Bose | Contains FE2C12XX writable chars |
+
+Writable characteristics found under Battery service:
+
+| Characteristic UUID | Properties |
+|--------------------|-----------|
+| D417C028-9818-4354-99D1-2AC09D074591 | Read, Write, WriteNoResp, Notify |
+| C65B8F2F-AEE2-4C89-B758-BC4892D6F2D8 | Read, Write, WriteNoResp, Notify |
+| FE2C1234-8366-4814-8EB0-01DE32100BEA | Write, Indicate |
+| FE2C1235-8366-4814-8EB0-01DE32100BEA | Write, Indicate |
+| FE2C1236-8366-4814-8EB0-01DE32100BEA | Write |
+| FE2C1237-8366-4814-8EB0-01DE32100BEA | Write, Indicate |
+| FE2C1238-8366-4814-8EB0-01DE32100BEA | Read, Write, Notify |
+
+The FE2C12XX Write+Indicate characteristics are likely BMAP-over-BLE command
+channels (write command, receive response via indication). Not yet tested.
+
+To implement: CoreBluetooth (Mac), BluetoothGatt (Android). Write BMAP EQ/immersion
+SET bytes to the writable characteristics and check which one responds.
+
+### ActiveDevice (04,09) is UNRELIABLE
+
+`04,09` always returns the querying device's own MAC, not the actual audio source.
+Do NOT use it for determining which device is streaming. Instead:
+- `05,01` (getConnectedDevices) = audio-connected devices → show as "active" (green)
+- `04,05` (getDeviceInfo per device) = ACL-connected → show as "connected" (orange)
 
 ## Rules
 

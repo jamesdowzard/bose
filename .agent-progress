@@ -1,10 +1,10 @@
-# Agent Progress - app-rename-and-eq
+# Agent Progress - doc-transport
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-04-05T02:26:57Z
+# Created: 2026-04-05T02:42:28Z
 
-feature=app-rename-and-eq
-name=Rename to Bose, add EQ and custom level controls
+feature=doc-transport
+name=Document verified RFCOMM vs BLE GATT transport
 status=pending
 step=0
 step_name=Not started
-created=2026-04-05T02:26:57Z
+created=2026-04-05T02:42:28Z
