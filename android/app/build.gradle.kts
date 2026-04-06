@@ -5,12 +5,12 @@ plugins {
 
 android {
     namespace = "au.com.jd.bose"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "au.com.jd.bose"
         minSdk = 31
-        targetSdk = 34
+        targetSdk = 35
         versionCode = 2
         versionName = "2.0"
     }

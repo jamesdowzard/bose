@@ -11,7 +11,7 @@ import android.util.Log
 import android.widget.RemoteViews
 
 /**
- * Home screen widget (5x1) showing device buttons with connection state.
+ * Home screen widget showing device buttons with connection state.
  *
  * States:
  * - Green (#00FF88) = active (audio routed here)
@@ -19,7 +19,9 @@ import android.widget.RemoteViews
  * - Grey (#666666) = offline/not connected
  *
  * Shows battery percentage overlay.
- * Tapping any device sends CONNECT command via BoseService.
+ * Tapping a device sends CONNECT command directly to BoseService
+ * via PendingIntent.getForegroundService (companion device grants
+ * background FGS start privileges).
  */
 class BoseWidgetProvider : AppWidgetProvider() {
 
@@ -31,18 +33,13 @@ class BoseWidgetProvider : AppWidgetProvider() {
         private const val COLOR_ACTIVE_BG = 0xFF002211.toInt()
         private const val COLOR_CONNECTED_BG = 0xFF1A1500.toInt()
         private const val COLOR_OFFLINE_BG = 0xFF222222.toInt()
-        private const val ACTION_WIDGET_CLICK = "au.com.jd.bose.WIDGET_CLICK"
         private const val PREFS_NAME = "bose_ctl"
 
-        /**
-         * Update all widget instances with current device states.
-         */
         fun updateAll(context: Context, activeDevice: String?, connectedDevices: Set<String> = emptySet()) {
             val manager = AppWidgetManager.getInstance(context)
             val component = ComponentName(context, BoseWidgetProvider::class.java)
             val ids = manager.getAppWidgetIds(component)
 
-            // Save state
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
                 .putString("active_device", activeDevice)
                 .putStringSet("connected_devices", connectedDevices)
@@ -67,10 +64,9 @@ class BoseWidgetProvider : AppWidgetProvider() {
                 "mac" to R.id.btn_mac,
                 "ipad" to R.id.btn_ipad,
                 "iphone" to R.id.btn_iphone,
-                "tv" to R.id.btn_tv,
+                "quest" to R.id.btn_quest,
             )
 
-            // Battery overlay
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val batteryLevel = prefs.getInt("battery_level", -1)
 
@@ -92,19 +88,18 @@ class BoseWidgetProvider : AppWidgetProvider() {
                 views.setTextColor(viewId, textColor)
                 views.setInt(viewId, "setBackgroundColor", bgColor)
 
-                // Click intent
-                val intent = Intent(context, BoseWidgetProvider::class.java).apply {
-                    action = ACTION_WIDGET_CLICK
-                    putExtra("device_name", name)
+                // Send directly to service — companion device grants FGS privileges
+                val intent = Intent(context, BoseService::class.java).apply {
+                    action = BoseService.ACTION_CONNECT_DEVICE
+                    putExtra(BoseService.EXTRA_DEVICE_NAME, name)
                 }
-                val pi = PendingIntent.getBroadcast(
+                val pi = PendingIntent.getForegroundService(
                     context, viewId, intent,
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
                 )
                 views.setOnClickPendingIntent(viewId, pi)
             }
 
-            // Battery text
             if (batteryLevel >= 0) {
                 views.setTextViewText(R.id.txt_battery, "${batteryLevel}%")
                 views.setTextColor(R.id.txt_battery, when {
@@ -127,53 +122,14 @@ class BoseWidgetProvider : AppWidgetProvider() {
             updateWidget(context, manager, id, activeDevice, connectedDevices)
         }
 
-        // Request fresh status
-        val intent = Intent(context, BoseService::class.java).apply {
-            action = BoseService.ACTION_REFRESH
-        }
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            context.startForegroundService(intent)
-        } else {
-            context.startService(intent)
-        }
-    }
-
-    override fun onReceive(context: Context, intent: Intent) {
-        super.onReceive(context, intent)
-
-        when (intent.action) {
-            ACTION_WIDGET_CLICK -> {
-                val deviceName = intent.getStringExtra("device_name") ?: return
-                Log.i(TAG, "Widget click: $deviceName")
-
-                val serviceIntent = Intent(context, BoseService::class.java).apply {
-                    action = BoseService.ACTION_CONNECT_DEVICE
-                    putExtra(BoseService.EXTRA_DEVICE_NAME, deviceName)
-                }
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                    context.startForegroundService(serviceIntent)
-                } else {
-                    context.startService(serviceIntent)
-                }
+        // Refresh status from headphones
+        try {
+            val refreshIntent = Intent(context, BoseService::class.java).apply {
+                action = BoseService.ACTION_REFRESH
             }
-            BoseService.BROADCAST_STATUS -> {
-                val success = intent.getBooleanExtra(BoseService.EXTRA_SUCCESS, false)
-                if (success) {
-                    val activeDevice = intent.getStringExtra(BoseService.EXTRA_ACTIVE_DEVICE)
-                    val connectedArr = intent.getStringArrayExtra(BoseService.EXTRA_CONNECTED_DEVICES)
-                    val connectedDevices = connectedArr?.toSet() ?: emptySet()
-                    val batteryLevel = intent.getIntExtra(BoseService.EXTRA_BATTERY_LEVEL, -1)
-
-                    // Save battery for widget
-                    if (batteryLevel >= 0) {
-                        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
-                            .putInt("battery_level", batteryLevel)
-                            .apply()
-                    }
-
-                    updateAll(context, activeDevice, connectedDevices)
-                }
-            }
+            context.startForegroundService(refreshIntent)
+        } catch (e: Exception) {
+            Log.w(TAG, "Cannot start service for refresh: ${e.message}")
         }
     }
 }

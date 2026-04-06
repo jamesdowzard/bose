@@ -14,20 +14,24 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.media.AudioManager
 import android.os.Binder
-import android.os.Build
 import android.os.IBinder
 import android.util.Log
+import android.view.KeyEvent
 import java.util.concurrent.Executors
 
 /**
  * Foreground service for managing Bose RFCOMM connection.
  *
+ * Registered as companion device — has background FGS start privileges.
+ *
  * Features:
  * - Handles connecting, querying, and switching devices off the main thread
  * - A2DP auto-accept: when Bose headphones connect (incoming ACL),
  *   triggers BluetoothA2dp.connect() as insurance for Samsung devices
- * - Broadcasts state changes to UI + widget
+ * - Media playback nudge to force audio stream handover
+ * - Broadcasts state changes to UI, updates widget directly
  */
 class BoseService : Service() {
 
@@ -82,22 +86,19 @@ class BoseService : Service() {
     }
 
     // ======================================================================
-    // Notification channel + foreground notification
+    // Notification
     // ======================================================================
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Bose Controller",
-                NotificationManager.IMPORTANCE_LOW,
-            ).apply {
-                description = "Bose QC Ultra controller service"
-                setShowBadge(false)
-            }
-            val nm = getSystemService(NotificationManager::class.java)
-            nm.createNotificationChannel(channel)
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            "Bose Controller",
+            NotificationManager.IMPORTANCE_LOW,
+        ).apply {
+            description = "Bose QC Ultra controller service"
+            setShowBadge(false)
         }
+        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
     private fun buildNotification(text: String): Notification {
@@ -106,30 +107,18 @@ class BoseService : Service() {
             this, 0, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Notification.Builder(this, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_headphones)
-                .setContentTitle("Bose")
-                .setContentText(text)
-                .setContentIntent(pi)
-                .setOngoing(true)
-                .build()
-        } else {
-            @Suppress("DEPRECATION")
-            Notification.Builder(this)
-                .setSmallIcon(R.drawable.ic_headphones)
-                .setContentTitle("Bose")
-                .setContentText(text)
-                .setContentIntent(pi)
-                .setOngoing(true)
-                .build()
-        }
+        return Notification.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_headphones)
+            .setContentTitle("Bose")
+            .setContentText(text)
+            .setContentIntent(pi)
+            .setOngoing(true)
+            .build()
     }
 
     private fun updateNotification(text: String) {
-        val nm = getSystemService(NotificationManager::class.java)
-        nm.notify(NOTIFICATION_ID, buildNotification(text))
+        getSystemService(NotificationManager::class.java)
+            .notify(NOTIFICATION_ID, buildNotification(text))
     }
 
     // ======================================================================
@@ -141,12 +130,9 @@ class BoseService : Service() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action != BluetoothDevice.ACTION_ACL_CONNECTED) return
 
-            val device = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
-            } else {
-                @Suppress("DEPRECATION")
-                intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
-            } ?: return
+            val device = intent.getParcelableExtra(
+                BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java
+            ) ?: return
 
             if (device.address != BoseProtocol.BOSE_MAC) return
 
@@ -155,14 +141,9 @@ class BoseService : Service() {
         }
     }
 
-    @SuppressLint("UnspecifiedRegisterReceiverFlag")
     private fun registerA2dpReceiver() {
         val filter = IntentFilter(BluetoothDevice.ACTION_ACL_CONNECTED)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(aclReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(aclReceiver, filter)
-        }
+        registerReceiver(aclReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
     }
 
     @SuppressLint("MissingPermission")
@@ -190,13 +171,35 @@ class BoseService : Service() {
             return
         }
         try {
-            // Use reflection to call connect() -- not in public API
             val method = BluetoothA2dp::class.java.getMethod("connect", BluetoothDevice::class.java)
             val result = method.invoke(proxy, device) as Boolean
             Log.i(TAG, "A2DP connect result: $result")
         } catch (e: Exception) {
             Log.w(TAG, "A2DP connect failed: ${e.message}")
         }
+    }
+
+    // ======================================================================
+    // Media playback nudge
+    // ======================================================================
+
+    /**
+     * Send pause then play to force active media apps to re-route audio
+     * through the new Bluetooth output. Without this, apps like Spotify
+     * keep streaming to the old sink even after A2DP connects.
+     */
+    private fun nudgeMediaPlayback() {
+        val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        if (!am.isMusicActive) {
+            Log.d(TAG, "No active music, skipping playback nudge")
+            return
+        }
+        Log.i(TAG, "Nudging media playback for audio handover")
+        am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PAUSE))
+        am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PAUSE))
+        Thread.sleep(300)
+        am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY))
+        am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY))
     }
 
     // ======================================================================
@@ -209,7 +212,15 @@ class BoseService : Service() {
         return BoseProtocol.connect()
     }
 
+    @SuppressLint("MissingPermission")
     private fun switchDevice(deviceName: String) {
+        // Skip if already the active device
+        val prefs = getSharedPreferences("bose_ctl", Context.MODE_PRIVATE)
+        if (prefs.getString("active_device", null) == deviceName) {
+            Log.d(TAG, "Already active on $deviceName, skipping")
+            return
+        }
+
         try {
             if (!ensureConnected()) {
                 broadcastError("Cannot connect to headphones")
@@ -227,6 +238,25 @@ class BoseService : Service() {
 
             if (success) {
                 updateNotification("Active: $deviceName")
+
+                // When switching to the local device (phone), proactively initiate
+                // A2DP from this side. The BMAP command tells the headphones to
+                // route audio here, but Samsung needs the phone to also connect A2DP.
+                // Note: don't connect HFP here — SCO blocks A2DP streaming.
+                // HFP connects automatically when a phone call arrives.
+                if (deviceName == "phone") {
+                    val adapter = BluetoothAdapter.getDefaultAdapter()
+                    val boseDevice = adapter?.getRemoteDevice(BoseProtocol.BOSE_MAC)
+                    if (boseDevice != null) {
+                        Log.i(TAG, "Proactively connecting A2DP for local device")
+                        ensureA2dp(boseDevice)
+                    }
+
+                    Thread.sleep(500)
+                    nudgeMediaPlayback()
+                }
+
+                BoseWidgetProvider.updateAll(this, deviceName, setOf(deviceName))
                 broadcastStatus(deviceName, true)
             } else {
                 broadcastError("Failed to switch to $deviceName")
@@ -246,18 +276,15 @@ class BoseService : Service() {
                 return
             }
 
-            // Audio-connected devices (ground truth for active)
             val audioMacs = BoseProtocol.getConnectedDevices()
             val audioNames = audioMacs.map { BoseProtocol.nameForMac(it) }
 
-            // Per-device ACL status for all connected devices
             val connectedNames = mutableListOf<String>()
             for ((name, mac) in BoseProtocol.DEVICES) {
                 val info = BoseProtocol.getDeviceInfo(mac)
                 if (info != null && info.connected) connectedNames.add(name)
             }
 
-            // Battery
             val battery = BoseProtocol.getBattery()
 
             val activeName = audioNames.firstOrNull() ?: connectedNames.firstOrNull() ?: "none"
@@ -308,8 +335,6 @@ class BoseService : Service() {
             putExtra(EXTRA_SUCCESS, true)
         }
         sendBroadcast(intent)
-
-        // Update widget
         BoseWidgetProvider.updateAll(this, activeDevice, connectedDevices.toSet())
     }
 
