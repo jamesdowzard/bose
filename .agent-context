@@ -2,8 +2,8 @@
 # Max 20 lines. Updated by agent on Stop hook.
 
 ## Feature
-Fix audit findings — correctness, dead code, refactoring, docs
-Fix audit findings — correctness, dead code, refactoring, docs
+Extract Swift helpers, fix CLI EQ, deduplicate runBlueutil
+Extract Swift helpers, fix CLI EQ, deduplicate runBlueutil
 
 ## Current State
 Not started. No work has been done yet.

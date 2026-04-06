@@ -1,10 +1,10 @@
-# Agent Progress - audit-remediation
+# Agent Progress - mac-cleanup
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-04-06T02:54:38Z
+# Created: 2026-04-06T03:12:12Z
 
-feature=audit-remediation
-name=Fix audit findings — correctness, dead code, refactoring, docs
+feature=mac-cleanup
+name=Extract Swift helpers, fix CLI EQ, deduplicate runBlueutil
 status=pending
 step=0
 step_name=Not started
-created=2026-04-06T02:54:38Z
+created=2026-04-06T03:12:12Z

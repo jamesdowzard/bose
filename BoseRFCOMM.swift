@@ -24,6 +24,29 @@ let OP_SET:   UInt8 = 0x06  // Also RESULT
 let OP_SET_GET: UInt8 = 0x02
 let OP_ACK:   UInt8 = 0x07
 
+// MARK: - Blueutil Helper
+
+/// Run blueutil CLI (macOS Bluetooth utility). Used for A2DP connect/disconnect
+/// which IOBluetooth doesn't expose directly.
+@discardableResult
+func runBlueutil(_ args: [String], path: String = "/opt/homebrew/bin/blueutil") -> (Int32, String) {
+    let proc = Process()
+    proc.executableURL = URL(fileURLWithPath: path)
+    proc.arguments = args
+    let pipe = Pipe()
+    proc.standardOutput = pipe
+    proc.standardError = pipe
+    do {
+        try proc.run()
+        proc.waitUntilExit()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return (proc.terminationStatus, output)
+    } catch {
+        return (1, "")
+    }
+}
+
 // MARK: - Data Types
 
 struct DeviceInfo {
@@ -452,21 +475,23 @@ class BoseRFCOMM {
 
     /// Get firmware version string.
     /// Send: [0x00, 0x05, 0x01, 0x00]
-    func getFirmware() -> String? {
+    /// Send a GET query and parse the response as a UTF-8 string (payload from byte 4).
+    private func getStringField(block: UInt8, func fn: UInt8, payloadOffset: Int = 4) -> String? {
         do {
             return try withRFCOMM { channel in
-                guard let resp = sendBMAP(channel, bytes: [0x00, 0x05, OP_GET, 0x00]) else {
+                guard let resp = sendBMAP(channel, bytes: [block, fn, OP_GET, 0x00]) else {
                     return nil
                 }
-                guard resp.count >= 5, resp[2] == OP_RESP else { return nil }
-                let fwBytes = Array(resp[4...])
-                return String(bytes: fwBytes, encoding: .utf8)?
+                guard resp.count > payloadOffset, resp[2] == OP_RESP else { return nil }
+                return String(bytes: Array(resp[payloadOffset...]), encoding: .utf8)?
                     .trimmingCharacters(in: CharacterSet(charactersIn: "\0"))
             }
         } catch {
             return nil
         }
     }
+
+    func getFirmware() -> String? { getStringField(block: 0x00, func: 0x05) }
 
     // MARK: - Volume & Media
 
@@ -569,94 +594,15 @@ class BoseRFCOMM {
 
     // MARK: - Device Info Strings
 
-    /// Get serial number string.
-    /// Send: [0x00, 0x07, 0x01, 0x00]
-    func getSerialNumber() -> String? {
-        do {
-            return try withRFCOMM { channel in
-                guard let resp = sendBMAP(channel, bytes: [0x00, 0x07, OP_GET, 0x00]) else {
-                    return nil
-                }
-                guard resp.count >= 5, resp[2] == OP_RESP else { return nil }
-                return String(bytes: Array(resp[4...]), encoding: .utf8)?
-                    .trimmingCharacters(in: CharacterSet(charactersIn: "\0"))
-            }
-        } catch {
-            return nil
-        }
-    }
-
-    /// Get product name string.
-    /// Send: [0x00, 0x0F, 0x01, 0x00]
-    func getProductName() -> String? {
-        do {
-            return try withRFCOMM { channel in
-                guard let resp = sendBMAP(channel, bytes: [0x00, 0x0F, OP_GET, 0x00]) else {
-                    return nil
-                }
-                guard resp.count >= 5, resp[2] == OP_RESP else { return nil }
-                return String(bytes: Array(resp[4...]), encoding: .utf8)?
-                    .trimmingCharacters(in: CharacterSet(charactersIn: "\0"))
-            }
-        } catch {
-            return nil
-        }
-    }
-
-    /// Get platform string (e.g. "OTG-QCC-384").
-    /// Send: [0x12, 0x0D, 0x01, 0x00]
-    func getPlatform() -> String? {
-        do {
-            return try withRFCOMM { channel in
-                guard let resp = sendBMAP(channel, bytes: [0x12, 0x0D, OP_GET, 0x00]) else {
-                    return nil
-                }
-                guard resp.count >= 5, resp[2] == OP_RESP else { return nil }
-                return String(bytes: Array(resp[4...]), encoding: .utf8)?
-                    .trimmingCharacters(in: CharacterSet(charactersIn: "\0"))
-            }
-        } catch {
-            return nil
-        }
-    }
-
-    /// Get codename string (e.g. "wolverine").
-    /// Send: [0x12, 0x0C, 0x01, 0x00]
-    func getCodename() -> String? {
-        do {
-            return try withRFCOMM { channel in
-                guard let resp = sendBMAP(channel, bytes: [0x12, 0x0C, OP_GET, 0x00]) else {
-                    return nil
-                }
-                guard resp.count >= 5, resp[2] == OP_RESP else { return nil }
-                return String(bytes: Array(resp[4...]), encoding: .utf8)?
-                    .trimmingCharacters(in: CharacterSet(charactersIn: "\0"))
-            }
-        } catch {
-            return nil
-        }
-    }
+    func getSerialNumber() -> String? { getStringField(block: 0x00, func: 0x07) }
+    func getProductName()  -> String? { getStringField(block: 0x00, func: 0x0F) }
+    func getPlatform()     -> String? { getStringField(block: 0x12, func: 0x0D) }
+    func getCodename()     -> String? { getStringField(block: 0x12, func: 0x0C) }
 
     // MARK: - Device Settings
 
-    /// Get device name (user-configurable name).
-    /// Send: [0x01, 0x02, 0x01, 0x00]
-    /// Response: 0x00 prefix + UTF-8 name bytes
-    func getDeviceName() -> String? {
-        do {
-            return try withRFCOMM { channel in
-                guard let resp = sendBMAP(channel, bytes: [0x01, 0x02, OP_GET, 0x00]) else {
-                    return nil
-                }
-                guard resp.count >= 6, resp[2] == OP_RESP else { return nil }
-                // Skip byte 4 (0x00 prefix) and read name from byte 5 onward
-                return String(bytes: Array(resp[5...]), encoding: .utf8)?
-                    .trimmingCharacters(in: CharacterSet(charactersIn: "\0"))
-            }
-        } catch {
-            return nil
-        }
-    }
+    /// Device name has a 0x00 prefix at byte 4, so name starts at byte 5.
+    func getDeviceName() -> String? { getStringField(block: 0x01, func: 0x02, payloadOffset: 5) }
 
     /// Set device name.
     /// Send: [0x01, 0x02, 0x06, len, 0x00, name_bytes...]

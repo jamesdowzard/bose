@@ -7,27 +7,6 @@ let bose = BoseRFCOMM()
 
 let MAC_BOSE = "E4:58:BC:C0:2F:72"
 
-// === Blueutil (Mac BT audio profile) ===
-
-@discardableResult
-func runBlueutil(_ args: [String]) -> (Int32, String) {
-    let proc = Process()
-    proc.executableURL = URL(fileURLWithPath: "/opt/homebrew/bin/blueutil")
-    proc.arguments = args
-    let pipe = Pipe()
-    proc.standardOutput = pipe
-    proc.standardError = pipe
-    do {
-        try proc.run()
-        proc.waitUntilExit()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return (proc.terminationStatus, output)
-    } catch {
-        return (1, "")
-    }
-}
-
 // === Helpers ===
 
 func fail(_ message: String) -> Never {
@@ -273,9 +252,17 @@ func cmdEq(_ eqArgs: [String]) {
             print("bass: \(bass)  mid: \(mid)  treble: \(treble)  (range: -10 to +10)")
         }
     } else {
-        // EQ SET not supported via RFCOMM (requires BLE GATT).
-        // Use the Android or Mac app instead.
-        fail("EQ SET requires BLE GATT — use the Bose Control app")
+        // EQ SET: bose-ctl eq <bass> <mid> <treble> (range -10 to +10)
+        guard eqArgs.count == 3,
+              let bass = Int(eqArgs[0]), let mid = Int(eqArgs[1]), let treble = Int(eqArgs[2]),
+              (-10...10).contains(bass), (-10...10).contains(mid), (-10...10).contains(treble) else {
+            fail("usage: bose-ctl eq <bass> <mid> <treble> (each -10 to +10)")
+        }
+        if bose.setEQ(bass: bass, mid: mid, treble: treble) {
+            print("EQ set: bass=\(bass) mid=\(mid) treble=\(treble)")
+        } else {
+            fail("EQ set failed")
+        }
     }
 }
 

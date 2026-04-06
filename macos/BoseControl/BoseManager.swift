@@ -55,7 +55,6 @@ class BoseManager: ObservableObject {
     private let reconnectInterval: TimeInterval = 3.0
     private let pollInterval: TimeInterval = 10.0
 
-    private let blueutil = "/opt/homebrew/bin/blueutil"
     private let boseMac = "E4:58:BC:C0:2F:72"
 
     // MARK: - Polling
@@ -288,7 +287,7 @@ class BoseManager: ObservableObject {
 
             // If connecting Mac, blueutil connect first for A2DP
             if name == "mac" {
-                self.runBlueutil(["--connect", self.boseMac])
+                runBlueutil(["--connect", self.boseMac])
                 Thread.sleep(forTimeInterval: 1.5)
             }
 
@@ -310,7 +309,7 @@ class BoseManager: ObservableObject {
             let success = bose.disconnectDevice(mac)
             if success {
                 if name == "mac" {
-                    self.runBlueutil(["--disconnect", self.boseMac])
+                    runBlueutil(["--disconnect", self.boseMac])
                 }
                 Thread.sleep(forTimeInterval: 0.5)
                 DispatchQueue.main.async {
@@ -386,25 +385,6 @@ class BoseManager: ObservableObject {
 
     private func btConnect() {
         runBlueutil(["--connect", boseMac])
-    }
-
-    @discardableResult
-    private func runBlueutil(_ args: [String]) -> (Int32, String) {
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: blueutil)
-        proc.arguments = args
-        let pipe = Pipe()
-        proc.standardOutput = pipe
-        proc.standardError = pipe
-        do {
-            try proc.run()
-            proc.waitUntilExit()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let output = String(data: data, encoding: .utf8) ?? ""
-            return (proc.terminationStatus, output)
-        } catch {
-            return (1, "")
-        }
     }
 
     // MARK: - Computed Properties
