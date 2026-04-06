@@ -1,10 +1,10 @@
-# Agent Progress - add-quest3-device
+# Agent Progress - fix-widget-switching
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-04-05T12:21:42Z
+# Created: 2026-04-06T01:18:29Z
 
-feature=add-quest3-device
-name=Add Quest 3 to device map
+feature=fix-widget-switching
+name=Fix widget: add Quest button, fix A2DP switching, fix widget state updates
 status=pending
 step=0
 step_name=Not started
-created=2026-04-05T12:21:42Z
+created=2026-04-06T01:18:29Z

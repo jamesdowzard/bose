@@ -90,11 +90,11 @@
             android:focusable="true" />
 
         <TextView
-            android:id="@+id/btn_tv"
+            android:id="@+id/btn_quest"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:text="tv"
+            android:text="quest"
             android:textSize="11sp"
             android:textColor="#666666"
             android:textStyle="bold"

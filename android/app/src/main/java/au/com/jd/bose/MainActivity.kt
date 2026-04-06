@@ -1,12 +1,20 @@
 package au.com.jd.bose
 
 import android.Manifest
+import android.companion.AssociationInfo
+import android.companion.AssociationRequest
+import android.companion.BluetoothDeviceFilter
+import android.companion.CompanionDeviceManager
 import android.content.Intent
+import android.content.IntentSender
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
@@ -63,20 +71,41 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 
 class MainActivity : ComponentActivity() {
 
+    companion object {
+        private const val TAG = "BoseMain"
+    }
+
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { /* permissions granted or denied */ }
+    ) { results ->
+        if (results.values.all { it }) {
+            // Permissions granted — now set up companion + service
+            ensureCompanionDevice()
+        }
+    }
+
+    private lateinit var companionLauncher: ActivityResultLauncher<IntentSenderRequest>
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        checkPermissions()
 
-        // Start foreground service
-        val serviceIntent = Intent(this, BoseService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(serviceIntent)
+        // Register companion launcher BEFORE setContent/lifecycle starts
+        companionLauncher = registerForActivityResult(
+            ActivityResultContracts.StartIntentSenderForResult()
+        ) { result ->
+            if (result.resultCode == RESULT_OK) {
+                Log.i(TAG, "Companion device confirmed by user")
+            } else {
+                Log.w(TAG, "Companion device association declined")
+            }
+            // Start service regardless — companion is nice-to-have
+            startBoseService()
+        }
+
+        if (hasBluetoothPermissions()) {
+            ensureCompanionDevice()
         } else {
-            startService(serviceIntent)
+            requestBluetoothPermissions()
         }
 
         setContent {
@@ -86,15 +115,124 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun checkPermissions() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val needed = listOf(
-                Manifest.permission.BLUETOOTH_CONNECT,
-                Manifest.permission.BLUETOOTH_SCAN,
-            ).filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
-            if (needed.isNotEmpty()) {
-                permissionLauncher.launch(needed.toTypedArray())
+    private fun hasBluetoothPermissions(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+        return checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+                && checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun requestBluetoothPermissions() {
+        permissionLauncher.launch(arrayOf(
+            Manifest.permission.BLUETOOTH_CONNECT,
+            Manifest.permission.BLUETOOTH_SCAN,
+        ))
+    }
+
+    /**
+     * Register as companion app for the Bose headphones.
+     * Grants: background FGS starts, battery optimization exemption,
+     * wake on BT connect/disconnect. Prompts user once.
+     */
+    private fun ensureCompanionDevice() {
+        try {
+            val cdm = getSystemService(CompanionDeviceManager::class.java)
+            if (cdm == null) {
+                Log.w(TAG, "CompanionDeviceManager not available")
+                startBoseService()
+                return
             }
+
+            // Check if already associated (API 33+ returns List<AssociationInfo>)
+            if (isAlreadyAssociated(cdm)) {
+                Log.d(TAG, "Already associated with Bose headphones")
+                startBoseService()
+                return
+            }
+
+            Log.i(TAG, "Requesting companion association for ${BoseProtocol.BOSE_MAC}")
+            val filter = BluetoothDeviceFilter.Builder()
+                .setAddress(BoseProtocol.BOSE_MAC)
+                .build()
+            val request = AssociationRequest.Builder()
+                .addDeviceFilter(filter)
+                .setSingleDevice(true)
+                .build()
+
+            // API 33+ uses Executor-based callback with different methods
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                cdm.associate(request, mainExecutor, object : CompanionDeviceManager.Callback() {
+                    override fun onAssociationCreated(associationInfo: AssociationInfo) {
+                        Log.i(TAG, "Companion association created: ${associationInfo.id}")
+                        startBoseService()
+                    }
+
+                    override fun onAssociationPending(intentSender: IntentSender) {
+                        Log.i(TAG, "Companion association pending — showing chooser")
+                        try {
+                            companionLauncher.launch(
+                                IntentSenderRequest.Builder(intentSender).build()
+                            )
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to launch companion chooser: ${e.message}")
+                            startBoseService()
+                        }
+                    }
+
+                    override fun onFailure(error: CharSequence?) {
+                        Log.e(TAG, "Companion association failed: $error")
+                        startBoseService()
+                    }
+                })
+            } else {
+                // API 31-32 legacy path
+                @Suppress("DEPRECATION")
+                cdm.associate(request, object : CompanionDeviceManager.Callback() {
+                    @Deprecated("Deprecated in API 33")
+                    override fun onDeviceFound(chooserLauncher: IntentSender) {
+                        try {
+                            companionLauncher.launch(
+                                IntentSenderRequest.Builder(chooserLauncher).build()
+                            )
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to launch companion chooser: ${e.message}")
+                            startBoseService()
+                        }
+                    }
+
+                    override fun onFailure(error: CharSequence?) {
+                        Log.e(TAG, "Companion association failed: $error")
+                        startBoseService()
+                    }
+                }, null)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Companion setup error: ${e.message}", e)
+            startBoseService()
+        }
+    }
+
+    private fun isAlreadyAssociated(cdm: CompanionDeviceManager): Boolean {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                cdm.myAssociations.any { info ->
+                    info.deviceMacAddress?.toString()?.equals(BoseProtocol.BOSE_MAC, ignoreCase = true) == true
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                cdm.associations.any { it.equals(BoseProtocol.BOSE_MAC, ignoreCase = true) }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Error checking associations: ${e.message}")
+            false
+        }
+    }
+
+    private fun startBoseService() {
+        try {
+            val serviceIntent = Intent(this, BoseService::class.java)
+            startForegroundService(serviceIntent)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start service: ${e.message}")
         }
     }
 }
