@@ -235,16 +235,31 @@ class BoseService : Service() {
             }
 
             Log.i(TAG, "Switching to $deviceName")
-            val success = BoseProtocol.connectDevice(mac)
+            val ack = BoseProtocol.connectDevice(mac)
 
-            if (success) {
+            if (!ack) {
+                broadcastError("Failed to switch to $deviceName")
+                return
+            }
+
+            // Verify the switch actually happened — ACK only means "command
+            // received", not "audio routed". Wait for BT to settle, then
+            // check who's actually audio-active.
+            Thread.sleep(1500)
+            BoseProtocol.disconnect()
+            if (!BoseProtocol.connect()) {
+                broadcastError("Cannot verify switch — lost connection")
+                return
+            }
+
+            val activeNames = BoseProtocol.getConnectedDevices()
+                .map { BoseProtocol.nameForMac(it) }
+            val verified = activeNames.contains(deviceName)
+
+            if (verified) {
+                Log.i(TAG, "Switch verified: $deviceName is audio-active")
                 updateNotification("Active: $deviceName")
 
-                // When switching to the local device (phone), proactively initiate
-                // A2DP from this side. The BMAP command tells the headphones to
-                // route audio here, but Samsung needs the phone to also connect A2DP.
-                // Note: don't connect HFP here — SCO blocks A2DP streaming.
-                // HFP connects automatically when a phone call arrives.
                 if (deviceName == "phone") {
                     val adapter = getSystemService(BluetoothManager::class.java)?.adapter
                     val boseDevice = adapter?.getRemoteDevice(BoseProtocol.BOSE_MAC)
@@ -257,10 +272,11 @@ class BoseService : Service() {
                     nudgeMediaPlayback()
                 }
 
-                BoseWidgetProvider.updateAll(this, deviceName, setOf(deviceName))
+                BoseWidgetProvider.updateAll(this, deviceName, activeNames.toSet())
                 broadcastStatus(deviceName, true)
             } else {
-                broadcastError("Failed to switch to $deviceName")
+                Log.w(TAG, "Switch NOT verified: active=$activeNames, wanted=$deviceName")
+                broadcastError("$deviceName didn't connect — is it paired and awake?")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Switch error", e)
