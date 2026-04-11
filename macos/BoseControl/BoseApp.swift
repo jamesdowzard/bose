@@ -4,6 +4,7 @@ import SwiftUI
 
 @main
 struct BoseControlApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var manager = BoseManager()
 
     var body: some Scene {
@@ -11,6 +12,7 @@ struct BoseControlApp: App {
             ContentView(manager: manager)
                 .onAppear { manager.startPolling() }
         }
-        .defaultSize(width: 380, height: 600)
+        .defaultSize(width: 640, height: 360)
+        .windowResizability(.contentSize)
     }
 }

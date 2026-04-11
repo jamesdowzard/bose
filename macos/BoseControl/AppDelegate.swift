@@ -1,4 +1,18 @@
-/// AppDelegate: No longer needed — BoseManager owned by SwiftUI @StateObject.
-/// Kept as empty file to avoid build script changes. Can be deleted if build.sh is updated.
+/// AppDelegate: Window chrome configuration for frosted-dark redesign.
 
-import Foundation
+import AppKit
+
+class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        configureWindow()
+    }
+
+    private func configureWindow() {
+        guard let window = NSApplication.shared.windows.first else { return }
+        window.titlebarAppearsTransparent = true
+        window.styleMask.insert(.fullSizeContentView)
+        window.isMovableByWindowBackground = true
+        window.backgroundColor = .clear
+        window.appearance = NSAppearance(named: .darkAqua)
+    }
+}
