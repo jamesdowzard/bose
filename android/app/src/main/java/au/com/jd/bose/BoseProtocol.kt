@@ -341,15 +341,33 @@ object BoseProtocol {
     // Connect / Disconnect device
     // ======================================================================
 
+    enum class SwitchResult { SWITCHED, TARGET_OFFLINE, FAILED }
+
     /**
      * Connect (switch audio to) a device by MAC.
      * Command: 04,01,05,07,00,{MAC} (START operator)
      * NEVER use 0x03 (RemoveDevice) -- it unpairs.
+     *
+     * Response distinguishes success from target-offline:
+     * - ACK + RESULT (22 bytes): switch completed — target was ACL-connected
+     * - ACK only (10 bytes): target unreachable — not ACL-connected to Bose
      */
-    fun connectDevice(mac: ByteArray): Boolean {
+    fun connectDevice(mac: ByteArray): SwitchResult {
         val cmd = byteArrayOf(0x04, 0x01, OP_START, 0x07, 0x00) + mac
-        val resp = send(cmd, timeoutMs = 10000) ?: return false
-        return resp.size >= 4 && (resp[2] == OP_ACK || resp[2] == OP_RESP)
+        val resp = send(cmd, timeoutMs = 10000) ?: return SwitchResult.FAILED
+        if (resp.size < 4) return SwitchResult.FAILED
+
+        // ACK (10 bytes) + RESULT/SET frame (12+ bytes) = switch happened
+        // ACK alone (10 bytes) = target not reachable
+        if (resp.size > 10 && resp[2] == OP_ACK) {
+            Log.i(TAG, "connectDevice: ACK + RESULT (${resp.size} bytes) — switch confirmed")
+            return SwitchResult.SWITCHED
+        }
+        if (resp[2] == OP_ACK) {
+            Log.w(TAG, "connectDevice: ACK only (${resp.size} bytes) — target offline")
+            return SwitchResult.TARGET_OFFLINE
+        }
+        return SwitchResult.FAILED
     }
 
     /**

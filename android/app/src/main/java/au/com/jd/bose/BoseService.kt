@@ -217,59 +217,37 @@ class BoseService : Service() {
             }
 
             Log.i(TAG, "Switching to $deviceName")
-            val ack = BoseProtocol.connectDevice(mac)
+            val result = BoseProtocol.connectDevice(mac)
 
-            if (!ack) {
-                broadcastError("Failed to switch to $deviceName")
-                return
-            }
+            when (result) {
+                BoseProtocol.SwitchResult.SWITCHED -> {
+                    Log.i(TAG, "Switch to $deviceName confirmed by RESULT frame")
+                    updateNotification("Active: $deviceName")
 
-            // Verify the switch. ACK means "command received", not "audio
-            // routed". Poll getConnectedDevices a few times — remote devices
-            // (iPad, iPhone) can take several seconds to establish A2DP.
-            BoseProtocol.disconnect()
+                    if (deviceName == "phone") {
+                        val adapter = getSystemService(BluetoothManager::class.java)?.adapter
+                        val boseDevice = adapter?.getRemoteDevice(BoseProtocol.BOSE_MAC)
+                        if (boseDevice != null) {
+                            Log.i(TAG, "Proactively connecting A2DP for local device")
+                            ensureA2dp(boseDevice)
+                        }
 
-            var verified = false
-            var activeNames = emptyList<String>()
-            for (attempt in 1..3) {
-                Thread.sleep(2000)
-                if (!BoseProtocol.connect()) continue
-                activeNames = BoseProtocol.getConnectedDevices()
-                    .map { BoseProtocol.nameForMac(it) }
-                BoseProtocol.disconnect()
-                if (activeNames.contains(deviceName)) {
-                    verified = true
-                    break
-                }
-                Log.d(TAG, "Verify attempt $attempt: active=$activeNames, wanted=$deviceName")
-            }
-
-            if (verified) {
-                Log.i(TAG, "Switch verified: $deviceName is audio-active")
-                updateNotification("Active: $deviceName")
-
-                if (deviceName == "phone") {
-                    val adapter = getSystemService(BluetoothManager::class.java)?.adapter
-                    val boseDevice = adapter?.getRemoteDevice(BoseProtocol.BOSE_MAC)
-                    if (boseDevice != null) {
-                        Log.i(TAG, "Proactively connecting A2DP for local device")
-                        ensureA2dp(boseDevice)
+                        Thread.sleep(500)
+                        nudgeMediaPlayback()
                     }
 
-                    Thread.sleep(500)
-                    nudgeMediaPlayback()
+                    BoseWidgetProvider.updateAll(this, deviceName, setOf(deviceName))
+                    broadcastStatus(deviceName, true)
                 }
 
-                BoseWidgetProvider.updateAll(this, deviceName, activeNames.toSet())
-                broadcastStatus(deviceName, true)
-            } else {
-                // Switch wasn't confirmed but the command was ACK'd — the
-                // device may still be connecting. Update widget optimistically
-                // so the user sees feedback, but log the uncertainty.
-                Log.w(TAG, "Switch unconfirmed after 3 attempts: active=$activeNames, wanted=$deviceName")
-                updateNotification("Active: $deviceName (unconfirmed)")
-                BoseWidgetProvider.updateAll(this, deviceName, setOf(deviceName))
-                broadcastStatus(deviceName, true)
+                BoseProtocol.SwitchResult.TARGET_OFFLINE -> {
+                    Log.w(TAG, "$deviceName is not connected to Bose — can't switch")
+                    broadcastError("$deviceName is offline — connect it to Bose first")
+                }
+
+                BoseProtocol.SwitchResult.FAILED -> {
+                    broadcastError("Failed to switch to $deviceName")
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Switch error", e)

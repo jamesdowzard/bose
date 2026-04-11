@@ -126,8 +126,15 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
                     _state.value = _state.value.copy(loading = false)
                     return@launch
                 }
-                BoseProtocol.withConnection {
+                val result = BoseProtocol.withConnection {
                     BoseProtocol.connectDevice(mac)
+                }
+                if (result == BoseProtocol.SwitchResult.TARGET_OFFLINE) {
+                    _state.value = _state.value.copy(
+                        loading = false,
+                        error = "$name is offline — connect it to Bose first",
+                    )
+                    return@launch
                 }
                 refreshAll()
             } catch (e: Exception) {
