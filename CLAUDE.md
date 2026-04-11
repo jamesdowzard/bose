@@ -137,7 +137,7 @@ own MAC. Use `getConnectedDevices` (05,01) for audio-active devices and
 |------|-----|--------|-------|
 | phone | A8:76:50:D3:B1:1B | yes | Samsung S21 (local device) |
 | mac | BC:D0:74:11:DB:27 | yes | MacBook |
-| ipad | F4:81:C4:B5:FA:AB | yes | Needs re-pairing |
+| ipad | F4:81:C4:B5:FA:AB | yes | |
 | iphone | F8:4D:89:C4:B6:ED | yes | |
 | tv | 14:C1:4E:B7:CB:68 | macOS only | Chromecast |
 | quest | 78:C4:FA:C8:5C:3D | yes | Meta Quest 3 |
@@ -148,7 +148,7 @@ own MAC. Use `getConnectedDevices` (05,01) for audio-active devices and
 
 | Function | ID | Notes |
 |----------|-----|-------|
-| Connect | **0x01** | Payload: `00` + 6-byte MAC = 7 bytes. Also routes audio. |
+| Connect | **0x01** | Payload: `00` + 6-byte MAC = 7 bytes. Pages offline devices + routes audio. |
 | Disconnect | **0x02** | Payload: 6-byte MAC |
 | RemoveDevice | 0x03 | NEVER use — removes from paired list |
 | ListDevices | 0x04 | |
@@ -200,11 +200,32 @@ Auto-off timer (01,0B) is read-only over RFCOMM — distinct from StandbyTimer (
 | AudioCodec | 0x04 | GET returns codec ID + bitrate |
 | Volume | **0x05** | GET/SET_GET: current + max level (0-31) |
 
+## connectDevice Behaviour (verified 2026-04-11 via raw BMAP captures)
+
+**connectDevice pages offline devices.** It doesn't just route audio between
+already-connected devices — it tells the Bose to reach out and establish ACL+A2DP
+with the target. For sleeping devices (iPad, iPhone) this can take up to ~15s.
+
+**ACK does NOT mean success.** ACK (op=0x07) arrives in ~1s and means "command
+received". The actual connection happens in the background. There is no reliable
+RESULT frame for paged devices — the only way to confirm success is to poll
+`getConnectedDevices` (05,01) until the target MAC appears in the audio-active list.
+
+**No auto-reconnect from either platform.** Both Mac and Android had auto-reconnect
+logic that fought user switches (#61-#64). Mac's BoseManager had a 30s reconnect
+timer; Android's aclReceiver called ensureA2dp on every ACL reconnect. Both removed.
+Reconnection is now user-initiated only.
+
+**RFCOMM opens ACL.** Any RFCOMM connection (including state queries) establishes
+ACL to the headphones. Bose firmware may interpret this as "device wants audio".
+Don't probe/poll from a device that isn't supposed to be the active source.
+
 ## Rules
 
 - **NEVER unpair/toggle BT/pairing mode without explicit user approval** — broke pairings on 2026-03-16
 - **NEVER proactively connect HFP** — SCO blocks A2DP streaming
-- **Verify state changes with the user**, not just the protocol response
+- **NEVER auto-reconnect A2DP** — fights user device switches (#61-#64)
+- **NEVER treat ACK as success for connectDevice** — poll getConnectedDevices instead
 - **Bose Music app must be disabled** — fights for RFCOMM: `adb shell pm disable-user com.bose.bosemusic`
 - 2-device multipoint limit
 - getDeviceInfo status byte unreliable — use getConnectedDevices() as ground truth
