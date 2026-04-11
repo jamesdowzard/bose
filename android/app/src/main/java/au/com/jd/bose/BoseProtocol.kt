@@ -348,74 +348,43 @@ object BoseProtocol {
      * Command: 04,01,05,07,00,{MAC} (START operator)
      * NEVER use 0x03 (RemoveDevice) -- it unpairs.
      *
-     * Two-phase response:
-     * 1. ACK arrives quickly (~1s) — "command received"
-     * 2. RESULT (op=0x06) arrives when the connection is established (up to ~15s
-     *    if the Bose needs to page a sleeping/disconnected device)
-     *
-     * If the target is already ACL-connected, both arrive together instantly.
-     * If not, the Bose pages the device — we must keep the channel open and wait.
+     * Sends the connect command, waits for ACK, then polls
+     * getConnectedDevices on the same RFCOMM channel to confirm the
+     * target actually became audio-active. The Bose may need up to ~15s
+     * to page a sleeping device and establish A2DP.
      */
     fun connectDevice(mac: ByteArray): SwitchResult {
+        // Send connect command and get ACK
         val cmd = byteArrayOf(0x04, 0x01, OP_START, 0x07, 0x00) + mac
-        val os = outputStream ?: return SwitchResult.FAILED
-        val ins = inputStream ?: return SwitchResult.FAILED
+        val ackResp = send(cmd, timeoutMs = 5000) ?: return SwitchResult.FAILED
+        if (ackResp.size < 4 || ackResp[2] != OP_ACK) return SwitchResult.FAILED
+        Log.i(TAG, "connectDevice: ACK received, polling for audio route...")
 
-        try {
-            Log.d(TAG, "TX: ${cmd.toHexString()}")
-            os.write(cmd)
-            os.flush()
-
-            // Accumulate all data over the wait window. The ACK and RESULT
-            // may arrive in one read (target already connected) or in two
-            // separate reads seconds apart (target being paged).
-            val allData = ByteArray(512)
-            var totalRead = 0
-            val deadline = System.currentTimeMillis() + 15000
-            var gotAck = false
-
-            while (System.currentTimeMillis() < deadline) {
-                if (ins.available() > 0) {
-                    Thread.sleep(100) // let full frame arrive
-                    val n = ins.read(allData, totalRead, allData.size - totalRead)
-                    if (n > 0) {
-                        totalRead += n
-                        Log.d(TAG, "RX chunk ($n bytes, total=$totalRead): ${allData.copyOf(totalRead).toHexString()}")
-
-                        // Check if we have ACK
-                        if (!gotAck && totalRead >= 4 && allData[2] == OP_ACK) {
-                            gotAck = true
-                            Log.i(TAG, "connectDevice: ACK received")
-                        }
-
-                        // Check if RESULT frame has arrived (op=0x06, block=0x04, func=0x01)
-                        // It follows the ACK in the stream
-                        if (gotAck && totalRead > 10) {
-                            // Scan for the RESULT frame starting after the ACK
-                            for (i in 10 until totalRead - 3) {
-                                if (allData[i] == 0x04.toByte() &&
-                                    allData[i + 1] == 0x01.toByte() &&
-                                    allData[i + 2] == OP_SET) {
-                                    Log.i(TAG, "connectDevice: RESULT frame at offset $i — switch confirmed")
-                                    return SwitchResult.SWITCHED
-                                }
-                            }
-                        }
+        // Poll getConnectedDevices to confirm the target is audio-active.
+        // Same open RFCOMM channel — no disconnect/reconnect cycles.
+        val targetMac = macToString(mac)
+        for (attempt in 1..8) {
+            Thread.sleep(2000)
+            val probe = send(byteArrayOf(0x05, 0x01, OP_GET, 0x00), timeoutMs = 3000)
+            if (probe != null && probe.size >= 7 &&
+                probe[0] == 0x05.toByte() && probe[1] == 0x01.toByte() && probe[2] == OP_RESP) {
+                val count = probe[6].toInt() and 0xFF
+                var offset = 7
+                for (j in 0 until count) {
+                    if (offset + 6 > probe.size) break
+                    val activeMac = macToString(probe.copyOfRange(offset, offset + 6))
+                    if (activeMac == targetMac) {
+                        Log.i(TAG, "connectDevice: verified on attempt $attempt — $targetMac is audio-active")
+                        return SwitchResult.SWITCHED
                     }
+                    offset += 6
                 }
-                Thread.sleep(100)
+                Log.d(TAG, "connectDevice: attempt $attempt — target not yet active")
             }
-
-            if (gotAck) {
-                Log.w(TAG, "connectDevice: ACK but no RESULT after 15s — target unreachable")
-                return SwitchResult.TARGET_OFFLINE
-            }
-            Log.w(TAG, "connectDevice: no response at all")
-            return SwitchResult.FAILED
-        } catch (e: IOException) {
-            Log.e(TAG, "connectDevice error: ${e.message}")
-            return SwitchResult.FAILED
         }
+
+        Log.w(TAG, "connectDevice: target $targetMac not audio-active after 16s")
+        return SwitchResult.TARGET_OFFLINE
     }
 
     /**
