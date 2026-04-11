@@ -51,6 +51,11 @@ struct VisualEffectBackground: NSViewRepresentable {
 struct ContentView: View {
     @ObservedObject var manager: BoseManager
 
+    @State private var volumeSlider: Double = 0
+    @State private var eqBass: Double = 0
+    @State private var eqMid: Double = 0
+    @State private var eqTreble: Double = 0
+
     var body: some View {
         Group {
             if manager.isConnected {
@@ -63,6 +68,28 @@ struct ContentView: View {
         .background(VisualEffectBackground())
         .onAppear {
             manager.refreshState()
+            syncSliders()
+            installCmdMShortcut()
+        }
+        .onReceive(manager.objectWillChange) { _ in
+            DispatchQueue.main.async { syncSliders() }
+        }
+    }
+
+    private func syncSliders() {
+        volumeSlider = Double(manager.volume)
+        eqBass = Double(manager.eq.bass)
+        eqMid = Double(manager.eq.mid)
+        eqTreble = Double(manager.eq.treble)
+    }
+
+    private func installCmdMShortcut() {
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "m" {
+                manager.connectDevice("mac")
+                return nil
+            }
+            return event
         }
     }
 
@@ -112,25 +139,41 @@ struct ContentView: View {
             }
 
             // ANC mode
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text("NOISE CONTROL")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundColor(secondaryColor)
                     .tracking(1)
-                Text(manager.ancModeName)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(activeColor)
+                HStack(spacing: 4) {
+                    ancButton("Quiet", 0)
+                    ancButton("Aware", 1)
+                    ancButton("C1", 2)
+                    ancButton("C2", 3)
+                }
             }
 
             // Volume
-            VStack(alignment: .leading, spacing: 4) {
-                Text("VOLUME")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(secondaryColor)
-                    .tracking(1)
-                Text("\(manager.volume) / \(manager.volumeMax)")
-                    .font(.system(size: 13, weight: .medium, design: .monospaced))
-                    .foregroundColor(activeColor)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("VOLUME")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(secondaryColor)
+                        .tracking(1)
+                    Spacer()
+                    Text("\(Int(volumeSlider))")
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundColor(secondaryColor)
+                }
+                Slider(
+                    value: $volumeSlider,
+                    in: 0...Double(manager.volumeMax),
+                    onEditingChanged: { editing in
+                        if !editing {
+                            manager.setVolume(Int(volumeSlider))
+                        }
+                    }
+                )
+                .tint(activeColor)
             }
 
             // Wear detection
@@ -154,35 +197,156 @@ struct ContentView: View {
         .padding(16)
     }
 
-    // MARK: - Right Panel (Device Grid + EQ Placeholder)
+    // MARK: - Right Panel (Device Grid + EQ)
 
     private var rightPanel: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Devices
+        VStack(alignment: .leading, spacing: 14) {
             Text("DEVICES")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundColor(secondaryColor)
                 .tracking(1)
 
-            Text("Device grid placeholder")
-                .font(.system(size: 12))
-                .foregroundColor(secondaryColor)
+            deviceGrid
 
-            Spacer()
-
-            // EQ
             Text("EQUALIZER")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundColor(secondaryColor)
                 .tracking(1)
+                .padding(.top, 4)
 
-            Text("EQ controls placeholder")
-                .font(.system(size: 12))
-                .foregroundColor(secondaryColor)
-
-            Spacer()
+            eqPresets
+            eqSliders
         }
         .padding(16)
+    }
+
+    private var deviceGrid: some View {
+        let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 3)
+        return LazyVGrid(columns: columns, spacing: 8) {
+            ForEach(deviceButtons) { button in
+                deviceButton(button)
+            }
+        }
+    }
+
+    private func deviceButton(_ button: DeviceButton) -> some View {
+        let state = manager.deviceStates[button.id] ?? "offline"
+        let isActive = state == "active"
+        let isConnected = state == "connected"
+
+        let textColor: Color = isActive ? activeColor : (isConnected ? secondaryColor : offlineColor)
+        let bg: Color = isActive ? Color.white.opacity(0.14) : cardColor
+        let borderColor: Color = isActive ? activeColor.opacity(0.7) : Color.white.opacity(0.04)
+
+        return Button(action: { manager.connectDevice(button.id) }) {
+            VStack(spacing: 3) {
+                Image(systemName: button.symbol)
+                    .font(.system(size: 18, weight: .regular))
+                    .foregroundColor(textColor)
+                Text(button.label)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(textColor)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 52)
+            .background(bg)
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(borderColor, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+        .opacity(state == "offline" ? 0.6 : 1.0)
+    }
+
+    private struct EqPreset {
+        let name: String
+        let bass: Int
+        let mid: Int
+        let treble: Int
+    }
+
+    private let eqPresetList: [EqPreset] = [
+        EqPreset(name: "Flat", bass: 0, mid: 0, treble: 0),
+        EqPreset(name: "Bass+", bass: 6, mid: 0, treble: -2),
+        EqPreset(name: "Treble+", bass: -2, mid: 0, treble: 6),
+        EqPreset(name: "Vocal", bass: -2, mid: 4, treble: 2),
+    ]
+
+    private var eqPresets: some View {
+        HStack(spacing: 6) {
+            ForEach(eqPresetList, id: \.name) { preset in
+                let selected = manager.eq.bass == preset.bass &&
+                    manager.eq.mid == preset.mid &&
+                    manager.eq.treble == preset.treble
+                Button(action: {
+                    eqBass = Double(preset.bass)
+                    eqMid = Double(preset.mid)
+                    eqTreble = Double(preset.treble)
+                    manager.setEQ(bass: preset.bass, mid: preset.mid, treble: preset.treble)
+                }) {
+                    Text(preset.name)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(selected ? .black : secondaryColor)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 5)
+                        .background(selected ? activeColor : cardColor)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var eqSliders: some View {
+        VStack(spacing: 4) {
+            eqBandSlider("Bass", value: $eqBass) {
+                manager.setEQ(bass: Int(eqBass), mid: Int(eqMid), treble: Int(eqTreble))
+            }
+            eqBandSlider("Mid", value: $eqMid) {
+                manager.setEQ(bass: Int(eqBass), mid: Int(eqMid), treble: Int(eqTreble))
+            }
+            eqBandSlider("Treble", value: $eqTreble) {
+                manager.setEQ(bass: Int(eqBass), mid: Int(eqMid), treble: Int(eqTreble))
+            }
+        }
+    }
+
+    private func eqBandSlider(_ label: String, value: Binding<Double>, onCommit: @escaping () -> Void) -> some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .font(.system(size: 10))
+                .foregroundColor(secondaryColor)
+                .frame(width: 38, alignment: .leading)
+            Slider(
+                value: value,
+                in: -10...10,
+                step: 1,
+                onEditingChanged: { editing in
+                    if !editing { onCommit() }
+                }
+            )
+            .tint(activeColor)
+            Text("\(Int(value.wrappedValue))")
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundColor(secondaryColor)
+                .frame(width: 22, alignment: .trailing)
+        }
+    }
+
+    private func ancButton(_ label: String, _ mode: Int) -> some View {
+        let isActive = manager.ancMode == mode
+        return Button(action: { manager.setAncMode(mode) }) {
+            Text(label)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(isActive ? .black : secondaryColor)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 5)
+                .background(isActive ? activeColor : cardColor)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Disconnected View
