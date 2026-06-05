@@ -48,15 +48,24 @@ simultaneously one waits, but in practice commands are too brief to collide.
 - `BootReceiver` -- auto-start service on boot
 - Companion device registered for background FGS privileges
 
-### Shared
-- `BoseRFCOMM.swift` -- Direct RFCOMM BMAP protocol (IOBluetooth, on-demand). **CLI-only now** — the v2 macOS app uses `macos/BoseControl/Transport.swift` + generated builders instead. Retire when the CLI is rebuilt on the generated layer (Phase 4).
-- `BoseCtl.swift` -- CLI using BoseRFCOMM directly (Phase 4 will regenerate it)
+### CLI (`cli/`) — regenerated on the shared layer
+- `cli/main.swift` -- `bose-ctl` command surface (status/battery/anc/devices/connect/disconnect/swap/volume/multipoint/play-pause-next-prev/eq/raw). **No inline byte parsing** — every command routes through the generated `BMAP.*` builders + the SAME `Transport`/`Composites`/`Parsers` the macOS app compiles. `connect`/`swap` poll-confirm via `getConnectedDevices` (ACK is never success); volume uses the generated SET_GET builder.
+- `cli/build.sh` -- compiles the generated Swift + `macos/BoseControl/{Transport,Parsers,Composites}.swift` + `cli/main.swift` → `cli/build/bose-ctl`. Shares the app's source list so CLI and app can't drift; does NOT install over `~/bin/bose-ctl`.
+
+### Protocol (`protocol/`) — the single source of truth
+- `protocol/spec/bmap.toml` -- **canonical machine-readable BMAP spec.** Every command, operator, and enum lives here with `verified_bytes` golden captures. The command tables further down in this file are the human-readable mirror — **edit `bmap.toml` and regenerate; never hand-edit `generated/`.**
+- `protocol/spec/devices.toml` -- headphone MAC + device map (the one home for those literals).
+- `protocol/codegen/` + `protocol/generate.py` -- Python (uv) emitters → `protocol/generated/{BMAP,Devices}.generated.{swift,kt}`. `make gen` regenerates; `make check` proves the committed generated files are in sync + runs the golden byte tests.
 
 ## Build & Deploy
 
 ```bash
-# bose-ctl (CLI)
-swiftc -O BoseRFCOMM.swift BoseCtl.swift -framework IOBluetooth -o ~/bin/bose-ctl
+# Protocol layer (regenerate Swift + Kotlin from the spec; run golden tests)
+cd protocol && make gen      # or `make check` to also verify no drift + run tests
+
+# bose-ctl (CLI) → cli/build/bose-ctl (does NOT install over ~/bin/bose-ctl)
+bash cli/build.sh
+# install once hardware-tested:  cp cli/build/bose-ctl ~/bin/bose-ctl
 
 # Mac app
 cd macos && ./build.sh
@@ -65,6 +74,10 @@ cd macos && ./build.sh
 cd android && ./gradlew assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
+
+The CLI and the macOS app compile the SAME `macos/BoseControl/{Transport,Parsers,Composites}.swift`
+plus the generated `BMAP.generated.swift` / `Devices.generated.swift`, so the two
+clients cannot drift on wire encoding or transport behaviour.
 
 Note: `android/local.properties` needs `sdk.dir=/Users/jamesdowzard/Library/Android/sdk`.
 This file is gitignored. Worktrees need it copied manually.
@@ -170,6 +183,11 @@ own MAC. Use `getConnectedDevices` (05,01) for audio-active devices and
 | ActiveDevice | 0x09 | Returns querying device, not necessarily streaming device |
 
 ## Transport & Operators (verified 2026-04-05, corrected via APK decompilation)
+
+> **Source of truth:** the tables below are the human-readable mirror of
+> `protocol/spec/bmap.toml`. To change a command/operator/enum, edit `bmap.toml`
+> (with `verified_bytes` for any concrete capture), run `cd protocol && make gen`,
+> and update these tables to match. Never hand-edit `protocol/generated/`.
 
 **Everything works over RFCOMM.** BLE GATT is NOT needed for any setting.
 The original "needs BLE GATT" assumption was wrong — we were using the wrong
