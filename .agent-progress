@@ -1,10 +1,10 @@
-# Agent Progress - mac-windowed-app
+# Agent Progress - bose-v2-followups-71
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-04-06T03:41:27Z
+# Created: 2026-06-05T08:59:29Z
 
-feature=mac-windowed-app
-name=Convert macOS app from menu bar to windowed UI
+feature=bose-v2-followups-71
+name=bose v2 follow-ups #71: info view, 3-state devices, anc-depth + name verbs, capability map, parse nits
 status=pending
 step=0
 step_name=Not started
-created=2026-04-06T03:41:27Z
+created=2026-06-05T08:59:29Z

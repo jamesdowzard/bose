@@ -90,7 +90,9 @@ object BoseProtocol {
 
     fun getMultipoint(): Boolean? {
         val resp = Transport.send(BMAP.getMultipoint()) ?: return null
-        if (resp.size >= 5 && resp[2] == OP_RESP) return resp[4] == 0x07
+        // Wire values are 07=on / 00=off. Use `!= 0` to match Parsers.parseAllState
+        // and macOS Parsers.swift (both treat any non-zero byte as enabled).
+        if (resp.size >= 5 && resp[2] == OP_RESP) return resp[4] != 0x00
         return null
     }
 
@@ -237,10 +239,10 @@ object BoseProtocol {
 
     data class DeviceInfo(val status: Int, val name: String, val connected: Boolean)
 
-    /** GET device info (04,05). Status byte unreliable — cross-ref getConnectedDevices. */
+    /** GET device info (04,05). Status byte unreliable — cross-ref getConnectedDevices.
+     *  Request frame from the generated builder (device_info in bmap.toml). */
     fun getDeviceInfo(mac: IntArray): DeviceInfo? {
-        val frame = intArrayOf(0x04, 0x05, 0x01, 0x06) + mac
-        val resp = Transport.send(frame, timeoutMs = 2000) ?: return null
+        val resp = Transport.send(BMAP.getDeviceInfo(mac), timeoutMs = 2000) ?: return null
         if (resp.size < 11 || resp[2] != OP_RESP) return null
         val status = resp[10]
         val connected = (status and 0x01) != 0

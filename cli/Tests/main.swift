@@ -97,6 +97,29 @@ check(state.eq.bass == 3 && state.eq.mid == 0 && state.eq.treble == -3, "allStat
 let empty = parseAllState { _, _ in nil }
 check(empty.batteryLevel == 0 && empty.connectedDevices.isEmpty, "allState: all-nil provider -> defaults")
 
+// ── parseDeviceInfo (04,05) ──────────────────────────────────────────────────────
+
+// RESP: status byte at index 10 (bit0 = ACL connected), optional name from index 13.
+let devInfoConnected: [UInt8] = [
+    0x04, 0x05, 0x03, 0x10,             // header (RESP)
+    0xBC, 0xD0, 0x74, 0x11, 0xDB, 0x27, // bytes 4..9 (echoed mac — ignored)
+    0x03,                              // byte 10 = status, bit0 set -> connected
+    0x00, 0x00,                        // bytes 11,12 filler
+] + Array("mac".utf8)                  // name from byte 13
+let di = parseDeviceInfo(devInfoConnected)
+check(di?.connected == true, "deviceInfo: status bit0 set -> connected")
+check(di?.status == 3, "deviceInfo: status == 3")
+check(di?.name == "mac", "deviceInfo: name parsed from byte 13")
+
+// status bit0 clear -> not connected, no name present.
+let devInfoOffline: [UInt8] = [0x04, 0x05, 0x03, 0x07, 0xF4, 0x81, 0xC4, 0xB5, 0xFA, 0xAB, 0x00]
+check(parseDeviceInfo(devInfoOffline)?.connected == false, "deviceInfo: status bit0 clear -> not connected")
+
+// Short frame and non-RESP (GET echo) -> nil.
+check(parseDeviceInfo([0x04, 0x05, 0x03, 0x00]) == nil, "deviceInfo: short frame -> nil")
+check(parseDeviceInfo([0x04, 0x05, 0x01, 0x06, 0xBC, 0xD0, 0x74, 0x11, 0xDB, 0x27, 0x00]) == nil,
+      "deviceInfo: non-RESP (GET echo) -> nil")
+
 // ── summary ─────────────────────────────────────────────────────────────────────
 
 if failures == 0 {

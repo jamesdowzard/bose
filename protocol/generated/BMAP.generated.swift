@@ -71,6 +71,10 @@ enum BMAP {
         return [0x04, 0x02, 0x05, 0x06] + mac
     }
 
+    static func getDeviceInfo(mac: [UInt8]) -> [UInt8] {
+        return [0x04, 0x05, 0x01, 0x06] + mac
+    }
+
     static func mediaControl(action: UInt8) -> [UInt8] {
         return [0x05, 0x03, 0x05, 0x01, action]
     }
