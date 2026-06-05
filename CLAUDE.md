@@ -30,7 +30,7 @@ in the background and the Mac only touches the headphones on an explicit keypres
 - `raycast/bose-status.sh` / `bose-full-status.sh` -- `bose-ctl status` / `bose-ctl info`
 - `raycast/bose-anc-depth.sh` / `bose-profile.sh` -- `bose-ctl anc-depth [0-10]` / `bose-ctl profile [name]` (text arg)
 - `profiles.json` (repo root) -- settings presets ({ANC mode, depth, EQ, multipoint, volume}) applied by `bose-ctl profile`; versioned + hand-editable, ships flight/office/music. Runtime JSON (not codegen'd TOML) because `profile save` writes it; loader resolves `$BOSE_PROFILES` → repo path → `~/.config/bose/`. Pure logic in `cli/Profiles.swift`, live apply in `cli/Composites.swift` (`applyProfile`).
-- `hammerspoon/bose.lua` -- Hammerspoon module, all **event-driven** (no timers): **Opt+B toggles Mac ↔ phone** (+ one-shot low-battery warn piggybacked on the press), **Opt+N cycles ANC** (quiet→aware→custom1), and a call-app **launch** watcher (Teams/Zoom/Meet → ANC aware). Returns a table with `.start()`/`.stop()`. Wired in `init.lua` via `BoseCtl = dofile(os.getenv("HOME").."/code/personal/bose/hammerspoon/bose.lua"); BoseCtl.start()`. Edits apply on Hammerspoon reload.
+- `hammerspoon/bose.lua` -- Hammerspoon module, all **event-driven** (no timers): **Opt+B toggles Mac ↔ phone** (+ one-shot low-battery warn piggybacked on the press), **Opt+N cycles ANC** (quiet→aware→custom1), **Opt+J connects the headphones to this Mac** (unconditional, no toggle direction-guessing; `CONNECT_TARGET` retargets it), and a call-app **launch** watcher (Teams/Zoom/Meet → ANC aware). Returns a table with `.start()`/`.stop()`. Wired in `init.lua` via `BoseCtl = dofile(os.getenv("HOME").."/code/personal/bose/hammerspoon/bose.lua"); BoseCtl.start()`. Edits apply on Hammerspoon reload.
 - The Swift core that does the actual RFCOMM work lives in `cli/` (see below) — there is no separate macOS Swift target.
 
 ### Android (`android/`) — regenerated protocol on the kept architecture
@@ -252,7 +252,7 @@ surface. Keep this in sync when adding a verb or control.
 | Device name | 01,02 | ✅ `name` | — | — | ✅ rename |
 | EQ band | 01,07 | ✅ `eq` | 👁 (in status) | — | ✅ 3-band |
 | Multipoint | 01,0A | ✅ `multipoint` | — | — | ✅ toggle |
-| Connect device | 04,01 | ✅ `connect`/`swap` | ✅ `bose-connect` | ✅ Opt+B toggle | ✅ widget/tile/picker |
+| Connect device | 04,01 | ✅ `connect`/`swap` | ✅ `bose-connect` | ✅ Opt+B toggle · Opt+J → Mac | ✅ widget/tile/picker |
 | Disconnect device | 04,02 | ✅ `disconnect` | ✅ `bose-disconnect` | 👁 (toggle path) | — |
 | Device info (ACL) | 04,05 | 👁 `devices` (○ state) | — | — | 👁 widget colour |
 | Connected devices | 05,01 | 👁 `devices`/`status`/`info` | 👁 (in status) | 👁 toggle-direction | 👁 widget/tile active |
@@ -278,7 +278,7 @@ applies {ANC mode, ANC depth, EQ, multipoint, volume} in one session (CLI +
 `bose-profile.sh` Raycast; drivable from macOS Focus via a Shortcut, see README).
 
 **Notable gaps (intentional):** Hammerspoon now does Opt+B (toggle), Opt+N (ANC
-cycle), and a call-app launch hook — still all event-driven, no timers. Raycast
+cycle), Opt+J (connect → Mac), and a call-app launch hook — still all event-driven, no timers. Raycast
 covers the common dropdowns plus full-status / anc-depth / profile; deeper config
 (EQ/name/multipoint) is CLI- or Android-only by design. The macOS surface has
 **no resident process** — every reading is on-demand, never polled.

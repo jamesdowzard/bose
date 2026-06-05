@@ -9,6 +9,9 @@
 --              On the way, reads battery and warns if low (piggybacks the keypress;
 --              no separate poll loop).
 --   • Opt+N  — cycle ANC mode quiet → aware → custom1.
+--   • Opt+J  — unconditionally bring the headphones to THIS Mac (connect + route
+--              audio here). Unlike Opt+B, never guesses direction from the current
+--              output device — it always connects the Mac.
 --   • App hook — when a call app LAUNCHES (Teams/Zoom/Meet), switch ANC to aware so
 --                you can hear yourself. Fires once on launch, not on every focus.
 --
@@ -31,6 +34,14 @@ local TO_PHONE     = "phone"
 local ANC_MODS     = { "alt" }
 local ANC_KEY      = "n"
 local ANC_CYCLE    = { "quiet", "aware", "custom1" }
+
+-- Connect hotkey (Opt+J): always bring the headphones to THIS Mac, no toggle
+-- guessing. `connect mac` does the A2DP bring-up + BMAP route + poll-confirm.
+-- Change CONNECT_TARGET to route the key at a different device (must be a name
+-- in devices.toml's device map, e.g. "mac"/"quest"/"ipad").
+local CONNECT_MODS   = { "alt" }
+local CONNECT_KEY    = "j"
+local CONNECT_TARGET = "mac"
 
 -- Low-battery warning threshold (%), checked on each toggle (no separate poll).
 local LOW_BATTERY  = 20
@@ -97,6 +108,21 @@ local function toggle()
   hs.timer.doAfter(2.5, warnIfLowBattery)
 end
 
+-- Unconditionally bring the headphones to this Mac (no toggle direction-guessing).
+-- `connect <target>` does the A2DP bring-up + BMAP route + poll-confirm; on success
+-- route the Mac's audio to the Bose so it shows Connected and audio lands here.
+local function connectHere()
+  hs.alert.closeAll()
+  hs.alert.show("🎧  Bose → Mac")
+  ctl({ "connect", CONNECT_TARGET }, function(ok)
+    if ok then
+      hs.timer.doAfter(2.0, function() setMacOutput(BOSE_NAME) end)
+    else
+      hs.alert.show("🎧  connect failed")
+    end
+  end)
+end
+
 -- Read current ANC, then set the next mode in the cycle.
 local function cycleAnc()
   ctlRead({ "anc" }, function(_, out)
@@ -123,6 +149,7 @@ end
 function M.start()
   M.hotkey = hs.hotkey.bind(HOTKEY_MODS, HOTKEY_KEY, toggle)
   M.ancHotkey = hs.hotkey.bind(ANC_MODS, ANC_KEY, cycleAnc)
+  M.connectHotkey = hs.hotkey.bind(CONNECT_MODS, CONNECT_KEY, connectHere)
   M.appWatcher = hs.application.watcher.new(onAppEvent)
   M.appWatcher:start()
   return M
@@ -131,6 +158,7 @@ end
 function M.stop()
   if M.hotkey then M.hotkey:delete(); M.hotkey = nil end
   if M.ancHotkey then M.ancHotkey:delete(); M.ancHotkey = nil end
+  if M.connectHotkey then M.connectHotkey:delete(); M.connectHotkey = nil end
   if M.appWatcher then M.appWatcher:stop(); M.appWatcher = nil end
 end
 
