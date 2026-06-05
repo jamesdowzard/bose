@@ -19,6 +19,7 @@ enum AncMode: UInt8 {
     case aware = 1
     case custom1 = 2
     case custom2 = 3
+    case off = 255
 }
 
 enum EqBand: UInt8 {

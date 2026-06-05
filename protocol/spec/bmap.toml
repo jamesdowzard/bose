@@ -18,11 +18,15 @@
 # ── Enums ──────────────────────────────────────────────────────────────────────
 
 [enums.AncMode]
-# ANC mode (1F,03). CLAUDE.md: 0=quiet 1=aware 2=custom1 3=custom2
+# ANC mode (1F,03). CLAUDE.md: 0=quiet 1=aware 2=custom1 3=custom2.
+# 255 (0xFF) is the disabled/off sentinel the QC Ultra 2 reports when ANC is off
+# (observed on-device at depth 0). Decode-only — renders reads as "off" instead of
+# "unknown(255)"; NOT offered as a settable mode (setting 0xFF is unverified).
 quiet = 0
 aware = 1
 custom1 = 2
 custom2 = 3
+off = 255
 
 [enums.EqBand]
 # EQ band selector (01,07). CLAUDE.md: 0=bass 1=mid 2=treble
