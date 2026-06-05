@@ -39,6 +39,7 @@ swiftc -O \
     "$GEN_DIR/Devices.generated.swift" \
     "$SCRIPT_DIR/Transport.swift" \
     "$SCRIPT_DIR/Parsers.swift" \
+    "$SCRIPT_DIR/Profiles.swift" \
     "$SCRIPT_DIR/Composites.swift" \
     "$SCRIPT_DIR/main.swift" \
     -framework IOBluetooth \

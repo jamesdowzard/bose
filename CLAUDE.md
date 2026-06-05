@@ -27,8 +27,10 @@ original audio-dropout cause — #69-era). The Mac control surface is two thin
 front-ends that shell out to the `cli/` binary (`~/bin/bose-ctl`), so nothing runs
 in the background and the Mac only touches the headphones on an explicit keypress.
 - `raycast/bose-connect.sh` / `bose-disconnect.sh` -- Raycast script commands with a device dropdown → `bose-ctl connect|disconnect <device>`
-- `raycast/bose-status.sh` -- `bose-ctl status` (battery/ANC/volume/EQ)
-- `hammerspoon/bose.lua` -- Hammerspoon module: **Opt+B toggles Mac ↔ phone**. Decides direction from the Mac's default OUTPUT device (`verBosita` ⇒ on Mac), routes via async `bose-ctl`, sets the Mac output device, and shows an alert. Returns a table with `.start()`. Wired in `init.lua` via `BoseCtl = dofile(os.getenv("HOME").."/code/personal/bose/hammerspoon/bose.lua"); BoseCtl.start()` (guarded by a file-exists check, so it activates automatically once this file is on `main`).
+- `raycast/bose-status.sh` / `bose-full-status.sh` -- `bose-ctl status` / `bose-ctl info`
+- `raycast/bose-anc-depth.sh` / `bose-profile.sh` -- `bose-ctl anc-depth [0-10]` / `bose-ctl profile [name]` (text arg)
+- `profiles.json` (repo root) -- settings presets ({ANC mode, depth, EQ, multipoint, volume}) applied by `bose-ctl profile`; versioned + hand-editable, ships flight/office/music. Runtime JSON (not codegen'd TOML) because `profile save` writes it; loader resolves `$BOSE_PROFILES` → repo path → `~/.config/bose/`. Pure logic in `cli/Profiles.swift`, live apply in `cli/Composites.swift` (`applyProfile`).
+- `hammerspoon/bose.lua` -- Hammerspoon module, all **event-driven** (no timers): **Opt+B toggles Mac ↔ phone** (+ one-shot low-battery warn piggybacked on the press), **Opt+N cycles ANC** (quiet→aware→custom1), and a call-app **launch** watcher (Teams/Zoom/Meet → ANC aware). Returns a table with `.start()`/`.stop()`. Wired in `init.lua` via `BoseCtl = dofile(os.getenv("HOME").."/code/personal/bose/hammerspoon/bose.lua"); BoseCtl.start()`. Edits apply on Hammerspoon reload.
 - The Swift core that does the actual RFCOMM work lives in `cli/` (see below) — there is no separate macOS Swift target.
 
 ### Android (`android/`) — regenerated protocol on the kept architecture
@@ -245,7 +247,7 @@ surface. Keep this in sync when adding a verb or control.
 
 | Capability | Block,Func | `bose-ctl` | Raycast | Hammerspoon | Android |
 |------------|-----------|-----------|---------|-------------|---------|
-| ANC mode | 1F,03 | ✅ `anc` | 👁 (in status) | — | ✅ mode selector |
+| ANC mode | 1F,03 | ✅ `anc` | 👁 (in status) | ✅ Opt+N cycle + call-app hook | ✅ mode selector |
 | ANC depth (CNC) | 1F,0A | ✅ `anc-depth` | ✅ `bose-anc-depth` | — | ✅ slider |
 | Device name | 01,02 | ✅ `name` | — | — | ✅ rename |
 | EQ band | 01,07 | ✅ `eq` | 👁 (in status) | — | ✅ 3-band |
@@ -271,11 +273,15 @@ surface. Keep this in sync when adding a verb or control.
 | Auto-off timer | 01,0B | 👁 `info` (read-only) | 👁 (full status) | 👁 state |
 | On-head / wear | 08,07 | 👁 `info` | 👁 (full status) | 👁 state |
 
-**Notable gaps (intentional):** Hammerspoon is deliberately one keypress (Opt+B
-Mac↔phone) and exposes nothing else. Raycast covers the common dropdowns
-(connect/disconnect/status) plus the full-status and ANC-depth additions; deeper
-config (EQ/name/multipoint) is CLI- or Android-only by design. The macOS surface
-has **no resident process** — every reading is on-demand, never polled.
+**Profiles** compose several of these capabilities at once — a `bose-ctl profile`
+applies {ANC mode, ANC depth, EQ, multipoint, volume} in one session (CLI +
+`bose-profile.sh` Raycast; drivable from macOS Focus via a Shortcut, see README).
+
+**Notable gaps (intentional):** Hammerspoon now does Opt+B (toggle), Opt+N (ANC
+cycle), and a call-app launch hook — still all event-driven, no timers. Raycast
+covers the common dropdowns plus full-status / anc-depth / profile; deeper config
+(EQ/name/multipoint) is CLI- or Android-only by design. The macOS surface has
+**no resident process** — every reading is on-demand, never polled.
 
 ## connectDevice Behaviour (verified 2026-04-11 via raw BMAP captures)
 

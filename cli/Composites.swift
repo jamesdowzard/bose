@@ -67,6 +67,25 @@ extension Transport {
             return (active, connected)
         }
     }
+
+    /// Apply a profile in ONE RFCOMM session. Reads the live CNC config first (only
+    /// if the profile sets ancDepth — that's a read-modify-write), then sends every
+    /// SET the profile defines. Returns false if the session can't open or the
+    /// profile sets nothing.
+    @discardableResult
+    func applyProfile(_ p: Profile) -> Bool {
+        session { ch, t in
+            var cnc: CncConfig? = nil
+            if p.ancDepth != nil, let cur = t.send(ch, Transport.cncLevelGet) {
+                cnc = parseCncLevel(cur)
+            }
+            let frames = profileFrames(p, currentCnc: cnc)
+            guard !frames.isEmpty else { return false }
+            var ok = true
+            for f in frames where t.send(ch, f) == nil { ok = false }
+            return ok
+        } ?? false
+    }
 }
 
 /// Uppercase-hex MAC key for set membership (keeps this file independent of

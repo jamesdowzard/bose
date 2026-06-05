@@ -173,6 +173,51 @@ func cmdName(_ newName: String?) {
     print("Name: \(parseString(r, from: 5))")
 }
 
+/// profile [name | save <name> | rm <name>] — list, apply, save, or remove a settings
+/// preset. A preset bundles {ANC mode, ANC depth, EQ, multipoint, volume}; applying
+/// sends only the fields a preset defines, in ONE RFCOMM session. Presets live in a
+/// git-tracked JSON file (see Profiles.swift); `save` snapshots the current state.
+func cmdProfile(_ a: [String]) {
+    let path = ProfileStore.defaultPath()
+    var store = ProfileStore.load(path)
+
+    if a.isEmpty {
+        if store.profiles.isEmpty {
+            print("No profiles. Save one: bose-ctl profile save <name>")
+        } else {
+            print("Profiles (\(path)):")
+            for p in store.profiles { print("  \(p.name)\(p.summary)") }
+        }
+        return
+    }
+
+    switch a[0].lowercased() {
+    case "save":
+        guard a.count >= 2 else { fail("usage: bose-ctl profile save <name>") }
+        let name = a[1...].joined(separator: " ")
+        guard let s = transport.getAllState() else { fail("headphones not reachable") }
+        store.upsert(Profile(capturing: s, name: name))
+        do { try store.save(path) } catch { fail("could not write \(path): \(error)") }
+        print("Saved profile '\(name)'\(Profile(capturing: s, name: name).summary)")
+
+    case "rm", "remove", "delete":
+        guard a.count >= 2 else { fail("usage: bose-ctl profile rm <name>") }
+        let name = a[1...].joined(separator: " ")
+        guard store.profile(named: name) != nil else { fail("unknown profile: \(name)") }
+        store.profiles.removeAll { $0.name.lowercased() == name.lowercased() }
+        do { try store.save(path) } catch { fail("could not write \(path): \(error)") }
+        print("Removed profile '\(name)'")
+
+    default:
+        let name = a.joined(separator: " ")
+        guard let p = store.profile(named: name) else {
+            fail("unknown profile: \(name) (list: bose-ctl profile)")
+        }
+        guard transport.applyProfile(p) else { fail("failed to apply '\(name)'") }
+        print("Applied '\(name)'\(p.summary)")
+    }
+}
+
 /// devices — known devices in three states (one RFCOMM session):
 ///   ● active     — audio sink (getConnectedDevices, 05,01 ground truth)
 ///   ○ connected  — ACL up but not the active sink (per-device getDeviceInfo, 04,05)
@@ -374,6 +419,7 @@ func usage() {
       bose-ctl multipoint [on|off]  Get/set multipoint
       bose-ctl play|pause|next|prev Media transport
       bose-ctl eq [bass mid treble] Get/set EQ (each -10 to +10)
+      bose-ctl profile [name]       Apply a preset (bare = list); save <name> / rm <name>
       bose-ctl raw <hex>            Send raw BMAP bytes
 
     Devices: \(BoseDeviceMap.knownDevices.map { $0.name }.joined(separator: ", "))
@@ -406,6 +452,7 @@ case "pause":                  cmdMedia(.pause)
 case "next":                   cmdMedia(.next)
 case "prev":                   cmdMedia(.prev)
 case "eq":                     cmdEq(args.count >= 3 ? Array(args[2...]) : [])
+case "profile", "profiles":    cmdProfile(args.count >= 3 ? Array(args[2...]) : [])
 case "raw":                    cmdRaw(requireArg("hex"))
 case "-h", "--help", "help":   usage()
 default:
