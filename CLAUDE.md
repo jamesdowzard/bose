@@ -21,10 +21,17 @@ simultaneously one waits, but in practice commands are too brief to collide.
 
 ## Components
 
-### macOS (`macos/`)
-- `macos/BoseControl/` -- SwiftUI menu bar app (replaces Hammerspoon/Raycast/bosed)
-- `macos/build.sh` -- Build script
-- `macos/com.jamesdowzard.bose-control.plist` -- LaunchAgent
+### macOS (`macos/`) — v2 event-driven menu-bar app
+- `macos/BoseControl/BoseControlApp.swift` -- `MenuBarExtra` entry (LSUIElement, no Dock/window) + global hotkey (⌃⌥⌘B device cycle) + `--selftest` init smoke
+- `macos/BoseControl/MenuView.swift` -- full control UI (device switch, ANC, CNC depth, volume, EQ, multipoint, media, rename, info)
+- `macos/BoseControl/BoseManager.swift` -- ObservableObject state; **no Timer** — refreshes only on menu-open + IOBluetooth connect/disconnect notifications; `connectDevice` poll-confirms via `getConnectedDevices`
+- `macos/BoseControl/Transport.swift` -- IOBluetooth RFCOMM transport (per-command open/drain-300ms/close, cold-start warm-up, serial queue). Ported from the old `BoseRFCOMM.swift`
+- `macos/BoseControl/Composites.swift` -- live-channel composites (cncLevel RMW, connectedDevices list, getAllState single-session)
+- `macos/BoseControl/Parsers.swift` -- pure, hardware-free response parsers (unit-tested)
+- `macos/Tests/main.swift` + `macos/run-tests.sh` -- standalone composite-parser unit tests
+- `macos/build.sh` -- Build script (regenerates protocol, compiles app + generated Swift)
+- `macos/com.jamesdowzard.bose-control.plist` -- LaunchAgent (silent menu-bar resident; does NOT poll)
+- Protocol wire layer is GENERATED: `protocol/generated/BMAP.generated.swift` (from `bmap.toml`) + `Devices.generated.swift` (device map / headphone MAC from `devices.toml`)
 
 ### Android (`android/`)
 - `android/` -- Jetpack Compose app (package: `au.com.jd.bose`)
@@ -36,8 +43,8 @@ simultaneously one waits, but in practice commands are too brief to collide.
 - Companion device registered for background FGS privileges
 
 ### Shared
-- `BoseRFCOMM.swift` -- Direct RFCOMM BMAP protocol (IOBluetooth, on-demand)
-- `BoseCtl.swift` -- CLI using BoseRFCOMM directly
+- `BoseRFCOMM.swift` -- Direct RFCOMM BMAP protocol (IOBluetooth, on-demand). **CLI-only now** — the v2 macOS app uses `macos/BoseControl/Transport.swift` + generated builders instead. Retire when the CLI is rebuilt on the generated layer (Phase 4).
+- `BoseCtl.swift` -- CLI using BoseRFCOMM directly (Phase 4 will regenerate it)
 
 ## Build & Deploy
 

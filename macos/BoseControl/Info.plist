@@ -22,7 +22,9 @@
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>13.0</string>
-	<!-- Dock app (not LSUIElement) -->
+	<!-- Menu-bar agent: no Dock icon, no window. -->
+	<key>LSUIElement</key>
+	<true/>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Bose needs Bluetooth to communicate with your Bose QC Ultra headphones.</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
