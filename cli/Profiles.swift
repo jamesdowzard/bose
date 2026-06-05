@@ -1,0 +1,143 @@
+/// Profiles: named bundles of settings ({ANC mode, ANC depth, EQ, multipoint,
+/// volume}) saved and applied as a unit. Foundation-only (no IOBluetooth): the
+/// pure frame-building + JSON load/save live here and unit-test without hardware;
+/// the live-session apply is `Transport.applyProfile` in Composites.swift.
+///
+/// Storage is JSON (not TOML like the wire spec) because the binary reads AND
+/// writes it at runtime — `profile save` — and Swift has no zero-dep TOML writer.
+/// The file is git-tracked in the repo (versioned), default `~/code/personal/bose/
+/// profiles.json`, overridable via `$BOSE_PROFILES`.
+
+import Foundation
+
+struct EqValues: Codable, Equatable {
+    var bass: Int
+    var mid: Int
+    var treble: Int
+}
+
+/// A settings preset. Every field is optional — a profile only touches what it sets.
+struct Profile: Codable, Equatable {
+    var name: String
+    var ancMode: String? = nil      // quiet / aware / custom1 / custom2
+    var ancDepth: Int? = nil        // 0-10
+    var eq: EqValues? = nil
+    var multipoint: Bool? = nil
+    var volume: Int? = nil          // 0-31
+
+    enum CodingKeys: String, CodingKey { case name, ancMode, ancDepth, eq, multipoint, volume }
+
+    // Custom encode so unset fields are omitted (clean, human-editable JSON) rather
+    // than written as nulls.
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(name, forKey: .name)
+        try c.encodeIfPresent(ancMode, forKey: .ancMode)
+        try c.encodeIfPresent(ancDepth, forKey: .ancDepth)
+        try c.encodeIfPresent(eq, forKey: .eq)
+        try c.encodeIfPresent(multipoint, forKey: .multipoint)
+        try c.encodeIfPresent(volume, forKey: .volume)
+    }
+
+    /// One-line summary of the fields this profile sets (for `profile` listing).
+    var summary: String {
+        var parts: [String] = []
+        if let m = ancMode { parts.append("anc \(m)") }
+        if let d = ancDepth { parts.append("depth \(d)") }
+        if let e = eq { parts.append("eq \(e.bass)/\(e.mid)/\(e.treble)") }
+        if let mp = multipoint { parts.append("mp \(mp ? "on" : "off")") }
+        if let v = volume { parts.append("vol \(v)") }
+        return parts.isEmpty ? "" : " — " + parts.joined(separator: ", ")
+    }
+
+    /// Capture the current device state as a fully-populated profile.
+    init(capturing s: HeadphoneState, name: String) {
+        self.name = name
+        self.ancMode = AncMode(rawValue: UInt8(truncatingIfNeeded: s.ancMode)).map { "\($0)" }
+        self.ancDepth = s.cncLevel
+        self.eq = EqValues(bass: s.eq.bass, mid: s.eq.mid, treble: s.eq.treble)
+        self.multipoint = s.multipointEnabled
+        self.volume = s.volume
+    }
+
+    init(name: String, ancMode: String? = nil, ancDepth: Int? = nil,
+         eq: EqValues? = nil, multipoint: Bool? = nil, volume: Int? = nil) {
+        self.name = name; self.ancMode = ancMode; self.ancDepth = ancDepth
+        self.eq = eq; self.multipoint = multipoint; self.volume = volume
+    }
+}
+
+struct ProfileStore: Codable {
+    var profiles: [Profile]
+
+    /// `$BOSE_PROFILES` → repo `profiles.json` (versioned) → `~/.config/bose/profiles.json`.
+    static func defaultPath() -> String {
+        let env = ProcessInfo.processInfo.environment
+        if let p = env["BOSE_PROFILES"], !p.isEmpty { return p }
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let repo = "\(home)/code/personal/bose/profiles.json"
+        if FileManager.default.fileExists(atPath: repo) { return repo }
+        return "\(home)/.config/bose/profiles.json"
+    }
+
+    /// Load, returning an empty store for a missing/unreadable/invalid file.
+    static func load(_ path: String) -> ProfileStore {
+        guard let data = FileManager.default.contents(atPath: path),
+              let store = try? JSONDecoder().decode(ProfileStore.self, from: data) else {
+            return ProfileStore(profiles: [])
+        }
+        return store
+    }
+
+    func save(_ path: String) throws {
+        let enc = JSONEncoder()
+        enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try enc.encode(self)
+        let dir = (path as NSString).deletingLastPathComponent
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        try data.write(to: URL(fileURLWithPath: path))
+    }
+
+    func profile(named name: String) -> Profile? {
+        profiles.first { $0.name.lowercased() == name.lowercased() }
+    }
+
+    mutating func upsert(_ p: Profile) {
+        if let i = profiles.firstIndex(where: { $0.name.lowercased() == p.name.lowercased() }) {
+            profiles[i] = p
+        } else {
+            profiles.append(p)
+        }
+    }
+}
+
+/// Map an ANC-mode name to its byte, single-sourced from the generated `AncMode` enum.
+func ancModeByte(_ name: String) -> UInt8? {
+    switch name.lowercased() {
+    case "quiet": return AncMode.quiet.rawValue
+    case "aware": return AncMode.aware.rawValue
+    case "custom1": return AncMode.custom1.rawValue
+    case "custom2": return AncMode.custom2.rawValue
+    default: return nil
+    }
+}
+
+/// Build the ordered SET frames a profile applies. ANC-depth is a read-modify-write,
+/// so the live CNC config is passed in; if `currentCnc` is nil the depth frame is
+/// skipped (the caller reads it within the session). Pure — unit-tested.
+func profileFrames(_ p: Profile, currentCnc: CncConfig?) -> [[UInt8]] {
+    var frames: [[UInt8]] = []
+    if let m = p.ancMode, let b = ancModeByte(m) { frames.append(BMAP.setAncMode(mode: b)) }
+    if let v = p.volume { frames.append(BMAP.setVolume(level: UInt8(max(0, min(31, v))))) }
+    if let mp = p.multipoint { frames.append(BMAP.setMultipoint(state: mp ? 0x07 : 0x00)) }
+    if let e = p.eq {
+        let clamp: (Int) -> Int8 = { Int8(max(-10, min(10, $0))) }
+        frames.append(BMAP.setEqBand(value: clamp(e.bass), band: EqBand.bass.rawValue))
+        frames.append(BMAP.setEqBand(value: clamp(e.mid), band: EqBand.mid.rawValue))
+        frames.append(BMAP.setEqBand(value: clamp(e.treble), band: EqBand.treble.rawValue))
+    }
+    if let d = p.ancDepth, let cnc = currentCnc {
+        frames.append(buildCncSet(level: d, preserving: cnc))
+    }
+    return frames
+}

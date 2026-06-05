@@ -1,0 +1,22 @@
+{
+  "profiles" : [
+    {
+      "name" : "flight",
+      "ancMode" : "quiet",
+      "ancDepth" : 10,
+      "multipoint" : false
+    },
+    {
+      "name" : "office",
+      "ancMode" : "aware",
+      "eq" : { "bass" : 0, "mid" : 0, "treble" : 0 },
+      "multipoint" : true
+    },
+    {
+      "name" : "music",
+      "ancMode" : "quiet",
+      "eq" : { "bass" : 3, "mid" : 0, "treble" : 2 },
+      "multipoint" : true
+    }
+  ]
+}
