@@ -28,7 +28,7 @@ front-ends that shell out to the `cli/` binary (`~/bin/bose-ctl`), so nothing ru
 in the background and the Mac only touches the headphones on an explicit keypress.
 - `raycast/bose-connect.sh` / `bose-disconnect.sh` -- Raycast script commands with a device dropdown → `bose-ctl connect|disconnect <device>`
 - `raycast/bose-status.sh` -- `bose-ctl status` (battery/ANC/volume/EQ)
-- `hammerspoon/bose.lua` -- Hammerspoon module: **Opt+B toggles Mac ↔ phone**. Decides direction from the Mac's default OUTPUT device (`verBosita` ⇒ on Mac), routes via async `bose-ctl`, sets the Mac output device, and shows an alert. Install: copy to `~/.hammerspoon/modules/bose.lua`, then `Bose = require("bose"); Bose.start()` in `init.lua`.
+- `hammerspoon/bose.lua` -- Hammerspoon module: **Opt+B toggles Mac ↔ phone**. Decides direction from the Mac's default OUTPUT device (`verBosita` ⇒ on Mac), routes via async `bose-ctl`, sets the Mac output device, and shows an alert. Returns a table with `.start()`. Wired in `init.lua` via `BoseCtl = dofile(os.getenv("HOME").."/code/personal/bose/hammerspoon/bose.lua"); BoseCtl.start()` (guarded by a file-exists check, so it activates automatically once this file is on `main`).
 - The Swift core that does the actual RFCOMM work lives in `cli/` (see below) — there is no separate macOS Swift target.
 
 ### Android (`android/`) — regenerated protocol on the kept architecture
@@ -69,7 +69,7 @@ cd protocol && make gen      # or `make check` to also verify no drift + run tes
 bash cli/build.sh
 cp cli/build/bose-ctl ~/bin/bose-ctl                       # the engine
 cp raycast/*.sh ~/.config/raycast/script-commands/         # Raycast commands
-cp hammerspoon/bose.lua ~/.hammerspoon/modules/bose.lua    # then require+start in init.lua
+# hammerspoon/bose.lua is dofile'd from this repo path by init.lua — no copy needed
 
 # Android app (deploy to S21 via ADB)
 cd android && ./gradlew assembleDebug

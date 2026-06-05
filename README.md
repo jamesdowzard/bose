@@ -26,7 +26,7 @@ The Mac has **no resident app** — Raycast + Hammerspoon shell out to `bose-ctl
 bash cli/build.sh
 cp cli/build/bose-ctl ~/bin/bose-ctl                      # the engine
 cp raycast/*.sh ~/.config/raycast/script-commands/        # Raycast commands
-cp hammerspoon/bose.lua ~/.hammerspoon/modules/bose.lua   # then require+start in init.lua
+# hammerspoon/bose.lua is dofile'd from this repo path by init.lua (Opt+B)
 
 # Android app (deploy to S21 via ADB)
 cd android && ./gradlew assembleDebug
