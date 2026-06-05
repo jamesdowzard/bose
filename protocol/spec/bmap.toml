@@ -1,0 +1,294 @@
+# BMAP protocol spec — single source of truth for the Bose QC Ultra 2 wire layer.
+#
+# Transcribed from the repo CLAUDE.md ("All Settable Commands", "BMAP Function
+# IDs", "BMAP Operators", "Transport & Operators", "connectDevice Behaviour").
+# Bytes here are reverse-engineered captures — do NOT invent bytes/operators.
+#
+# Frame layout: [block, function, operator, length, ...payload]
+#
+# Each command has one or more *action* sub-tables (e.g. [commands.x.set]) that
+# carry `operator` (BMAP operator enum name) and `payload` (encoder-DSL tokens:
+# "name:u8" | "name:i8" | "name:mac" | hex literal like "0x01" / "00").
+#
+# `verified_bytes` locks a concrete capture: each key is "<action>_<variant>" and
+# its value is the exact frame the device accepts. `test_args` supplies the named
+# args for each verified label. The golden test (tests/test_golden.py) iterates
+# these and asserts the generated frame equals the captured bytes.
+
+# ── Enums ──────────────────────────────────────────────────────────────────────
+
+[enums.AncMode]
+# ANC mode (1F,03). CLAUDE.md: 0=quiet 1=aware 2=custom1 3=custom2
+quiet = 0
+aware = 1
+custom1 = 2
+custom2 = 3
+
+[enums.EqBand]
+# EQ band selector (01,07). CLAUDE.md: 0=bass 1=mid 2=treble
+bass = 0
+mid = 1
+treble = 2
+
+[enums.MediaAction]
+# Media transport (05,03). CLAUDE.md: 01=play 02=pause 03=next 04=prev
+play = 1
+pause = 2
+next = 3
+prev = 4
+
+
+# ── Block 0x1F — ANC / CNC ─────────────────────────────────────────────────────
+
+[commands.anc_mode]
+block = 0x1F
+function = 0x03
+summary = "Set/get active-noise-cancellation mode (quiet/aware/custom1/custom2)."
+enum = "AncMode"
+
+[commands.anc_mode.set]
+operator = "START"          # CLAUDE.md: ANC mode uses START
+payload = ["mode:u8", "0x01"]
+
+[commands.anc_mode.get]
+operator = "GET"
+payload = []
+
+[commands.anc_mode.verified_bytes]
+# `1F,03,05,02,{mode},01`
+set_quiet = "1F 03 05 02 00 01"
+set_aware = "1F 03 05 02 01 01"
+set_custom1 = "1F 03 05 02 02 01"
+set_custom2 = "1F 03 05 02 03 01"
+get = "1F 03 01 00"
+
+[commands.anc_mode.test_args]
+set_quiet = { mode = 0 }
+set_aware = { mode = 1 }
+set_custom1 = { mode = 2 }
+set_custom2 = { mode = 3 }
+get = {}
+
+# ANC depth (1F,0A, SET_GET) is a composite: read current state first, change
+# `level` (0-10), preserve autoCNC/spatial/windBlock/ancToggle. Hand-written
+# per-platform read-modify-write — NOT a plain builder.
+[commands.cnc_level]
+block = 0x1F
+function = 0x0A
+composite = true
+summary = "ANC/CNC depth level 0-10 (read-modify-write, preserve other fields)."
+# `1F,0A,02,05,{level},{autoCNC},{spatial},{windBlock},{ancToggle}` — SET_GET.
+# No verified_bytes: the payload depends on a prior read of live device state.
+
+
+# ── Block 0x01 — Settings / Device ─────────────────────────────────────────────
+
+[commands.device_name]
+block = 0x01
+function = 0x02
+summary = "Rename the headphones (max 30 UTF-8 bytes)."
+# `01,02,06,{len},00,{utf8}` — SET. Length-prefixed UTF-8 string; the u8/i8/mac
+# encoder DSL can't express a variable-length string payload, so no verified_bytes
+# is locked here (the byte row is structural, not a fixed capture).
+
+[commands.device_name.set]
+operator = "SET"            # CLAUDE.md: name uses plain SET (0x06)
+payload = []                # variable UTF-8 body assembled by the platform layer
+
+[commands.eq_band]
+block = 0x01
+function = 0x07
+summary = "Set/get a 3-band EQ value (bass/mid/treble), signed -10..+10."
+enum = "EqBand"
+
+[commands.eq_band.set]
+operator = "SET_GET"        # CLAUDE.md: EQ REQUIRES SET_GET (0x02), not SET
+payload = ["value:i8", "band:u8"]
+
+[commands.eq_band.get]
+operator = "GET"
+payload = []
+
+[commands.eq_band.verified_bytes]
+# `01,07,02,02,{value},{band}` — value signed two's-complement byte
+set_bass_plus3 = "01 07 02 02 03 00"
+set_mid_zero = "01 07 02 02 00 01"
+set_treble_minus3 = "01 07 02 02 FD 02"
+get = "01 07 01 00"
+
+[commands.eq_band.test_args]
+set_bass_plus3 = { value = 3, band = 0 }
+set_mid_zero = { value = 0, band = 1 }
+set_treble_minus3 = { value = -3, band = 2 }
+get = {}
+
+[commands.multipoint]
+block = 0x01
+function = 0x0A
+summary = "Toggle 2-device multipoint (07=on, 00=off)."
+
+[commands.multipoint.set]
+operator = "SET_GET"        # CLAUDE.md: multipoint REQUIRES SET_GET (0x02)
+payload = ["state:u8"]      # state: 0x07=on, 0x00=off
+
+[commands.multipoint.get]
+operator = "GET"
+payload = []
+
+[commands.multipoint.verified_bytes]
+# `01,0A,02,01,{07/00}`
+set_on = "01 0A 02 01 07"
+set_off = "01 0A 02 01 00"
+get = "01 0A 01 00"
+
+[commands.multipoint.test_args]
+set_on = { state = 7 }
+set_off = { state = 0 }
+get = {}
+
+
+# ── Block 0x04 — DeviceManagement ──────────────────────────────────────────────
+
+[commands.connect_device]
+block = 0x04
+function = 0x01
+summary = "Connect/page a device and route audio to it. ACK != success — poll connected_devices."
+# Payload: `00` + 6-byte MAC = 7 bytes.
+
+[commands.connect_device.connect]
+operator = "START"          # CLAUDE.md: connect uses START
+payload = ["00", "mac:mac"]
+
+[commands.connect_device.verified_bytes]
+# `04,01,05,07,00,{MAC}` — mac device from device map (BC:D0:74:11:DB:27)
+connect_mac = "04 01 05 07 00 BC D0 74 11 DB 27"
+
+[commands.connect_device.test_args]
+connect_mac = { mac = "BC:D0:74:11:DB:27" }
+
+[commands.disconnect_device]
+block = 0x04
+function = 0x02
+summary = "Disconnect a device (6-byte MAC payload)."
+
+[commands.disconnect_device.disconnect]
+operator = "START"          # CLAUDE.md: disconnect uses START
+payload = ["mac:mac"]
+
+[commands.disconnect_device.verified_bytes]
+# `04,02,05,06,{MAC}`
+disconnect_mac = "04 02 05 06 BC D0 74 11 DB 27"
+
+[commands.disconnect_device.test_args]
+disconnect_mac = { mac = "BC:D0:74:11:DB:27" }
+
+
+# ── Block 0x05 — Audio ─────────────────────────────────────────────────────────
+
+[commands.connected_devices]
+block = 0x05
+function = 0x01
+composite = true
+summary = "GET audio-active device MACs (ground truth). Response parse is hand-written per-platform."
+# GET returns a variable-length list of MACs — composite (response parser is
+# platform-specific). No fixed verified_bytes for the response body.
+
+[commands.media_control]
+block = 0x05
+function = 0x03
+summary = "Media transport: play/pause/next/prev."
+enum = "MediaAction"
+
+[commands.media_control.media]
+operator = "START"          # CLAUDE.md: media control uses START
+payload = ["action:u8"]
+
+[commands.media_control.verified_bytes]
+# `05,03,05,01,{action}`
+media_play = "05 03 05 01 01"
+media_pause = "05 03 05 01 02"
+media_next = "05 03 05 01 03"
+media_prev = "05 03 05 01 04"
+
+[commands.media_control.test_args]
+media_play = { action = 1 }
+media_pause = { action = 2 }
+media_next = { action = 3 }
+media_prev = { action = 4 }
+
+[commands.audio_codec]
+block = 0x05
+function = 0x04
+summary = "GET codec ID + bitrate."
+
+[commands.audio_codec.get]
+operator = "GET"
+payload = []
+
+[commands.audio_codec.verified_bytes]
+get = "05 04 01 00"
+
+[commands.audio_codec.test_args]
+get = {}
+
+[commands.volume]
+block = 0x05
+function = 0x05
+summary = "Set/get volume level 0-31. MUST use SET_GET (0x02) — SET (0x06) is silently broken (v1 bug)."
+
+[commands.volume.set]
+operator = "SET_GET"        # CRITICAL: SET_GET, not SET. Fixes the v1 setVolume bug.
+payload = ["level:u8"]
+
+[commands.volume.get]
+operator = "GET"
+payload = []
+
+[commands.volume.verified_bytes]
+# `05,05,02,01,{level}` — note operator 02 (SET_GET), proving the v1-bug fix
+set_15 = "05 05 02 01 0F"
+set_0 = "05 05 02 01 00"
+set_31 = "05 05 02 01 1F"
+get = "05 05 01 00"
+
+[commands.volume.test_args]
+set_15 = { level = 15 }
+set_0 = { level = 0 }
+set_31 = { level = 31 }
+get = {}
+
+
+# ── Block 0x00 — System ────────────────────────────────────────────────────────
+
+[commands.firmware]
+block = 0x00
+function = 0x05
+summary = "GET firmware version."
+
+[commands.firmware.get]
+operator = "GET"
+payload = []
+
+[commands.firmware.verified_bytes]
+get = "00 05 01 00"
+
+[commands.firmware.test_args]
+get = {}
+
+
+# ── Block 0x02 — Battery ───────────────────────────────────────────────────────
+
+[commands.battery]
+block = 0x02
+function = 0x02
+summary = "GET battery level."
+
+[commands.battery.get]
+operator = "GET"
+payload = []
+
+[commands.battery.verified_bytes]
+get = "02 02 01 00"
+
+[commands.battery.test_args]
+get = {}

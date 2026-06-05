@@ -59,13 +59,19 @@ class BoseWidgetProvider : AppWidgetProvider() {
         ) {
             val views = RemoteViews(context.packageName, R.layout.widget_layout)
 
-            val buttonIds = mapOf(
+            // View IDs for the fixed 5-button widget layout. The device set is filtered
+            // through the generated BoseDeviceMap.widgetDevices so a macOS-only device
+            // (tv, widget=false) can never get a button — single source of truth.
+            val viewIdByName = mapOf(
                 "phone" to R.id.btn_phone,
                 "mac" to R.id.btn_mac,
                 "ipad" to R.id.btn_ipad,
                 "iphone" to R.id.btn_iphone,
                 "quest" to R.id.btn_quest,
             )
+            val buttonIds = BoseDeviceMap.widgetDevices
+                .mapNotNull { device -> viewIdByName[device.name]?.let { device.name to it } }
+                .toMap()
 
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val batteryLevel = prefs.getInt("battery_level", -1)

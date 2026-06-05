@@ -15,7 +15,7 @@ class DevicePickerActivity : Activity() {
         super.onCreate(savedInstanceState)
 
         val currentDevice = intent.getStringExtra("current_device")
-        val deviceNames = BoseProtocol.DEVICES.keys.toTypedArray()
+        val deviceNames = BoseDeviceMap.knownDevices.map { it.name }.toTypedArray()
         val labels = deviceNames.map { name ->
             if (name == currentDevice) "$name  (active)" else name
         }.toTypedArray()

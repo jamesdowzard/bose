@@ -149,9 +149,9 @@ class MainActivity : ComponentActivity() {
                 return
             }
 
-            Log.i(TAG, "Requesting companion association for ${BoseProtocol.BOSE_MAC}")
+            Log.i(TAG, "Requesting companion association for ${Headphone.MAC}")
             val filter = BluetoothDeviceFilter.Builder()
-                .setAddress(BoseProtocol.BOSE_MAC)
+                .setAddress(Headphone.MAC)
                 .build()
             val request = AssociationRequest.Builder()
                 .addDeviceFilter(filter)
@@ -215,11 +215,11 @@ class MainActivity : ComponentActivity() {
         return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 cdm.myAssociations.any { info ->
-                    info.deviceMacAddress?.toString()?.equals(BoseProtocol.BOSE_MAC, ignoreCase = true) == true
+                    info.deviceMacAddress?.toString()?.equals(Headphone.MAC, ignoreCase = true) == true
                 }
             } else {
                 @Suppress("DEPRECATION")
-                cdm.associations.any { it.equals(BoseProtocol.BOSE_MAC, ignoreCase = true) }
+                cdm.associations.any { it.equals(Headphone.MAC, ignoreCase = true) }
             }
         } catch (e: Exception) {
             Log.w(TAG, "Error checking associations: ${e.message}")

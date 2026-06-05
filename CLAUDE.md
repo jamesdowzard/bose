@@ -21,37 +21,64 @@ simultaneously one waits, but in practice commands are too brief to collide.
 
 ## Components
 
-### macOS (`macos/`)
-- `macos/BoseControl/` -- SwiftUI menu bar app (replaces Hammerspoon/Raycast/bosed)
-- `macos/build.sh` -- Build script
-- `macos/com.jamesdowzard.bose-control.plist` -- LaunchAgent
+### macOS — no resident app; on-demand surfaces over `bose-ctl`
+There is intentionally **no menu-bar app or LaunchAgent** (a resident poller was the
+original audio-dropout cause — #69-era). The Mac control surface is two thin
+front-ends that shell out to the `cli/` binary (`~/bin/bose-ctl`), so nothing runs
+in the background and the Mac only touches the headphones on an explicit keypress.
+- `raycast/bose-connect.sh` / `bose-disconnect.sh` -- Raycast script commands with a device dropdown → `bose-ctl connect|disconnect <device>`
+- `raycast/bose-status.sh` -- `bose-ctl status` (battery/ANC/volume/EQ)
+- `hammerspoon/bose.lua` -- Hammerspoon module: **Opt+B toggles Mac ↔ phone**. Decides direction from the Mac's default OUTPUT device (`verBosita` ⇒ on Mac), routes via async `bose-ctl`, sets the Mac output device, and shows an alert. Returns a table with `.start()`. Wired in `init.lua` via `BoseCtl = dofile(os.getenv("HOME").."/code/personal/bose/hammerspoon/bose.lua"); BoseCtl.start()` (guarded by a file-exists check, so it activates automatically once this file is on `main`).
+- The Swift core that does the actual RFCOMM work lives in `cli/` (see below) — there is no separate macOS Swift target.
 
-### Android (`android/`)
+### Android (`android/`) — regenerated protocol on the kept architecture
 - `android/` -- Jetpack Compose app (package: `au.com.jd.bose`)
-- `BoseService` -- foreground service (RFCOMM commands, A2DP auto-accept)
-- `BoseWidgetProvider` -- home screen widget (5 device buttons)
+- Protocol wire layer is GENERATED: `app/src/generated/java/au/com/jd/bose/BMAP.generated.kt` (from `bmap.toml`) + `Devices.generated.kt` (device map / headphone MAC from `devices.toml`). Refresh with `cd protocol && make gen` then `cd android && ./gradlew copyGeneratedProtocol` (the committed copies are the build inputs — do-not-edit banner)
+- `Transport.kt` -- RFCOMM transport (per-command open/drain-300ms/close, `ReentrantLock`, cold-start). Sends the `IntArray` frames the generated builders produce
+- `Composites.kt` -- live-channel composites (connectDevice poll-confirm, cnc_level RMW, connected_devices list, getAllState) — same escape-hatch split as macOS
+- `Parsers.kt` -- pure, hardware-free response parsers (JVM-unit-tested in `app/src/test/`, against the same captured bytes as macOS `Parsers.swift`)
+- `BoseProtocol.kt` -- thin command facade: builds non-composite frames via generated `BMAP.*`, decodes responses. NO hand-written frame builders
+- `A2dpReflection.kt` -- the ONE isolated home for the hidden-API `BluetoothA2dp.connect()` reflection (phone-only insurance; don't expand)
+- `BoseService` -- foreground service (RFCOMM commands; phone-only A2DP nudge; notification media controls play/pause/next/prev)
+- `BoseWidgetProvider` -- home screen widget (button set derives from `BoseDeviceMap.widgetDevices` — tv is macOS-only, never a widget button)
 - `BoseTileService` -- Quick Settings tile (shows active source)
 - `DevicePickerActivity` -- dialog launched from QS tile
 - `BootReceiver` -- auto-start service on boot
 - Companion device registered for background FGS privileges
 
-### Shared
-- `BoseRFCOMM.swift` -- Direct RFCOMM BMAP protocol (IOBluetooth, on-demand)
-- `BoseCtl.swift` -- CLI using BoseRFCOMM directly
+### CLI (`cli/`) — regenerated on the shared layer
+- `cli/main.swift` -- `bose-ctl` command surface (status/battery/anc/devices/connect/disconnect/swap/volume/multipoint/play-pause-next-prev/eq/raw). **No inline byte parsing** — every command routes through the generated `BMAP.*` builders. `connect`/`swap` poll-confirm via `getConnectedDevices` (ACK is never success); volume uses the generated SET_GET builder.
+- `cli/Transport.swift` -- IOBluetooth RFCOMM transport (per-command open/drain-300ms/close, cold-start warm-up, serial queue).
+- `cli/Composites.swift` -- live-channel composites (cncLevel RMW, connectedDevices list, getAllState single-session).
+- `cli/Parsers.swift` -- pure, hardware-free response parsers; `cli/Tests/main.swift` + `cli/run-tests.sh` are the standalone unit tests (same captured-byte corpus as Android `Parsers.kt`).
+- `cli/build.sh` -- compiles the generated Swift + `cli/{Transport,Parsers,Composites}.swift` + `cli/main.swift` → `cli/build/bose-ctl`. Does NOT install over `~/bin/bose-ctl`.
+- The Swift core here and the Kotlin app share one protocol source (`protocol/spec/` → `generated/`), so they can't drift on wire encoding.
+
+### Protocol (`protocol/`) — the single source of truth
+- `protocol/spec/bmap.toml` -- **canonical machine-readable BMAP spec.** Every command, operator, and enum lives here with `verified_bytes` golden captures. The command tables further down in this file are the human-readable mirror — **edit `bmap.toml` and regenerate; never hand-edit `generated/`.**
+- `protocol/spec/devices.toml` -- headphone MAC + device map (the one home for those literals).
+- `protocol/codegen/` + `protocol/generate.py` -- Python (uv) emitters → `protocol/generated/{BMAP,Devices}.generated.{swift,kt}`. `make gen` regenerates; `make check` proves the committed generated files are in sync + runs the golden byte tests.
 
 ## Build & Deploy
 
 ```bash
-# bose-ctl (CLI)
-swiftc -O BoseRFCOMM.swift BoseCtl.swift -framework IOBluetooth -o ~/bin/bose-ctl
+# Protocol layer (regenerate Swift + Kotlin from the spec; run golden tests)
+cd protocol && make gen      # or `make check` to also verify no drift + run tests
 
-# Mac app
-cd macos && ./build.sh
+# bose-ctl (CLI) → cli/build/bose-ctl, then install + the macOS front-ends
+bash cli/build.sh
+cp cli/build/bose-ctl ~/bin/bose-ctl                       # the engine
+cp raycast/*.sh ~/.config/raycast/script-commands/         # Raycast commands
+# hammerspoon/bose.lua is dofile'd from this repo path by init.lua — no copy needed
 
 # Android app (deploy to S21 via ADB)
 cd android && ./gradlew assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
+
+The Swift core (`cli/{Transport,Parsers,Composites}.swift` + generated Swift) and the
+Android Kotlin app share one protocol source (`protocol/spec/` → `generated/`), so the
+clients cannot drift on wire encoding or transport behaviour.
 
 Note: `android/local.properties` needs `sdk.dir=/Users/jamesdowzard/Library/Android/sdk`.
 This file is gitignored. Worktrees need it copied manually.
@@ -157,6 +184,11 @@ own MAC. Use `getConnectedDevices` (05,01) for audio-active devices and
 | ActiveDevice | 0x09 | Returns querying device, not necessarily streaming device |
 
 ## Transport & Operators (verified 2026-04-05, corrected via APK decompilation)
+
+> **Source of truth:** the tables below are the human-readable mirror of
+> `protocol/spec/bmap.toml`. To change a command/operator/enum, edit `bmap.toml`
+> (with `verified_bytes` for any concrete capture), run `cd protocol && make gen`,
+> and update these tables to match. Never hand-edit `protocol/generated/`.
 
 **Everything works over RFCOMM.** BLE GATT is NOT needed for any setting.
 The original "needs BLE GATT" assumption was wrong — we were using the wrong

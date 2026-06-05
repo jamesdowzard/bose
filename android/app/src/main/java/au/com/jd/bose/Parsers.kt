@@ -1,0 +1,153 @@
+package au.com.jd.bose
+
+/**
+ * Pure BMAP response decoders for the composite commands.
+ *
+ * Deliberately free of Android / Bluetooth dependencies (no Context, no
+ * BluetoothSocket) so they unit-test WITHOUT hardware — fed representative
+ * response byte arrays (see app/src/test/.../ParsersTest.kt). The live-channel
+ * orchestration that uses these parsers lives in `Composites.kt` (over Transport).
+ *
+ * Frames are `IntArray` of 0..255 values, matching the generated `BMAP` builders
+ * and the macOS `Parsers.swift` corpus byte-for-byte.
+ */
+object Parsers {
+
+    private const val OP_RESP = 0x03
+
+    /** A full headphone state snapshot (decoded from one bulk session). */
+    data class HeadphoneState(
+        var batteryLevel: Int = 0,
+        var batteryCharging: Boolean = false,
+        var ancMode: Int = 0, // 0=quiet 1=aware 2=custom1 3=custom2
+        var volume: Int = 0,
+        var volumeMax: Int = 31,
+        var connectedDevices: List<IntArray> = emptyList(), // audio-active (05,01)
+        var firmware: String = "",
+        var serialNumber: String = "",
+        var productName: String = "",
+        var platform: String = "",
+        var codename: String = "",
+        var audioCodec: String = "",
+        var deviceName: String = "",
+        var multipointEnabled: Boolean = false,
+        var autoOffTimer: IntArray = IntArray(0),
+        var cncLevel: Int = 0,
+        var onHead: Boolean = false,
+        var eqBass: Int = 0,
+        var eqMid: Int = 0,
+        var eqTreble: Int = 0,
+    )
+
+    /** The 5-byte AudioModes SettingsConfig tuple (1F,0A RESP): payload from byte 4. */
+    data class CncConfig(
+        val level: Int, // 0-10
+        val autoCNC: Int,
+        val spatial: Int,
+        val windBlock: Int,
+        val ancToggle: Int,
+    )
+
+    /**
+     * Parse the connected-devices RESPONSE (05,01). Layout:
+     *   [0x05, 0x01, RESP, len, ...] with count at byte 6 and 6-byte MACs from byte 7.
+     * Returns [] on any malformed/short/non-RESP frame.
+     */
+    fun parseConnectedDevices(resp: IntArray): List<IntArray> {
+        if (resp.size < 7 || resp[0] != 0x05 || resp[1] != 0x01 || resp[2] != OP_RESP) {
+            return emptyList()
+        }
+        val count = resp[6]
+        val devices = mutableListOf<IntArray>()
+        for (i in 0 until count) {
+            val offset = 7 + (i * 6)
+            if (offset + 6 > resp.size) break
+            devices.add(resp.copyOfRange(offset, offset + 6))
+        }
+        return devices
+    }
+
+    /**
+     * Parse the CNC/ANC-depth RESPONSE (1F,0A). Needs the full 5-byte payload
+     * (bytes 4..8). Returns null on a short/non-RESP frame.
+     */
+    fun parseCncLevel(resp: IntArray): CncConfig? {
+        if (resp.size < 9 || resp[2] != OP_RESP) return null
+        return CncConfig(resp[4], resp[5], resp[6], resp[7], resp[8])
+    }
+
+    /**
+     * Build the CNC SET_GET frame that changes `level` and preserves the rest.
+     * `1F,0A,02,05,{level},{autoCNC},{spatial},{windBlock},{ancToggle}`.
+     */
+    fun buildCncSet(level: Int, cfg: CncConfig): IntArray =
+        intArrayOf(
+            0x1F, 0x0A, 0x02, 0x05, level.coerceIn(0, 10),
+            cfg.autoCNC, cfg.spatial, cfg.windBlock, cfg.ancToggle,
+        )
+
+    /** Decode a UTF-8 string field response from a given payload offset. */
+    fun parseString(resp: IntArray, from: Int = 4): String {
+        if (resp.size <= from) return ""
+        val bytes = ByteArray(resp.size - from) { resp[from + it].toByte() }
+        return String(bytes, Charsets.UTF_8).trim('\u0000')
+    }
+
+    /**
+     * A response provider keyed by the (block, function) of the GET frame. Lets
+     * `parseAllState` be tested with a stub map and run live by closing over the
+     * transport channel.
+     */
+    fun interface ResponseProvider {
+        fun response(block: Int, function: Int): IntArray?
+    }
+
+    /**
+     * Assemble a `HeadphoneState` from per-command responses. Pure given `provide`.
+     * `provide(block, function)` returns the RESPONSE bytes for that GET (or null).
+     */
+    fun parseAllState(provide: ResponseProvider): HeadphoneState {
+        val s = HeadphoneState()
+
+        fun resp(b: Int, f: Int): IntArray? {
+            val r = provide.response(b, f) ?: return null
+            return if (r.size >= 5 && r[2] == OP_RESP) r else null
+        }
+
+        resp(0x02, 0x02)?.let {
+            s.batteryLevel = it[4].coerceIn(0, 100)
+            s.batteryCharging = it.size >= 8 && it[7] != 0
+        }
+        resp(0x1F, 0x03)?.let { s.ancMode = it[4] }
+        resp(0x05, 0x05)?.let { if (it.size >= 6) { s.volumeMax = it[4]; s.volume = it[5] } }
+
+        provide.response(0x05, 0x01)?.let { s.connectedDevices = parseConnectedDevices(it) }
+        provide.response(0x1F, 0x0A)?.let { r -> parseCncLevel(r)?.let { s.cncLevel = it.level } }
+
+        resp(0x00, 0x05)?.let { s.firmware = parseString(it) }
+        resp(0x00, 0x07)?.let { s.serialNumber = parseString(it) }
+        resp(0x00, 0x0F)?.let { s.productName = parseString(it) }
+        resp(0x12, 0x0D)?.let { s.platform = parseString(it) }
+        resp(0x12, 0x0C)?.let { s.codename = parseString(it) }
+        resp(0x01, 0x02)?.let { if (it.size >= 6) s.deviceName = parseString(it, from = 5) }
+
+        resp(0x05, 0x04)?.let {
+            val str = parseString(it)
+            s.audioCodec = if (str.isNotEmpty()) str
+            else it.copyOfRange(4, it.size).joinToString(" ") { b -> "%02X".format(b) }
+        }
+
+        resp(0x01, 0x0A)?.let { s.multipointEnabled = it[4] != 0 }
+        resp(0x01, 0x0B)?.let { s.autoOffTimer = it.copyOfRange(4, it.size) }
+        resp(0x08, 0x07)?.let { s.onHead = it[4] == 0x04 }
+
+        provide.response(0x01, 0x07)?.let { r ->
+            if (r.size >= 16 && r[2] == OP_RESP) {
+                s.eqBass = r[6].toByte().toInt()
+                s.eqMid = r[10].toByte().toInt()
+                s.eqTreble = r[14].toByte().toInt()
+            }
+        }
+        return s
+    }
+}

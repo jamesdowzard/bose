@@ -30,14 +30,14 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
         val volumeMax: Int = 31,
 
         // Devices
-        val deviceStates: Map<String, DeviceState> = BoseProtocol.DEVICES.keys
-            .associateWith { DeviceState.OFFLINE },
+        val deviceStates: Map<String, DeviceState> = BoseDeviceMap.knownDevices
+            .associate { it.name to DeviceState.OFFLINE },
 
         // Settings
         val multipointEnabled: Boolean = false,
         val cncLevel: Int = 0,
         val autoOffTimer: String = "",
-        val immersionLevel: ByteArray? = null,
+        val immersionLevel: IntArray? = null,
         val wearDetected: Boolean = false,
 
         // Info
@@ -47,9 +47,9 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
         val codecName: String = "",
         val codecBitrate: Int = 0,
         val productName: String = "",
-        val headphonesMac: String = BoseProtocol.BOSE_MAC,
+        val headphonesMac: String = Headphone.MAC,
 
-        // EQ (read-only)
+        // EQ (3-band, writable via setEq)
         val eqBass: Int = 0,
         val eqMid: Int = 0,
         val eqTreble: Int = 0,
@@ -77,17 +77,17 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
                     BoseProtocol.getVolume()?.let { s = s.copy(volume = it.current, volumeMax = it.max) }
 
                     // Device connection states
-                    val audioNames = BoseProtocol.getConnectedDevices()
-                        .map { BoseProtocol.nameForMac(it) }.toSet()
+                    val audioNames = Composites.getConnectedDevices()
+                        .map { BoseDeviceMap.nameForMac(it.toByteArray()) }.toSet()
                     val aclNames = mutableSetOf<String>()
-                    for ((name, mac) in BoseProtocol.DEVICES) {
-                        val info = BoseProtocol.getDeviceInfo(mac)
-                        if (info != null && info.connected) aclNames.add(name)
+                    for (device in BoseDeviceMap.knownDevices) {
+                        val info = BoseProtocol.getDeviceInfo(device.mac.toIntArray())
+                        if (info != null && info.connected) aclNames.add(device.name)
                     }
-                    s = s.copy(deviceStates = BoseProtocol.DEVICES.keys.associateWith { name ->
-                        when {
-                            audioNames.contains(name) -> DeviceState.ACTIVE
-                            aclNames.contains(name) -> DeviceState.CONNECTED
+                    s = s.copy(deviceStates = BoseDeviceMap.knownDevices.associate { device ->
+                        device.name to when {
+                            audioNames.contains(device.name) -> DeviceState.ACTIVE
+                            aclNames.contains(device.name) -> DeviceState.CONNECTED
                             else -> DeviceState.OFFLINE
                         }
                     })
@@ -95,7 +95,7 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
                     BoseProtocol.getFirmwareVersion()?.let { s = s.copy(firmwareVersion = it) }
                     BoseProtocol.getDeviceName()?.let { s = s.copy(deviceName = it) }
                     BoseProtocol.getMultipoint()?.let { s = s.copy(multipointEnabled = it) }
-                    BoseProtocol.getCncLevel()?.let { s = s.copy(cncLevel = it) }
+                    Composites.getCncLevel()?.let { s = s.copy(cncLevel = it) }
                     BoseProtocol.getAutoOffTimer()?.let { s = s.copy(autoOffTimer = BoseProtocol.autoOffTimerDescription(it)) }
                     BoseProtocol.getWearState()?.let { s = s.copy(wearDetected = it) }
                     BoseProtocol.getSerialNumber()?.let { s = s.copy(serialNumber = it) }
@@ -122,14 +122,14 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _state.value = _state.value.copy(loading = true, error = null)
             try {
-                val mac = BoseProtocol.DEVICES[name] ?: run {
+                val mac = BoseDeviceMap.mac(name)?.toIntArray() ?: run {
                     _state.value = _state.value.copy(loading = false)
                     return@launch
                 }
                 val result = BoseProtocol.withConnection {
-                    BoseProtocol.connectDevice(mac)
+                    Composites.connectDevice(mac)
                 }
-                if (result == BoseProtocol.SwitchResult.TARGET_OFFLINE) {
+                if (result == Composites.SwitchResult.TARGET_OFFLINE) {
                     _state.value = _state.value.copy(
                         loading = false,
                         error = "$name is offline — connect it to Bose first",
@@ -188,7 +188,7 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
     )
 
     fun setCncLevel(level: Int) = command("Failed to set ANC depth",
-        action = { BoseProtocol.setCncLevel(level) },
+        action = { Composites.setCncLevel(level) },
         onSuccess = { _state.value = _state.value.copy(cncLevel = level) },
     )
 

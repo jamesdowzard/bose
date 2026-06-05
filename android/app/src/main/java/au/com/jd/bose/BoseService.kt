@@ -7,12 +7,12 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.bluetooth.BluetoothA2dp
-import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.content.Intent
+import android.graphics.drawable.Icon
 import android.media.AudioManager
 import android.os.Binder
 import android.os.IBinder
@@ -42,6 +42,10 @@ class BoseService : Service() {
         const val ACTION_CONNECT_DEVICE = "au.com.jd.bose.CONNECT_DEVICE"
         const val EXTRA_DEVICE_NAME = "device_name"
         const val ACTION_REFRESH = "au.com.jd.bose.REFRESH"
+
+        // Media transport sent to the headphones via BMAP mediaControl (05,03).
+        const val ACTION_MEDIA = "au.com.jd.bose.MEDIA"
+        const val EXTRA_MEDIA_ACTION = "media_action" // BoseProtocol.MediaAction.value
 
         const val BROADCAST_STATUS = "au.com.jd.bose.STATUS_UPDATE"
         const val EXTRA_ACTIVE_DEVICE = "active_device"
@@ -79,6 +83,11 @@ class BoseService : Service() {
             ACTION_REFRESH -> {
                 executor.submit { refreshStatus() }
             }
+            ACTION_MEDIA -> {
+                val actionValue = intent.getIntExtra(EXTRA_MEDIA_ACTION, -1)
+                val mediaAction = BoseProtocol.MediaAction.entries.find { it.value == actionValue }
+                if (mediaAction != null) executor.submit { sendMedia(mediaAction) }
+            }
         }
         return START_STICKY
     }
@@ -111,7 +120,26 @@ class BoseService : Service() {
             .setContentText(text)
             .setContentIntent(pi)
             .setOngoing(true)
+            // Media transport — sends BMAP mediaControl (05,03) to the headphones.
+            .addAction(mediaAction(android.R.drawable.ic_media_previous, "Prev", BoseProtocol.MediaAction.PREV))
+            .addAction(mediaAction(android.R.drawable.ic_media_play, "Play", BoseProtocol.MediaAction.PLAY))
+            .addAction(mediaAction(android.R.drawable.ic_media_pause, "Pause", BoseProtocol.MediaAction.PAUSE))
+            .addAction(mediaAction(android.R.drawable.ic_media_next, "Next", BoseProtocol.MediaAction.NEXT))
             .build()
+    }
+
+    /** A notification action that fires the headphone media command via the service. */
+    private fun mediaAction(icon: Int, title: String, action: BoseProtocol.MediaAction): Notification.Action {
+        val intent = Intent(this, BoseService::class.java).apply {
+            this.action = ACTION_MEDIA
+            putExtra(EXTRA_MEDIA_ACTION, action.value)
+        }
+        // Distinct requestCode per action so PendingIntents don't collide.
+        val pi = PendingIntent.getForegroundService(
+            this, 100 + action.value, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        return Notification.Action.Builder(Icon.createWithResource(this, icon), title, pi).build()
     }
 
     private fun updateNotification(text: String) {
@@ -120,14 +148,14 @@ class BoseService : Service() {
     }
 
     // ======================================================================
-    // A2DP auto-accept
+    // A2DP (phone-side insurance, "switch to phone" only)
     // ======================================================================
 
-    // ACL auto-accept removed: the old aclReceiver called ensureA2dp on
-    // every Bose ACL reconnect, which fights user switches to other devices.
-    // Samsung's BT stack auto-reconnects ACL after a drop — the receiver
-    // would then force A2DP back to the phone, stealing audio from iPad/Mac.
-    // A2DP connect for the "phone" case is handled in switchDevice instead.
+    // No ACL auto-accept: the old aclReceiver called ensureA2dp on every Bose ACL
+    // reconnect, which fought user switches to other devices (#61-#64). Samsung's BT
+    // stack auto-reconnects ACL after a drop — the receiver would then force A2DP back
+    // to the phone, stealing audio from iPad/Mac. A2DP connect happens ONLY in
+    // switchDevice's "phone" branch, via the quarantined A2dpReflection hack.
 
     @SuppressLint("MissingPermission")
     private fun setupA2dpProxy() {
@@ -147,19 +175,18 @@ class BoseService : Service() {
         }, BluetoothProfile.A2DP)
     }
 
+    /**
+     * Phone-side A2DP insurance for the "switch to phone" path only. The hidden-API
+     * reflection itself is quarantined in [A2dpReflection] — do NOT expand this beyond
+     * the local-phone case (never HFP; never on every ACL reconnect — see CLAUDE.md).
+     */
     @SuppressLint("MissingPermission")
     private fun ensureA2dp(device: BluetoothDevice) {
         val proxy = a2dpProxy ?: run {
             Log.w(TAG, "A2DP proxy not available")
             return
         }
-        try {
-            val method = BluetoothA2dp::class.java.getMethod("connect", BluetoothDevice::class.java)
-            val result = method.invoke(proxy, device) as Boolean
-            Log.i(TAG, "A2DP connect result: $result")
-        } catch (e: Exception) {
-            Log.w(TAG, "A2DP connect failed: ${e.message}")
-        }
+        A2dpReflection.connect(proxy, device)
     }
 
     // ======================================================================
@@ -210,23 +237,23 @@ class BoseService : Service() {
                 return
             }
 
-            val mac = BoseProtocol.DEVICES[deviceName]
+            val mac = BoseDeviceMap.mac(deviceName)?.toIntArray()
             if (mac == null) {
                 broadcastError("Unknown device: $deviceName")
                 return
             }
 
             Log.i(TAG, "Switching to $deviceName")
-            val result = BoseProtocol.connectDevice(mac)
+            val result = Composites.connectDevice(mac)
 
             when (result) {
-                BoseProtocol.SwitchResult.SWITCHED -> {
-                    Log.i(TAG, "Switch to $deviceName confirmed by RESULT frame")
+                Composites.SwitchResult.SWITCHED -> {
+                    // Confirmed by polling getConnectedDevices (never ACK-as-success).
+                    Log.i(TAG, "Switch to $deviceName confirmed — target is audio-active")
                     updateNotification("Active: $deviceName")
 
                     if (deviceName == "phone") {
-                        val adapter = getSystemService(BluetoothManager::class.java)?.adapter
-                        val boseDevice = adapter?.getRemoteDevice(BoseProtocol.BOSE_MAC)
+                        val boseDevice = Transport.boseDevice()
                         if (boseDevice != null) {
                             Log.i(TAG, "Proactively connecting A2DP for local device")
                             ensureA2dp(boseDevice)
@@ -240,18 +267,34 @@ class BoseService : Service() {
                     broadcastStatus(deviceName, true)
                 }
 
-                BoseProtocol.SwitchResult.TARGET_OFFLINE -> {
+                Composites.SwitchResult.TARGET_OFFLINE -> {
                     Log.w(TAG, "$deviceName is not connected to Bose — can't switch")
                     broadcastError("$deviceName is offline — connect it to Bose first")
                 }
 
-                BoseProtocol.SwitchResult.FAILED -> {
+                Composites.SwitchResult.FAILED -> {
                     broadcastError("Failed to switch to $deviceName")
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Switch error", e)
             broadcastError(e.message ?: "Unknown error")
+        } finally {
+            BoseProtocol.disconnect()
+        }
+    }
+
+    /** Send a media transport command (play/pause/next/prev) to the headphones. */
+    private fun sendMedia(action: BoseProtocol.MediaAction) {
+        try {
+            if (!ensureConnected()) {
+                broadcastError("Cannot connect to headphones")
+                return
+            }
+            Log.i(TAG, "Media: $action")
+            BoseProtocol.mediaControl(action)
+        } catch (e: Exception) {
+            Log.e(TAG, "Media error", e)
         } finally {
             BoseProtocol.disconnect()
         }
@@ -264,13 +307,13 @@ class BoseService : Service() {
                 return
             }
 
-            val audioMacs = BoseProtocol.getConnectedDevices()
-            val audioNames = audioMacs.map { BoseProtocol.nameForMac(it) }
+            val audioMacs = Composites.getConnectedDevices()
+            val audioNames = audioMacs.map { BoseDeviceMap.nameForMac(it.toByteArray()) }
 
             val connectedNames = mutableListOf<String>()
-            for ((name, mac) in BoseProtocol.DEVICES) {
-                val info = BoseProtocol.getDeviceInfo(mac)
-                if (info != null && info.connected) connectedNames.add(name)
+            for (device in BoseDeviceMap.knownDevices) {
+                val info = BoseProtocol.getDeviceInfo(device.mac.toIntArray())
+                if (info != null && info.connected) connectedNames.add(device.name)
             }
 
             val battery = BoseProtocol.getBattery()

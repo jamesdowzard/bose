@@ -1,0 +1,40 @@
+# Device map — single source of truth for the headphone MAC + paired devices.
+# Transcribed from the repo CLAUDE.md "Device Map" + "Cycle order" rows.
+# Do NOT invent MACs.
+
+headphone_mac = "E4:58:BC:C0:2F:72"
+headphone_name = "verBosita"
+
+# Cycle order for the bose-ctl / hotkey device switch (CLAUDE.md):
+# mac -> quest -> ipad -> iphone -> tv -> phone
+cycle_order = ["mac", "quest", "ipad", "iphone", "tv", "phone"]
+
+[devices.phone]
+mac = "A8:76:50:D3:B1:1B"
+widget = true
+notes = "Samsung S21 (local device)"
+
+[devices.mac]
+mac = "BC:D0:74:11:DB:27"
+widget = true
+notes = "MacBook"
+
+[devices.ipad]
+mac = "F4:81:C4:B5:FA:AB"
+widget = true
+notes = ""
+
+[devices.iphone]
+mac = "F8:4D:89:C4:B6:ED"
+widget = true
+notes = ""
+
+[devices.tv]
+mac = "14:C1:4E:B7:CB:68"
+widget = false          # CLAUDE.md: "macOS only" — no Android widget button
+notes = "Chromecast (macOS only)"
+
+[devices.quest]
+mac = "78:C4:FA:C8:5C:3D"
+widget = true
+notes = "Meta Quest 3"
