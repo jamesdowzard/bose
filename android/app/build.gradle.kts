@@ -39,6 +39,27 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    // The BMAP wire layer + device map are GENERATED from protocol/spec/*.toml.
+    // They live in a dedicated source root (committed, do-not-edit) so the app
+    // and macOS share one source of truth. `copyGeneratedProtocol` refreshes them.
+    sourceSets["main"].java.srcDir("src/generated/java")
+
+    testOptions {
+        unitTests.all { it.useJUnit() }
+    }
+}
+
+// Copy the generated Kotlin protocol layer from protocol/generated/ into the app's
+// generated source root. Mirrors macos/build.sh's copy of the generated Swift.
+// Run manually (`./gradlew copyGeneratedProtocol`) after `cd protocol && make gen`;
+// the committed copies are the build inputs so CI needs no Python.
+tasks.register<Copy>("copyGeneratedProtocol") {
+    val protocolGen = rootProject.file("../protocol/generated")
+    from(protocolGen) {
+        include("BMAP.generated.kt", "Devices.generated.kt")
+    }
+    into("src/generated/java/au/com/jd/bose")
 }
 
 dependencies {
@@ -57,4 +78,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
+
+    // JVM unit tests for the pure composite parsers (no hardware / Android stubs).
+    testImplementation("junit:junit:4.13.2")
 }
