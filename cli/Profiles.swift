@@ -91,8 +91,13 @@ struct ProfileStore: Codable {
 
     func save(_ path: String) throws {
         let enc = JSONEncoder()
+        // .sortedKeys gives DETERMINISTIC output (stable across saves); the churn it
+        // caused was only because the committed file wasn't in this form. We normalise
+        // profiles.json to match + emit a trailing newline, so a `profile save`/`rm`
+        // round-trip is now byte-stable (a no-op) against the committed file.
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try enc.encode(self)
+        var data = try enc.encode(self)
+        data.append(0x0A)  // trailing newline
         let dir = (path as NSString).deletingLastPathComponent
         try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         try data.write(to: URL(fileURLWithPath: path))
