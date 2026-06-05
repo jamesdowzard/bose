@@ -212,7 +212,7 @@ BMAP operator (SET/0x06 instead of SET_GET/0x02).
 
 | Setting | Block,Func | Operator | Bytes | Notes |
 |---------|-----------|----------|-------|-------|
-| ANC mode | 1F,03 | START | `1F,03,05,02,{mode},01` | 0=quiet 1=aware 2=custom1 3=custom2 |
+| ANC mode | 1F,03 | START | `1F,03,05,02,{mode},01` | 0=quiet 1=aware 2=custom1 3=custom2; reads 255=off when disabled (decode-only, not settable) |
 | Volume | 05,05 | SET_GET | `05,05,02,01,{level}` | 0-31 |
 | Device name | 01,02 | SET | `01,02,06,{len},00,{utf8}` | max 30 UTF-8 bytes |
 | Multipoint | 01,0A | SET_GET | `01,0A,02,01,{07/00}` | 07=on, 00=off |
