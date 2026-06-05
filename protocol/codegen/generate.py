@@ -6,6 +6,8 @@ Usage:
 Writes:
     generated/BMAP.generated.swift
     generated/BMAP.generated.kt
+    generated/Devices.generated.swift
+    generated/Devices.generated.kt
 
 Both files carry a DO-NOT-EDIT banner. The committed files must stay in sync
 with the spec — `make check` (git diff --exit-code) enforces that.
@@ -14,7 +16,7 @@ with the spec — `make check` (git diff --exit-code) enforces that.
 import pathlib
 import tomllib
 
-from codegen.emit_devices import emit_devices_swift
+from codegen.emit_devices import emit_devices_kotlin, emit_devices_swift
 from codegen.emit_kotlin import emit_kotlin
 from codegen.emit_swift import emit_swift
 
@@ -59,7 +61,7 @@ def with_devices_banner(src: str, lang: str) -> str:
 
 def run(
     out_dir: pathlib.Path | None = None,
-) -> tuple[pathlib.Path, pathlib.Path, pathlib.Path]:
+) -> tuple[pathlib.Path, ...]:
     out_dir = pathlib.Path(out_dir) if out_dir else _DEFAULT_OUT
     out_dir.mkdir(parents=True, exist_ok=True)
     spec = load_spec()
@@ -68,19 +70,26 @@ def run(
     swift_path = out_dir / "BMAP.generated.swift"
     kotlin_path = out_dir / "BMAP.generated.kt"
     devices_swift_path = out_dir / "Devices.generated.swift"
+    devices_kotlin_path = out_dir / "Devices.generated.kt"
     swift_path.write_text(with_banner(emit_swift(spec), "swift"))
     kotlin_path.write_text(with_banner(emit_kotlin(spec), "kotlin"))
     devices_swift_path.write_text(
         with_devices_banner(emit_devices_swift(devices), "swift")
     )
-    return swift_path, kotlin_path, devices_swift_path
+    devices_kotlin_path.write_text(
+        with_devices_banner(emit_devices_kotlin(devices), "kotlin")
+    )
+    return (
+        swift_path,
+        kotlin_path,
+        devices_swift_path,
+        devices_kotlin_path,
+    )
 
 
 def main() -> None:
-    swift_path, kotlin_path, devices_swift_path = run()
-    print(f"wrote {swift_path}")
-    print(f"wrote {kotlin_path}")
-    print(f"wrote {devices_swift_path}")
+    for path in run():
+        print(f"wrote {path}")
 
 
 if __name__ == "__main__":
