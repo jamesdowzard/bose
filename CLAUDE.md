@@ -33,10 +33,16 @@ simultaneously one waits, but in practice commands are too brief to collide.
 - `macos/com.jamesdowzard.bose-control.plist` -- LaunchAgent (silent menu-bar resident; does NOT poll)
 - Protocol wire layer is GENERATED: `protocol/generated/BMAP.generated.swift` (from `bmap.toml`) + `Devices.generated.swift` (device map / headphone MAC from `devices.toml`)
 
-### Android (`android/`)
+### Android (`android/`) — regenerated protocol on the kept architecture
 - `android/` -- Jetpack Compose app (package: `au.com.jd.bose`)
-- `BoseService` -- foreground service (RFCOMM commands, A2DP auto-accept)
-- `BoseWidgetProvider` -- home screen widget (5 device buttons)
+- Protocol wire layer is GENERATED: `app/src/generated/java/au/com/jd/bose/BMAP.generated.kt` (from `bmap.toml`) + `Devices.generated.kt` (device map / headphone MAC from `devices.toml`). Refresh with `cd protocol && make gen` then `cd android && ./gradlew copyGeneratedProtocol` (the committed copies are the build inputs — do-not-edit banner)
+- `Transport.kt` -- RFCOMM transport (per-command open/drain-300ms/close, `ReentrantLock`, cold-start). Sends the `IntArray` frames the generated builders produce
+- `Composites.kt` -- live-channel composites (connectDevice poll-confirm, cnc_level RMW, connected_devices list, getAllState) — same escape-hatch split as macOS
+- `Parsers.kt` -- pure, hardware-free response parsers (JVM-unit-tested in `app/src/test/`, against the same captured bytes as macOS `Parsers.swift`)
+- `BoseProtocol.kt` -- thin command facade: builds non-composite frames via generated `BMAP.*`, decodes responses. NO hand-written frame builders
+- `A2dpReflection.kt` -- the ONE isolated home for the hidden-API `BluetoothA2dp.connect()` reflection (phone-only insurance; don't expand)
+- `BoseService` -- foreground service (RFCOMM commands; phone-only A2DP nudge; notification media controls play/pause/next/prev)
+- `BoseWidgetProvider` -- home screen widget (button set derives from `BoseDeviceMap.widgetDevices` — tv is macOS-only, never a widget button)
 - `BoseTileService` -- Quick Settings tile (shows active source)
 - `DevicePickerActivity` -- dialog launched from QS tile
 - `BootReceiver` -- auto-start service on boot
