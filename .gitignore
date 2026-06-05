@@ -29,3 +29,4 @@ xcuserdata/
 bose-ctl
 bosed
 .worktrees/
+.harness/state.json
