@@ -271,7 +271,7 @@ surface. Keep this in sync when adding a verb or control.
 | Platform | 12,0D | 👁 `info` | 👁 (full status) | 👁 state |
 | Codename | 12,0C | 👁 `info` | 👁 (full status) | 👁 state |
 | Auto-off timer | 01,0B | 👁 `info` (read-only) | 👁 (full status) | 👁 state |
-| On-head / wear | 08,07 | 👁 `info` | 👁 (full status) | 👁 state |
+| On-head / wear | 08,07 | 👁 `info` (yes/no; `unknown` if no RESP) | 👁 (full status) | 👁 state |
 
 **Profiles** compose several of these capabilities at once — a `bose-ctl profile`
 applies {ANC mode, ANC depth, EQ, multipoint, volume} in one session (CLI +
