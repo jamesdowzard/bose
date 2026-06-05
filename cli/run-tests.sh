@@ -12,7 +12,7 @@ BIN="$OUT_DIR/parser-tests"
 swiftc \
     -target arm64-apple-macos13.0 \
     -sdk "$(xcrun --show-sdk-path)" \
-    "$SCRIPT_DIR/BoseControl/Parsers.swift" \
+    "$SCRIPT_DIR/Parsers.swift" \
     "$SCRIPT_DIR/Tests/main.swift" \
     -o "$BIN"
 

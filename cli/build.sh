@@ -1,10 +1,12 @@
 #!/bin/bash
-# Build bose-ctl (CLI) on the SHARED generated protocol + transport layer.
+# Build bose-ctl (CLI) on the generated protocol + transport layer.
 #
-# Compiles the EXACT SAME shared sources the macOS app does (Transport/Parsers/
-# Composites + the generated BMAP/Devices Swift) plus cli/main.swift. CLI and app
-# therefore cannot drift on wire encoding or transport mechanics — there is one
-# protocol source (protocol/spec/bmap.toml → generated/) and one transport.
+# Compiles the generated BMAP/Devices Swift (from protocol/spec/bmap.toml) plus the
+# Swift core (Transport/Parsers/Composites, here in cli/) and main.swift. The Swift
+# core and the Kotlin app share one protocol source (protocol/spec/ → generated/) so
+# they can't drift on wire encoding. The macOS surface is Raycast commands + a
+# Hammerspoon hotkey (see raycast/ and hammerspoon/) that shell out to this binary —
+# there is no resident menu-bar app.
 #
 # Output: cli/build/bose-ctl in the worktree. This script does NOT install over
 # ~/bin/bose-ctl — install that yourself (see CLAUDE.md) once hardware-tested.
@@ -15,7 +17,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 GEN_DIR="$REPO_ROOT/protocol/generated"
-SHARED_DIR="$REPO_ROOT/macos/BoseControl"
 BUILD_DIR="$SCRIPT_DIR/build"
 BIN="$BUILD_DIR/bose-ctl"
 
@@ -30,16 +31,15 @@ fi
 
 mkdir -p "$BUILD_DIR"
 
-# Same generated + shared transport/composites/parsers the app compiles, plus the
-# CLI entry point. No BoseManager/MenuView/App (those are SwiftUI menu-bar only).
+# Generated protocol + transport/composites/parsers + the CLI entry point.
 swiftc -O \
     -target arm64-apple-macos13.0 \
     -sdk "$(xcrun --show-sdk-path)" \
     "$GEN_DIR/BMAP.generated.swift" \
     "$GEN_DIR/Devices.generated.swift" \
-    "$SHARED_DIR/Transport.swift" \
-    "$SHARED_DIR/Parsers.swift" \
-    "$SHARED_DIR/Composites.swift" \
+    "$SCRIPT_DIR/Transport.swift" \
+    "$SCRIPT_DIR/Parsers.swift" \
+    "$SCRIPT_DIR/Composites.swift" \
     "$SCRIPT_DIR/main.swift" \
     -framework IOBluetooth \
     -framework CoreBluetooth \

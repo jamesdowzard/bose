@@ -12,26 +12,29 @@ See `CLAUDE.md` for the protocol tables, device map, and hard-won lessons.
 | Path | What |
 |------|------|
 | `protocol/` | `bmap.toml` + `devices.toml` spec, Python codegen, golden byte tests. `make gen` regenerates `protocol/generated/{BMAP,Devices}.generated.{swift,kt}`. |
-| `macos/` | SwiftUI menu-bar app (`MenuBarExtra`, event-driven, no poll). |
-| `cli/` | `bose-ctl` CLI — shares `macos/BoseControl/{Transport,Parsers,Composites}.swift` + the generated Swift. |
+| `cli/` | `bose-ctl` CLI + the Swift core (`Transport`/`Parsers`/`Composites`) + generated Swift. The on-demand RFCOMM engine the Mac front-ends call. |
+| `raycast/` | Raycast script commands (connect / disconnect / status) → `bose-ctl`. |
+| `hammerspoon/` | `bose.lua` — Opt+B toggles Mac ↔ phone via `bose-ctl`. |
 | `android/` | Jetpack Compose app + foreground service (package `au.com.jd.bose`). |
+
+The Mac has **no resident app** — Raycast + Hammerspoon shell out to `bose-ctl` on demand (a background poller was the original audio-dropout cause).
 
 ## Build
 
 ```bash
 # bose-ctl (CLI) → cli/build/bose-ctl
 bash cli/build.sh
-
-# macOS menu-bar app → macos/build/Bose Control.app
-cd macos && ./build.sh
+cp cli/build/bose-ctl ~/bin/bose-ctl                      # the engine
+cp raycast/*.sh ~/.config/raycast/script-commands/        # Raycast commands
+cp hammerspoon/bose.lua ~/.hammerspoon/modules/bose.lua   # then require+start in init.lua
 
 # Android app (deploy to S21 via ADB)
 cd android && ./gradlew assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-The CLI compiles the *same* transport/parser/composite sources as the menu-bar app,
-so the two cannot drift on wire encoding or transport behaviour.
+The Swift core in `cli/` and the Android Kotlin app compile from the *same* generated
+protocol, so the clients cannot drift on wire encoding or transport behaviour.
 
 ## CLI usage
 
