@@ -1,10 +1,10 @@
-# Agent Progress - bose-profiles-automation
+# Agent Progress - fix-info-devices-divergence
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-06-05T09:29:45Z
+# Created: 2026-06-05T18:04:24Z
 
-feature=bose-profiles-automation
-name=bose profiles + context automation: presets, battery nudge, ANC cycle chord, Focus hooks
+feature=fix-info-devices-divergence
+name=fix #81: info-vs-devices 05,01 divergence + ANC-off verify
 status=pending
 step=0
 step_name=Not started
-created=2026-06-05T09:29:45Z
+created=2026-06-05T18:04:24Z

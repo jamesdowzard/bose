@@ -38,6 +38,16 @@ func displayName(forMac mac: [UInt8]) -> String {
     BoseDeviceMap.name(forMac: mac) ?? macString(mac)
 }
 
+/// Display name for an audio-ACTIVE (05,01) device. `bose-ctl` only ever runs on
+/// the Mac, and the Bose firmware reports the Mac's own audio link under a
+/// non-resolvable private address (e.g. 0C:96:E6:05:3E:F2) that does NOT match the
+/// static [devices.mac] controller address — while every OTHER device reports its
+/// real, mappable address. So an active entry that maps to no known device is the
+/// local Mac's own link; render it as "mac". (#81)
+func activeName(forMac mac: [UInt8]) -> String {
+    BoseDeviceMap.name(forMac: mac) ?? "mac"
+}
+
 func isMacDevice(_ mac: [UInt8]) -> Bool {
     BoseDeviceMap.mac("mac") == mac
 }
@@ -99,8 +109,9 @@ func cmdInfo() {
     if !s.audioCodec.isEmpty { row("Codec:", s.audioCodec) }
     row("Multipoint:", s.multipointEnabled ? "on" : "off")
 
-    // Audio-active devices (05,01); first entry is the active sink.
-    let names = s.connectedDevices.map { displayName(forMac: $0) }
+    // Audio-active devices (05,01); first entry is the active sink. Unmapped == the
+    // local Mac's own private link address (see activeName).
+    let names = s.connectedDevices.map { activeName(forMac: $0) }
     if names.isEmpty {
         row("Devices:", "none")
     } else {
@@ -240,11 +251,15 @@ func cmdDevices() {
     guard let states = transport.getDeviceStates(query: BoseDeviceMap.knownDevices.map { $0.mac }) else {
         fail("headphones not reachable")
     }
-    let active = Set(states.active.map { macString($0) })
-    let idle = Set(states.connected.map { macString($0) })
+    // Match by resolved NAME, not raw MAC: the Mac's active 05,01 entry is a private
+    // link address that never equals the static [devices.mac] address, so it only
+    // lines up with the `mac` row once resolved through activeName (#81). Active wins
+    // over idle when a device resolves to both.
+    let active = Set(states.active.map { activeName(forMac: $0) })
+    let idle = Set(states.connected.map { displayName(forMac: $0) })
     for dev in BoseDeviceMap.knownDevices {
-        let state = active.contains(dev.macString) ? "●"
-                  : idle.contains(dev.macString) ? "○" : "·"
+        let state = active.contains(dev.name) ? "●"
+                  : idle.contains(dev.name) ? "○" : "·"
         print("  \(state) \(dev.name)")
     }
 }
