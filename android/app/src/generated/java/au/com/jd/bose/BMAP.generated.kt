@@ -47,6 +47,10 @@ object BMAP {
         return intArrayOf(0x04, 0x02, 0x05, 0x06) + mac
     }
 
+    fun getDeviceInfo(mac: IntArray): IntArray {
+        return intArrayOf(0x04, 0x05, 0x01, 0x06) + mac
+    }
+
     fun mediaControl(action: Int): IntArray {
         return intArrayOf(0x05, 0x03, 0x05, 0x01, (action and 0xFF))
     }

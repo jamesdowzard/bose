@@ -76,6 +76,26 @@ func buildCncSet(level: Int, preserving cfg: CncConfig) -> [UInt8] {
      cfg.autoCNC, cfg.spatial, cfg.windBlock, cfg.ancToggle]
 }
 
+/// Decoded per-device info (04,05 RESP). `connected` is ACL presence (status
+/// bit 0) — reliable for "is this device linked at all", NOT for audio routing
+/// (use parseConnectedDevices / 05,01 for the active sink). Mirrors the Android
+/// `BoseProtocol.DeviceInfo` decode (status at byte 10, optional name from 13).
+struct DeviceInfo: Equatable {
+    var status: Int
+    var name: String
+    var connected: Bool
+}
+
+/// Parse a device-info RESPONSE (04,05): status byte at index 10, optional
+/// length-prefixed name from index 13. Returns nil on a short/non-RESP frame.
+func parseDeviceInfo(_ resp: [UInt8]) -> DeviceInfo? {
+    guard resp.count >= 11, resp[2] == OP_RESP_BYTE else { return nil }
+    let status = Int(resp[10])
+    let connected = (status & 0x01) != 0
+    let name = resp.count > 13 ? parseString(resp, from: 13) : ""
+    return DeviceInfo(status: status, name: name, connected: connected)
+}
+
 /// Decode a UTF-8 string field response from a given payload offset.
 func parseString(_ resp: [UInt8], from offset: Int = 4) -> String {
     guard resp.count > offset else { return "" }

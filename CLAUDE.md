@@ -232,6 +232,51 @@ Auto-off timer (01,0B) is read-only over RFCOMM — distinct from StandbyTimer (
 | AudioCodec | 0x04 | GET returns codec ID + bitrate |
 | Volume | **0x05** | GET/SET_GET: current + max level (0-31) |
 
+## Capability → Exposure Map
+
+Every BMAP capability and where each surface exposes it. Source: `bmap.toml`
+commands + the off-spec diagnostic GETs that `getAllState`/`parseAllState` issue
+directly (raw `[block,func,GET]`, not generated builders) + the Android control
+surface. Keep this in sync when adding a verb or control.
+
+**Legend:** ✅ get+set · 👁 read-only/display · — not exposed
+
+### `bmap.toml` commands
+
+| Capability | Block,Func | `bose-ctl` | Raycast | Hammerspoon | Android |
+|------------|-----------|-----------|---------|-------------|---------|
+| ANC mode | 1F,03 | ✅ `anc` | 👁 (in status) | — | ✅ mode selector |
+| ANC depth (CNC) | 1F,0A | ✅ `anc-depth` | ✅ `bose-anc-depth` | — | ✅ slider |
+| Device name | 01,02 | ✅ `name` | — | — | ✅ rename |
+| EQ band | 01,07 | ✅ `eq` | 👁 (in status) | — | ✅ 3-band |
+| Multipoint | 01,0A | ✅ `multipoint` | — | — | ✅ toggle |
+| Connect device | 04,01 | ✅ `connect`/`swap` | ✅ `bose-connect` | ✅ Opt+B toggle | ✅ widget/tile/picker |
+| Disconnect device | 04,02 | ✅ `disconnect` | ✅ `bose-disconnect` | 👁 (toggle path) | — |
+| Device info (ACL) | 04,05 | 👁 `devices` (○ state) | — | — | 👁 widget colour |
+| Connected devices | 05,01 | 👁 `devices`/`status`/`info` | 👁 (in status) | 👁 toggle-direction | 👁 widget/tile active |
+| Media control | 05,03 | ✅ `play`/`pause`/`next`/`prev` | — | — | ✅ notification controls |
+| Audio codec | 05,04 | 👁 `info` | 👁 (full status) | — | 👁 state |
+| Volume | 05,05 | ✅ `volume` | 👁 (in status) | — | ✅ slider |
+| Firmware | 00,05 | 👁 `status`/`info` | 👁 (status) | — | 👁 state |
+| Battery | 02,02 | 👁 `battery`/`status`/`info` | 👁 (status) | — | 👁 widget overlay |
+
+### Off-spec diagnostic GETs (issued directly in `getAllState`, not in `bmap.toml`)
+
+| Capability | Block,Func | `bose-ctl` | Raycast | Android |
+|------------|-----------|-----------|---------|---------|
+| Serial number | 00,07 | 👁 `info` | 👁 (full status) | 👁 state |
+| Product name | 00,0F | 👁 `info` | 👁 (full status) | 👁 state |
+| Platform | 12,0D | 👁 `info` | 👁 (full status) | 👁 state |
+| Codename | 12,0C | 👁 `info` | 👁 (full status) | 👁 state |
+| Auto-off timer | 01,0B | 👁 `info` (read-only) | 👁 (full status) | 👁 state |
+| On-head / wear | 08,07 | 👁 `info` | 👁 (full status) | 👁 state |
+
+**Notable gaps (intentional):** Hammerspoon is deliberately one keypress (Opt+B
+Mac↔phone) and exposes nothing else. Raycast covers the common dropdowns
+(connect/disconnect/status) plus the full-status and ANC-depth additions; deeper
+config (EQ/name/multipoint) is CLI- or Android-only by design. The macOS surface
+has **no resident process** — every reading is on-demand, never polled.
+
 ## connectDevice Behaviour (verified 2026-04-11 via raw BMAP captures)
 
 **connectDevice pages offline devices.** It doesn't just route audio between

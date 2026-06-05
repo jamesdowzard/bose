@@ -63,6 +63,52 @@ func cmdStatus() {
     if !s.firmware.isEmpty { print("Firmware: \(s.firmware)") }
 }
 
+/// info — the COMPLETE HeadphoneState from getAllState (one RFCOMM session).
+/// `status` is the quick subset; `info` dumps everything the bulk read returns
+/// (identity, power/wear, full audio config, and the audio-active device list).
+/// No new protocol work — pure formatting over the existing composite.
+func cmdInfo() {
+    guard let s = transport.getAllState() else { fail("headphones not reachable") }
+
+    // Left-pad a 12-char label so values line up in a column.
+    func row(_ key: String, _ value: String) {
+        print("\(key.padding(toLength: 12, withPad: " ", startingAt: 0))\(value)")
+    }
+
+    // Identity
+    if !s.productName.isEmpty  { row("Product:", s.productName) }
+    if !s.deviceName.isEmpty   { row("Name:", s.deviceName) }
+    if !s.firmware.isEmpty     { row("Firmware:", s.firmware) }
+    if !s.serialNumber.isEmpty { row("Serial:", s.serialNumber) }
+    if !s.platform.isEmpty     { row("Platform:", s.platform) }
+    if !s.codename.isEmpty     { row("Codename:", s.codename) }
+
+    // Power / wear
+    row("Battery:", "\(s.batteryLevel)%\(s.batteryCharging ? " ⚡" : "")")
+    row("On head:", s.onHead ? "yes" : "no")
+    if !s.autoOffTimer.isEmpty {
+        // Encoding unverified over RFCOMM (read-only field) — show raw bytes.
+        row("Auto-off:", s.autoOffTimer.map { String(format: "%02X", $0) }.joined(separator: " "))
+    }
+
+    // Audio
+    row("ANC:", ancModeName(s.ancMode))
+    row("ANC depth:", "\(s.cncLevel)/10")
+    row("Volume:", "\(s.volume)/\(s.volumeMax)")
+    row("EQ:", "bass \(s.eq.bass)  mid \(s.eq.mid)  treble \(s.eq.treble)")
+    if !s.audioCodec.isEmpty { row("Codec:", s.audioCodec) }
+    row("Multipoint:", s.multipointEnabled ? "on" : "off")
+
+    // Audio-active devices (05,01); first entry is the active sink.
+    let names = s.connectedDevices.map { displayName(forMac: $0) }
+    if names.isEmpty {
+        row("Devices:", "none")
+    } else {
+        row("Devices:", "\(names[0]) (active)")
+        for n in names.dropFirst() { row("", n) }
+    }
+}
+
 func ancModeName(_ mode: Int) -> String {
     AncMode(rawValue: UInt8(truncatingIfNeeded: mode))
         .map { "\($0)" } ?? "unknown(\(mode))"
@@ -97,17 +143,50 @@ func cmdAnc(_ mode: String?) {
     print("ANC: \(ancModeName(Int(r[4])))")
 }
 
-/// devices — known devices with audio-active / connection state (ground truth).
-/// Uses the getConnectedDevices composite (05,01) — the reliable source — not the
-/// v1 unreliable getDeviceInfo status byte.
+/// anc-depth [0-10] — get/set ANC/CNC depth. SET is a read-modify-write composite
+/// (preserves autoCNC/spatial/windBlock/ancToggle); GET reads the live level.
+func cmdAncDepth(_ arg: String?) {
+    if let arg = arg {
+        guard let level = Int(arg), (0...10).contains(level) else { fail("anc-depth must be 0-10") }
+        guard transport.setCncLevel(level) else { fail("failed to set ANC depth") }
+    }
+    guard let level = transport.getCncLevel() else { fail("ANC depth query failed") }
+    print("ANC depth: \(level)/10")
+}
+
+/// name [new name] — get/set the headphone name. SET is `01,02,06,{len},00,{utf8}`
+/// (max 30 UTF-8 bytes): the generated builder emits only the [block,func,op]
+/// header, so the length-prefixed body is hand-assembled here (mirrors Android
+/// `BoseProtocol.setDeviceName`).
+func cmdName(_ newName: String?) {
+    if let newName = newName {
+        let nameBytes = Array(newName.utf8)
+        guard !nameBytes.isEmpty, nameBytes.count <= 30 else {
+            fail("name must be 1-30 UTF-8 bytes")
+        }
+        let header = BMAP.setDeviceName()           // [0x01, 0x02, 0x06, 0x00]
+        let frame = [header[0], header[1], header[2], UInt8(nameBytes.count + 1), 0x00] + nameBytes
+        guard transport.oneShot(frame) != nil else { fail("failed to set name") }
+    }
+    guard let r = transport.oneShot([0x01, 0x02, 0x01, 0x00]),
+          r.count >= 6, r[2] == OP_RESP_BYTE else { fail("name query failed") }
+    print("Name: \(parseString(r, from: 5))")
+}
+
+/// devices — known devices in three states (one RFCOMM session):
+///   ● active     — audio sink (getConnectedDevices, 05,01 ground truth)
+///   ○ connected  — ACL up but not the active sink (per-device getDeviceInfo, 04,05)
+///   · offline    — neither
+/// The v1 readout conflated connected-idle and offline under a single `·`.
 func cmdDevices() {
-    let connected = Set(transport.getConnectedDevices().map { macString($0) })
-    if connected.isEmpty && !transport.isHeadphoneConnected() {
+    guard let states = transport.getDeviceStates(query: BoseDeviceMap.knownDevices.map { $0.mac }) else {
         fail("headphones not reachable")
     }
+    let active = Set(states.active.map { macString($0) })
+    let idle = Set(states.connected.map { macString($0) })
     for dev in BoseDeviceMap.knownDevices {
-        let isConnected = connected.contains(dev.macString)
-        let state = isConnected ? "●" : "·"
+        let state = active.contains(dev.macString) ? "●"
+                  : idle.contains(dev.macString) ? "○" : "·"
         print("  \(state) \(dev.name)")
     }
 }
@@ -282,12 +361,15 @@ func usage() {
 
     Usage:
       bose-ctl status               Connection, battery, ANC, volume, EQ (one session)
+      bose-ctl info                 Full state: identity, power, all audio config, devices
       bose-ctl battery              Battery level
-      bose-ctl devices              Known devices with audio-active state
+      bose-ctl devices              Known devices: ● active / ○ connected / · offline
       bose-ctl connect <device>     Route audio to device (poll-confirmed)
       bose-ctl disconnect <device>  Disconnect a device
       bose-ctl swap <device>        Route audio to device (multipoint; keeps others)
       bose-ctl anc [mode]           Get/set ANC (quiet/aware/custom1/custom2)
+      bose-ctl anc-depth [0-10]     Get/set ANC depth (0=min … 10=max)
+      bose-ctl name [new name]      Get/set headphone name (max 30 UTF-8 bytes)
       bose-ctl volume [0-31]        Get/set volume
       bose-ctl multipoint [on|off]  Get/set multipoint
       bose-ctl play|pause|next|prev Media transport
@@ -308,8 +390,11 @@ func requireArg(_ name: String) -> String {
 
 switch args[1].lowercased() {
 case "status", "s":            cmdStatus()
+case "info":                   cmdInfo()
 case "battery", "b":           cmdBattery()
 case "anc":                    cmdAnc(args.count >= 3 ? args[2] : nil)
+case "anc-depth":              cmdAncDepth(args.count >= 3 ? args[2] : nil)
+case "name":                   cmdName(args.count >= 3 ? args[2...].joined(separator: " ") : nil)
 case "devices":                cmdDevices()
 case "connect", "c":           cmdConnect(requireArg("device"))
 case "disconnect", "d":        cmdDisconnect(requireArg("device"))

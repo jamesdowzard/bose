@@ -23,6 +23,13 @@ extension Transport {
         return parseConnectedDevices(r)
     }
 
+    /// GET the current CNC/ANC-depth level (1F,0A). nil if unreachable/unparsable.
+    /// Mirrors Android `Composites.getCncLevel()`.
+    func getCncLevel() -> Int? {
+        guard let r = oneShot(Transport.cncLevelGet) else { return nil }
+        return parseCncLevel(r).map { Int($0.level) }
+    }
+
     /// Read-modify-write the CNC level (1F,0A): preserve the other four fields.
     @discardableResult
     func setCncLevel(_ level: Int) -> Bool {
@@ -39,4 +46,31 @@ extension Transport {
             parseAllState { block, function in t.send(ch, [block, function, 0x01, 0x00], timeout: 2.0) }
         }
     }
+
+    /// Three-state device readout in ONE RFCOMM session:
+    ///   `active`    — audio sink (05,01 ground truth)
+    ///   `connected` — ACL up (per-device 04,05) but NOT the active sink
+    /// Already-active devices skip the per-device probe. Returns nil only if the
+    /// session can't open (headphones unreachable). The 04,05 request frame comes
+    /// from the generated `BMAP.getDeviceInfo`; only the response decode is hand-written.
+    func getDeviceStates(query devices: [[UInt8]]) -> (active: [[UInt8]], connected: [[UInt8]])? {
+        session { ch, t in
+            let active = t.send(ch, Transport.connectedDevicesGet).map { parseConnectedDevices($0) } ?? []
+            let activeKeys = Set(active.map { macKey($0) })
+            var connected: [[UInt8]] = []
+            for mac in devices where !activeKeys.contains(macKey(mac)) {
+                if let r = t.send(ch, BMAP.getDeviceInfo(mac: mac), timeout: 2.0),
+                   parseDeviceInfo(r)?.connected == true {
+                    connected.append(mac)
+                }
+            }
+            return (active, connected)
+        }
+    }
+}
+
+/// Uppercase-hex MAC key for set membership (keeps this file independent of
+/// main.swift's `macString`).
+private func macKey(_ mac: [UInt8]) -> String {
+    mac.map { String(format: "%02X", $0) }.joined()
 }

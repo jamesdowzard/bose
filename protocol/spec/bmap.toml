@@ -182,6 +182,25 @@ disconnect_mac = "04 02 05 06 BC D0 74 11 DB 27"
 [commands.disconnect_device.test_args]
 disconnect_mac = { mac = "BC:D0:74:11:DB:27" }
 
+[commands.device_info]
+block = 0x04
+function = 0x05
+summary = "GET per-device info (ACL state). Status byte unreliable for AUDIO routing — cross-ref connected_devices; reliable only for ACL presence."
+# Request `04,05,01,06,{MAC}` is a clean generated GET+MAC builder (like eq_band.get).
+# Only the variable-length response decode (status byte + name) is hand-written
+# per-platform, so this is NOT marked composite.
+
+[commands.device_info.get]
+operator = "GET"
+payload = ["mac:mac"]
+
+[commands.device_info.verified_bytes]
+# `04,05,01,06,{MAC}` — mac device from device map (BC:D0:74:11:DB:27)
+get_mac = "04 05 01 06 BC D0 74 11 DB 27"
+
+[commands.device_info.test_args]
+get_mac = { mac = "BC:D0:74:11:DB:27" }
+
 
 # ── Block 0x05 — Audio ─────────────────────────────────────────────────────────
 
