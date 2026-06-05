@@ -2,8 +2,8 @@
 # Max 20 lines. Updated by agent on Stop hook.
 
 ## Feature
-bose profiles + context automation: presets, battery nudge, ANC cycle chord, Focus hooks
-bose profiles + context automation: presets, battery nudge, ANC cycle chord, Focus hooks
+fix #81: info-vs-devices 05,01 divergence + ANC-off verify
+fix #81: info-vs-devices 05,01 divergence + ANC-off verify
 
 ## Current State
 Not started. No work has been done yet.

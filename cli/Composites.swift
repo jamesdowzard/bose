@@ -55,6 +55,14 @@ extension Transport {
     /// from the generated `BMAP.getDeviceInfo`; only the response decode is hand-written.
     func getDeviceStates(query devices: [[UInt8]]) -> (active: [[UInt8]], connected: [[UInt8]])? {
         session { ch, t in
+            // 05,01 is SILENT as the first frame on a fresh channel (same firmware
+            // quirk as 08,07 on-head) — it only answers once the session is warm. The
+            // bulk `getAllState` path reads it 4th (after battery/anc/volume) and gets
+            // the active sink; this dedicated path read it cold and came back empty,
+            // which is why `devices` disagreed with `info` (#81). Prime with one cheap
+            // GET (battery 02,02 responds even cold) so the active-sink read matches.
+            // Single attempt, no retry loop.
+            _ = t.send(ch, [0x02, 0x02, 0x01, 0x00], timeout: 2.0)
             let active = t.send(ch, Transport.connectedDevicesGet).map { parseConnectedDevices($0) } ?? []
             let activeKeys = Set(active.map { macKey($0) })
             var connected: [[UInt8]] = []
