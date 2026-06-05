@@ -279,7 +279,7 @@ struct MenuView: View {
 
     private var footer: some View {
         HStack {
-            Text("⌃⌥⌘B cycles device").font(.system(size: 10)).foregroundColor(.secondary)
+            Text("⌃⌥⌘B cycles device (menu open)").font(.system(size: 10)).foregroundColor(.secondary)
             Spacer()
             Button("Quit") { NSApplication.shared.terminate(nil) }.font(.system(size: 11))
         }
