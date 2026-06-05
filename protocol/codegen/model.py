@@ -19,6 +19,39 @@ def _mac_bytes(s: str) -> list[int]:
     return [int(b, 16) for b in s.replace("-", ":").split(":")]
 
 
+def parse_token(tok: str) -> tuple[str | None, str | None, int | None]:
+    """Classify a payload token.
+
+    Returns (name, typ, literal):
+      - named arg "x:u8"   -> ("x", "u8", None)
+      - hex literal "0x01" -> (None, None, 0x01)
+    """
+    if ":" in tok:
+        name, typ = tok.split(":")
+        return name, typ, None
+    return None, None, int(tok, 16)
+
+
+def token_byte_len(tok: str) -> int:
+    """Static byte length a token contributes to the payload."""
+    _, typ, _ = parse_token(tok)
+    return 6 if typ == "mac" else 1
+
+
+def payload_len(tokens: list[str]) -> int:
+    return sum(token_byte_len(t) for t in tokens)
+
+
+def named_args(tokens: list[str]) -> list[tuple[str, str]]:
+    """Ordered (name, type) for each named-arg token in a payload."""
+    out: list[tuple[str, str]] = []
+    for tok in tokens:
+        name, typ, _ = parse_token(tok)
+        if name is not None:
+            out.append((name, typ))
+    return out
+
+
 def encode_payload(tokens: list[str], args: dict) -> list[int]:
     out: list[int] = []
     for tok in tokens:
