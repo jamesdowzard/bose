@@ -134,9 +134,17 @@ func cmdAnc(_ mode: String?) {
         case "custom2": modeByte = AncMode.custom2.rawValue
         default: fail("unknown ANC mode: \(mode) (quiet/aware/custom1/custom2)")
         }
-        guard transport.oneShot(BMAP.setAncMode(mode: modeByte)) != nil else {
-            fail("failed to set ANC mode")
-        }
+        // Set + read-back in ONE session. A separate oneShot for the verify-GET
+        // would open a second channel back-to-back and intermittently return nil
+        // (the 300ms-drain firmware quirk) — a false "not reachable" despite the
+        // set landing. One channel, two sends: the proven applyProfile pattern.
+        let r = transport.session { ch, t -> [UInt8]? in
+            guard t.send(ch, BMAP.setAncMode(mode: modeByte)) != nil else { return nil }
+            return t.send(ch, BMAP.getAncMode())
+        } ?? nil
+        guard let r = r, r.count >= 5, r[2] == OP_RESP_BYTE else { fail("failed to set ANC mode") }
+        print("ANC: \(ancModeName(Int(r[4])))")
+        return
     }
     guard let r = transport.oneShot(BMAP.getAncMode()),
           r.count >= 5, r[2] == OP_RESP_BYTE else { fail("headphones not reachable") }
@@ -148,7 +156,12 @@ func cmdAnc(_ mode: String?) {
 func cmdAncDepth(_ arg: String?) {
     if let arg = arg {
         guard let level = Int(arg), (0...10).contains(level) else { fail("anc-depth must be 0-10") }
+        // setCncLevel does the read-modify-write in one session and validates the
+        // RESP, so it already confirms success — trust it instead of a separate
+        // verify-GET (a second back-to-back channel that intermittently returns nil).
         guard transport.setCncLevel(level) else { fail("failed to set ANC depth") }
+        print("ANC depth: \(level)/10")
+        return
     }
     guard let level = transport.getCncLevel() else { fail("ANC depth query failed") }
     print("ANC depth: \(level)/10")
@@ -330,7 +343,13 @@ func printVolume(_ r: [UInt8]) -> Bool {
 func cmdMultipoint(_ arg: String?) {
     if let toggle = arg {
         let on = ["on", "true", "1"].contains(toggle.lowercased())
-        _ = transport.oneShot(BMAP.setMultipoint(state: on ? 0x07 : 0x00))
+        // Multipoint is SET_GET: the set's own RESP carries the new state, so there's
+        // no need for a separate verify-GET (a second back-to-back channel open that
+        // intermittently returns nil — the false "query failed" seen on-device).
+        guard let r = transport.oneShot(BMAP.setMultipoint(state: on ? 0x07 : 0x00)),
+              r.count >= 5, r[2] == OP_RESP_BYTE else { fail("multipoint set failed") }
+        print((r[4] & 0xFF) != 0 ? "on" : "off")
+        return
     }
     guard let r = transport.oneShot(BMAP.getMultipoint()),
           r.count >= 5, r[2] == OP_RESP_BYTE else { fail("multipoint query failed") }
@@ -359,13 +378,18 @@ func cmdEq(_ eqArgs: [String]) {
               (-10...10).contains(bass), (-10...10).contains(mid), (-10...10).contains(treble) else {
             fail("usage: bose-ctl eq <bass> <mid> <treble> (each -10 to +10)")
         }
-        // One SET_GET per band via the generated builder.
+        // Send all three bands in ONE session (the applyProfile pattern). Three
+        // separate oneShots would open a fresh channel per band and intermittently
+        // return nil on the 2nd/3rd (the 300ms-drain quirk), failing mid-bands and
+        // leaving EQ half-applied. One channel, three SET_GET sends.
         let writes: [(Int, EqBand)] = [(bass, .bass), (mid, .mid), (treble, .treble)]
-        for (value, band) in writes {
-            guard transport.oneShot(BMAP.setEqBand(value: Int8(value), band: band.rawValue)) != nil else {
-                fail("EQ set failed")
+        let ok = transport.session { ch, t -> Bool in
+            for (value, band) in writes where t.send(ch, BMAP.setEqBand(value: Int8(value), band: band.rawValue)) == nil {
+                return false
             }
-        }
+            return true
+        } ?? false
+        guard ok else { fail("EQ set failed") }
         print("EQ set: bass=\(bass) mid=\(mid) treble=\(treble)")
     }
 }
