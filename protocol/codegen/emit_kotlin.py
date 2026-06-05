@@ -10,16 +10,6 @@ Composites (`composite = true`) are skipped — hand-written per-platform.
 
 from codegen.model import Operator, named_args, parse_token, payload_len
 
-_OP_CASE = {
-    "GET": "GET",
-    "SET_GET": "SET_GET",
-    "RESP": "RESP",
-    "ERROR": "ERROR",
-    "START": "START",
-    "SET": "SET",
-    "ACK": "ACK",
-}
-
 # Encoder type -> Kotlin parameter type. u8/i8 take Int (callers pass 0..255 /
 # -128..127); mac takes a 6-element IntArray.
 _KT_TYPE = {"u8": "Int", "i8": "Int", "mac": "IntArray"}
@@ -46,7 +36,7 @@ def _func_name(action: str, cmd_name: str) -> str:
 
 
 def _emit_operator_enum() -> str:
-    cases = ", ".join(f"{_OP_CASE[op.name]}({_hex(int(op))})" for op in Operator)
+    cases = ", ".join(f"{op.name}({_hex(int(op))})" for op in Operator)
     return f"enum class BMAPOperator(val v: Int) {{ {cases} }}"
 
 

@@ -89,7 +89,9 @@ def _emit_action(cmd_name: str, cmd: dict, action: str, spec: dict) -> str:
         name, typ, lit = parse_token(tok)
         if lit is not None:
             parts.append(_hex(lit))
-        elif typ == "mac":
+            continue
+        assert name is not None  # named-arg token
+        if typ == "mac":
             # caller passes a 6-byte [UInt8]; splat in order
             parts.append(f"] + {name} + [")
         elif typ == "i8":

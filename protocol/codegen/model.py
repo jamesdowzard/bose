@@ -48,6 +48,7 @@ def named_args(tokens: list[str]) -> list[tuple[str, str]]:
     for tok in tokens:
         name, typ, _ = parse_token(tok)
         if name is not None:
+            assert typ is not None  # a named-arg token always has a type
             out.append((name, typ))
     return out
 
