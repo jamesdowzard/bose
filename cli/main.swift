@@ -85,7 +85,7 @@ func cmdInfo() {
 
     // Power / wear
     row("Battery:", "\(s.batteryLevel)%\(s.batteryCharging ? " ⚡" : "")")
-    row("On head:", s.onHead ? "yes" : "no")
+    row("On head:", s.onHead.map { $0 ? "yes" : "no" } ?? "unknown")
     if !s.autoOffTimer.isEmpty {
         // Encoding unverified over RFCOMM (read-only field) — show raw bytes.
         row("Auto-off:", s.autoOffTimer.map { String(format: "%02X", $0) }.joined(separator: " "))

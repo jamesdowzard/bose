@@ -89,7 +89,7 @@ check(state.volume == 20 && state.volumeMax == 31, "allState: volume 20/31")
 check(state.connectedDevices.count == 2, "allState: 2 connected devices")
 check(state.cncLevel == 7, "allState: cnc level 7")
 check(state.multipointEnabled, "allState: multipoint on")
-check(state.onHead, "allState: on head")
+check(state.onHead == true, "allState: on head (parses when 08,07 responds)")
 check(state.firmware == "1.2.3", "allState: firmware 1.2.3")
 check(state.eq.bass == 3 && state.eq.mid == 0 && state.eq.treble == -3, "allState: EQ +3/0/-3 (signed)")
 
