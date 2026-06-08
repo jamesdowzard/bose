@@ -23,23 +23,6 @@ extension Transport {
         return parseConnectedDevices(r)
     }
 
-    /// GET the current CNC/ANC-depth level (1F,0A). nil if unreachable/unparsable.
-    /// Mirrors Android `Composites.getCncLevel()`.
-    func getCncLevel() -> Int? {
-        guard let r = oneShot(Transport.cncLevelGet) else { return nil }
-        return parseCncLevel(r).map { Int($0.level) }
-    }
-
-    /// Read-modify-write the CNC level (1F,0A): preserve the other four fields.
-    @discardableResult
-    func setCncLevel(_ level: Int) -> Bool {
-        session { ch, t in
-            guard let cur = t.send(ch, Transport.cncLevelGet), let cfg = parseCncLevel(cur) else { return false }
-            guard let resp = t.send(ch, buildCncSet(level: level, preserving: cfg)) else { return false }
-            return resp.count >= 4 && resp[2] == OP_RESP_BYTE
-        } ?? false
-    }
-
     /// Bulk state in ONE RFCOMM session — issues every GET, parses via `parseAllState`.
     func getAllState() -> HeadphoneState? {
         session { ch, t in
@@ -93,6 +76,36 @@ extension Transport {
             for f in frames where t.send(ch, f) == nil { ok = false }
             return ok
         } ?? false
+    }
+
+    /// Read the ACTIVE mode's full AudioModesModeConfig (1F,06) in one warm session.
+    /// Resolves the current mode index (1F,03) first. nil if unreachable.
+    func readActiveModeConfig() -> ModeConfig? {
+        session { ch, t in
+            _ = t.send(ch, [0x02, 0x02, 0x01, 0x00], timeout: 2.0)  // prime warm
+            guard let cur = t.send(ch, [0x1F, 0x03, 0x01, 0x00], timeout: 2.0), cur.count >= 5
+            else { return nil }
+            return t.send(ch, [0x1F, 0x06, 0x01, 0x01, cur[4]], timeout: 2.0).flatMap(parseModeConfig)
+        } ?? nil
+    }
+
+    enum AncLevelResult { case ok(name: String, level: Int), fixed(name: String), unreachable }
+
+    /// Set the ACTIVE mode's CNC noise level (0 = max cancellation … 10 = transparency)
+    /// via the 1F,06 read-modify-write — the correct, ANC-anchored path (#83). Refuses
+    /// on a mode whose level is fixed (cncMutable == false: Quiet/Aware/spatial modes),
+    /// so a level write can never disable ANC. Returns the device's post-write level.
+    func setActiveModeLevel(_ level: Int) -> AncLevelResult {
+        session { ch, t in
+            _ = t.send(ch, [0x02, 0x02, 0x01, 0x00], timeout: 2.0)  // prime warm
+            guard let cur = t.send(ch, [0x1F, 0x03, 0x01, 0x00], timeout: 2.0), cur.count >= 5,
+                  let r1 = t.send(ch, [0x1F, 0x06, 0x01, 0x01, cur[4]], timeout: 2.0),
+                  let cfg = parseModeConfig(r1) else { return .unreachable }
+            guard cfg.cncMutable else { return .fixed(name: cfg.displayName) }
+            _ = t.send(ch, buildModeConfigSet(cfg, newLevel: level), timeout: 2.0)
+            let after = t.send(ch, [0x1F, 0x06, 0x01, 0x01, cur[4]], timeout: 2.0).flatMap(parseModeConfig)
+            return .ok(name: cfg.displayName, level: Int(after?.cncLevel ?? cfg.cncLevel))
+        } ?? .unreachable
     }
 }
 

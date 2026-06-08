@@ -30,3 +30,4 @@ bose-ctl
 bosed
 .worktrees/
 .harness/state.json
+_re/

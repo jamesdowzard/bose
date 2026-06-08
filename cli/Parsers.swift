@@ -77,11 +77,61 @@ func parseCncLevel(_ resp: [UInt8]) -> CncConfig? {
                      windBlock: resp[7], ancToggle: resp[8])
 }
 
-/// Build the CNC SET_GET frame that changes `level` and preserves the rest.
-/// `1F,0A,02,05,{level},{autoCNC},{spatial},{windBlock},{ancToggle}`.
-func buildCncSet(level: Int, preserving cfg: CncConfig) -> [UInt8] {
-    [0x1F, 0x0A, 0x02, 0x05, UInt8(max(0, min(10, level))),
-     cfg.autoCNC, cfg.spatial, cfg.windBlock, cfg.ancToggle]
+/// One AudioModes mode slot, from the 1F,06 (AudioModesModeConfig) RESPONSE.
+/// This is the CORRECT noise-level axis: changing `cncLevel` via a 1F,06 read-modify-
+/// write keeps ANC anchored to the mode (unlike the 1F,0A global write that detaches
+/// it → 255/off, #83). Level semantics (confirmed live fw 8.2.20): 0 = max
+/// cancellation (Quiet), 10 = full transparency (Aware).
+struct ModeConfig: Equatable {
+    var index: UInt8
+    var promptB1: UInt8
+    var promptB2: UInt8
+    var userConfigurable: Bool  // payload[3] — a user mode slot
+    var name: [UInt8]      // 32 bytes, null-padded UTF-8
+    var cncMutable: Bool   // payload[41] bit 0 — is the CNC level editable for this mode?
+    var cncLevel: UInt8
+    var autoCNC: UInt8
+    var spatial: UInt8
+    var windBlock: UInt8
+    var ancToggle: UInt8
+
+    var displayName: String {
+        String(bytes: name.prefix { $0 != 0 }, encoding: .utf8) ?? ""
+    }
+}
+
+/// Parse a 1F,06 AudioModesModeConfig RESPONSE. Response payload (frame[4...]) offsets,
+/// confirmed live + against the decompiled AudioModesModeConfigResponse.createFromPacket:
+/// [0]=index, [1..2]=prompt, [3]=userConfigurable, [6..37]=32-byte name,
+/// [41]=mutability bitfield (bit0 = cncMutable), [42]=cncLevel, [43]=autoCNC,
+/// [44]=spatial, [46]=windBlock, [47]=ancToggle. (The RESPONSE layout differs from the
+/// SET payload — see buildModeConfigSet.)
+func parseModeConfig(_ resp: [UInt8]) -> ModeConfig? {
+    guard resp.count >= 4 + 48, resp[0] == 0x1F, resp[1] == 0x06, resp[2] == OP_RESP_BYTE
+    else { return nil }
+    let p = Array(resp[4...])
+    return ModeConfig(
+        index: p[0], promptB1: p[1], promptB2: p[2],
+        userConfigurable: p[3] == 1,
+        name: Array(p[6...37]),
+        cncMutable: (p[41] & 0x01) == 1,
+        cncLevel: p[42], autoCNC: p[43], spatial: p[44],
+        windBlock: p[46], ancToggle: p[47])
+}
+
+/// Build a 1F,06 AudioModesModeConfig SET_GET frame from a parsed mode, changing ONLY
+/// `cncLevel` and forcing `ancToggle = 1` (so a level change can't disable ANC). The
+/// SET payload layout (from the decompiled app, distinct from the response): [0]=index,
+/// [1..2]=prompt, [3..34]=32-byte name, [35]=cncLevel, [36]=autoCNC, [37]=spatial,
+/// [38]=windBlock, [39]=ancToggle. Pass `newLevel = nil` for an unchanged round-trip.
+func buildModeConfigSet(_ cfg: ModeConfig, newLevel: Int?) -> [UInt8] {
+    let level = newLevel.map { UInt8(max(0, min(10, $0))) } ?? cfg.cncLevel
+    var name = Array(cfg.name.prefix(32))
+    while name.count < 32 { name.append(0) }
+    var payload: [UInt8] = [cfg.index, cfg.promptB1, cfg.promptB2]
+    payload += name
+    payload += [level, cfg.autoCNC, cfg.spatial, cfg.windBlock, 0x01]  // ancToggle forced on
+    return [0x1F, 0x06, 0x02, UInt8(payload.count)] + payload
 }
 
 /// Decoded per-device info (04,05 RESP). `connected` is ACL presence (status

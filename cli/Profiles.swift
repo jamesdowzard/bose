@@ -141,19 +141,11 @@ func profileFrames(_ p: Profile, currentCnc: CncConfig?) -> [[UInt8]] {
         frames.append(BMAP.setEqBand(value: clamp(e.mid), band: EqBand.mid.rawValue))
         frames.append(BMAP.setEqBand(value: clamp(e.treble), band: EqBand.treble.rawValue))
     }
-    // ANC depth (CNC level, 1F,0A) is the SAME axis as the named ANC mode on this
-    // firmware: writing a raw depth alongside quiet/aware knocks ANC into 255 = OFF
-    // (confirmed audibly, #83 — the flight profile literally disabled cancellation).
-    // So only apply depth for CUSTOM modes (custom1/custom2), where the level IS the
-    // mode; for quiet/aware the named mode already defines cancellation, so skip it.
-    if let d = p.ancDepth, let cnc = currentCnc, let m = p.ancMode, isCustomAncMode(m) {
-        frames.append(buildCncSet(level: d, preserving: cnc))
-    }
+    // NB: profiles do NOT set a CNC noise level. The level is a per-mode property set
+    // via the 1F,06 AudioModesModeConfig RMW (`bose-ctl anc-level`), only on adjustable
+    // custom modes. The old 1F,0A `ancDepth` write disabled ANC entirely (#83) and is
+    // gone. `Profile.ancDepth`/`currentCnc` are retained only so old profiles.json
+    // files still decode; the level is never applied here.
+    _ = currentCnc
     return frames
-}
-
-/// True for the user-tunable custom ANC modes (the only ones where a CNC depth is
-/// meaningful). quiet/aware are fixed presets — writing a depth over them breaks ANC.
-func isCustomAncMode(_ mode: String) -> Bool {
-    ["custom1", "custom2"].contains(mode.lowercased())
 }

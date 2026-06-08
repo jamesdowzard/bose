@@ -64,12 +64,33 @@ check(!parseMultipointEnabled(0x06), "multipoint: 0x06 (off-with-slots) -> off")
 check(!parseMultipointEnabled(0x00), "multipoint: 0x00 -> off")
 check(parseMultipointEnabled(0x01), "multipoint: 0x01 (bare enable bit) -> on")
 
-// buildCncSet preserves the other four and clamps level into 0...10.
-let set = buildCncSet(level: 3, preserving: cfg!)
-check(set == [0x1F, 0x0A, 0x02, 0x05, 0x03, 0x01, 0x00, 0x01, 0x01],
-      "buildCncSet: changes level=3, preserves rest, SET_GET op")
-let clamped = buildCncSet(level: 99, preserving: cfg!)
-check(clamped[4] == 10, "buildCncSet: clamps level to 10")
+// ── ModeConfig (1F,06 AudioModesModeConfig) ─────────────────────────────────────
+// The CORRECT noise-level path (1F,06 RMW), replacing the 1F,0A footgun (#83).
+// Build a synthetic 52-byte response (4 header + 48 payload).
+func mc(index: UInt8, name: String, mutability: UInt8, level: UInt8, anc: UInt8) -> [UInt8] {
+    var p = [UInt8](repeating: 0, count: 48)
+    p[0] = index; p[3] = 1  // userConfigurable
+    for (i, b) in Array(name.utf8).enumerated() where i < 32 { p[6 + i] = b }
+    p[41] = mutability; p[42] = level; p[47] = anc
+    return [0x1F, 0x06, 0x03, 0x30] + p
+}
+let custom = parseModeConfig(mc(index: 5, name: "None", mutability: 0x1D, level: 7, anc: 1))!
+check(custom.cncMutable, "modeConfig: 0x1D mutability bit0 -> cncMutable (adjustable)")
+check(custom.cncLevel == 7, "modeConfig: cncLevel 7")
+check(custom.displayName == "None", "modeConfig: name parse")
+let fixed = parseModeConfig(mc(index: 0, name: "Quiet", mutability: 0x00, level: 0, anc: 1))!
+check(!fixed.cncMutable, "modeConfig: 0x00 mutability -> fixed (Quiet/Aware/spatial)")
+check(parseModeConfig([0x1F, 0x06, 0x03, 0x05, 0, 0]) == nil, "modeConfig: short -> nil")
+// buildModeConfigSet: SET layout differs from response — name@3, level@35, anc@39.
+let setF = buildModeConfigSet(custom, newLevel: 3)
+check(Array(setF[0...3]) == [0x1F, 0x06, 0x02, 0x28], "modeConfigSet: header SET_GET len 40")
+let sp = Array(setF[4...])
+check(sp[0] == 5, "modeConfigSet: modeIndex @0")
+check(Array(sp[3..<7]) == Array("None".utf8), "modeConfigSet: name @3")
+check(sp[35] == 3, "modeConfigSet: new cncLevel @35")
+check(sp[39] == 1, "modeConfigSet: ancToggle forced ON @39 (level change can't disable ANC)")
+check(buildModeConfigSet(custom, newLevel: nil)[4 + 35] == 7, "modeConfigSet: nil keeps current level")
+check(buildModeConfigSet(custom, newLevel: 99)[4 + 35] == 10, "modeConfigSet: clamps to 10")
 
 // ── parseAllState (bulk session) ─────────────────────────────────────────────────
 
@@ -143,15 +164,15 @@ check(pf[1] == [0x05, 0x05, 0x02, 0x01, 0x14], "profileFrames: volume 20 (SET_GE
 check(pf[2] == [0x01, 0x0A, 0x02, 0x01, 0x07], "profileFrames: multipoint on")
 check(pf[3] == [0x01, 0x07, 0x02, 0x02, 0x03, 0x00], "profileFrames: eq bass +3")
 check(pf[5] == [0x01, 0x07, 0x02, 0x02, 0xFD, 0x02], "profileFrames: eq treble -3 (signed)")
-check(!pf.contains([0x1F, 0x0A, 0x02, 0x05, 0x05, 0x01, 0x00, 0x01, 0x01]),
-      "profileFrames: no cnc frame for aware+depth (#83)")
-// A CUSTOM-mode profile DOES apply depth (the level IS the mode).
+check(!pf.contains(where: { $0.count >= 2 && $0[0] == 0x1F && $0[1] == 0x0A }),
+      "profileFrames: never emits a 1F,0A CNC frame (the footgun is gone, #83)")
+// Profiles NEVER write a noise level now — even a profile carrying ancDepth emits no
+// CNC frame (level is set per-mode via anc-level / 1F,06, not via profiles).
 let customP = Profile(name: "c1", ancMode: "custom1", ancDepth: 5)
 let pfc = profileFrames(customP, currentCnc: cnc2)
-check(pfc.last == [0x1F, 0x0A, 0x02, 0x05, 0x05, 0x01, 0x00, 0x01, 0x01],
-      "profileFrames: custom-mode applies cnc depth 5 preserving rest")
-// nil currentCnc → depth frame skipped even for custom; empty profile → no frames.
-check(profileFrames(customP, currentCnc: nil).count == 1, "profileFrames: nil cnc skips depth")
+check(!pfc.contains(where: { $0.count >= 2 && $0[0] == 0x1F && $0[1] == 0x0A }),
+      "profileFrames: ancDepth profile emits no CNC frame")
+check(pfc.count == 1, "profileFrames: custom1+depth -> just the mode-select frame")
 check(profileFrames(Profile(name: "empty"), currentCnc: nil).isEmpty, "profileFrames: empty profile -> none")
 // EQ values clamp into -10...10.
 let clampP = profileFrames(Profile(name: "c", eq: EqValues(bass: 99, mid: -99, treble: 0)), currentCnc: nil)
