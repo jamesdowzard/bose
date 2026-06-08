@@ -1,10 +1,10 @@
-# Agent Progress - remove-broken-anc-depth
+# Agent Progress - fix-connect-idle-multipoint
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-06-08T05:09:39Z
+# Created: 2026-06-08T05:22:00Z
 
-feature=remove-broken-anc-depth
-name=remove broken anc-depth controls
+feature=fix-connect-idle-multipoint
+name=connect reports idle under multipoint
 status=pending
 step=0
 step_name=Not started
-created=2026-06-08T05:09:39Z
+created=2026-06-08T05:22:00Z
