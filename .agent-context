@@ -2,8 +2,8 @@
 # Max 20 lines. Updated by agent on Stop hook.
 
 ## Feature
-fix #81: info-vs-devices 05,01 divergence + ANC-off verify
-fix #81: info-vs-devices 05,01 divergence + ANC-off verify
+restore windowed Mac app on v2 core (event-driven, no polling)
+restore windowed Mac app on v2 core (event-driven, no polling)
 
 ## Current State
 Not started. No work has been done yet.
