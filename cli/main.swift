@@ -324,10 +324,10 @@ func cmdConnect(_ deviceName: String) {
 
     _ = transport.oneShot(BMAP.connectDevice(mac: mac), timeout: 5.0)
 
-    if pollConfirmConnected(mac) {
-        print("Connected \(deviceName)")
-    } else {
-        fail("connect \(deviceName) not confirmed within timeout")
+    switch confirmConnect(mac) {
+    case .active: print("Connected \(deviceName)")
+    case .idle:   print("Connected \(deviceName) (idle — audio stayed on the active device; multipoint)")
+    case .none:   fail("connect \(deviceName) not confirmed within timeout")
     }
 }
 
@@ -344,24 +344,37 @@ func cmdSwap(_ targetName: String) {
 
     _ = transport.oneShot(BMAP.connectDevice(mac: mac), timeout: 5.0)
 
-    if pollConfirmConnected(mac) {
-        print("Swapped to \(targetName)")
-    } else {
-        fail("swap to \(targetName) not confirmed within timeout")
+    switch confirmConnect(mac) {
+    case .active: print("Swapped to \(targetName)")
+    case .idle:   print("Connected \(targetName) (idle — audio stayed on the active device; multipoint)")
+    case .none:   fail("swap to \(targetName) not confirmed within timeout")
     }
 }
 
-/// Poll getConnectedDevices until `mac` is audio-active (~16s budget). Offline
-/// devices page slowly. Mirrors the macOS BoseManager poll-confirm.
-func pollConfirmConnected(_ mac: [UInt8]) -> Bool {
+/// Outcome of a connect/swap. `active` = audio routed here (05,01); `idle` = ACL up
+/// under multipoint but audio stayed on the prior sink (04,05 connected, not 05,01);
+/// `none` = never connected. The idle case is a real connection — not a failure —
+/// and must not exit non-zero (it spuriously broke the macOS app / scripts, surfaced
+/// while testing multipoint: paging a 2nd device joins it idle, not active).
+enum ConnectOutcome { case active, idle, none }
+
+/// Poll `getDeviceStates` (one session per tick: 05,01 active + 04,05 ACL) until the
+/// target is audio-active, or the ~16s budget expires. Offline devices page slowly,
+/// and under multipoint a paged device settles into connected-idle a beat AFTER the
+/// command returns — so we must keep polling for BOTH states, not snapshot once.
+/// Returns `.active` the instant it's the sink; `.idle` if it only ever reached ACL
+/// (a real connection, exit 0); `.none` if it never appeared.
+func confirmConnect(_ mac: [UInt8]) -> ConnectOutcome {
     let target = macString(mac)
     let deadline = Date().addingTimeInterval(16.0)
+    var sawIdle = false
     while Date() < deadline {
         Thread.sleep(forTimeInterval: 1.5)
-        let active = transport.getConnectedDevices().map { macString($0) }
-        if active.contains(target) { return true }
+        guard let st = transport.getDeviceStates(query: [mac]) else { continue }
+        if st.active.contains(where: { macString($0) == target }) { return .active }
+        if st.connected.contains(where: { macString($0) == target }) { sawIdle = true }
     }
-    return false
+    return sawIdle ? .idle : .none
 }
 
 /// disconnect / d <device>
