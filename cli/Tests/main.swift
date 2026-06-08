@@ -56,6 +56,14 @@ check(cfg?.autoCNC == 1 && cfg?.spatial == 0 && cfg?.windBlock == 1 && cfg?.ancT
 check(parseCncLevel([0x1F, 0x0A, 0x03, 0x01, 0x05]) == nil, "cncLevel: short payload -> nil")
 check(parseCncLevel([0x1F, 0x0A, 0x01, 0x00]) == nil, "cncLevel: non-RESP -> nil")
 
+// ── parseMultipointEnabled (01,0A state byte) ──────────────────────────────────
+// fw 8.2.20 live: on -> 0x07, off -> 0x06 (slot bits retained). Bit 0 is the live
+// enable flag; the old `!= 0` misread 0x06 as "on" (#83).
+check(parseMultipointEnabled(0x07), "multipoint: 0x07 -> on")
+check(!parseMultipointEnabled(0x06), "multipoint: 0x06 (off-with-slots) -> off")
+check(!parseMultipointEnabled(0x00), "multipoint: 0x00 -> off")
+check(parseMultipointEnabled(0x01), "multipoint: 0x01 (bare enable bit) -> on")
+
 // buildCncSet preserves the other four and clamps level into 0...10.
 let set = buildCncSet(level: 3, preserving: cfg!)
 check(set == [0x1F, 0x0A, 0x02, 0x05, 0x03, 0x01, 0x00, 0x01, 0x01],
@@ -122,20 +130,28 @@ check(parseDeviceInfo([0x04, 0x05, 0x01, 0x06, 0xBC, 0xD0, 0x74, 0x11, 0xDB, 0x2
 
 // ── profiles ─────────────────────────────────────────────────────────────────────
 
-// profileFrames: full profile → ordered SET frames (anc, vol, mp, 3x eq, depth).
+// profileFrames: full profile → ordered SET frames (anc, vol, mp, 3x eq[, depth]).
+// #83: ANC depth is the SAME axis as a named mode, so a NAMED-mode profile (aware)
+// must NOT emit the depth frame even when ancDepth is set — writing it disables ANC.
 let cnc2 = CncConfig(level: 7, autoCNC: 1, spatial: 0, windBlock: 1, ancToggle: 1)
 let full = Profile(name: "t", ancMode: "aware", ancDepth: 5,
                    eq: EqValues(bass: 3, mid: 0, treble: -3), multipoint: true, volume: 20)
 let pf = profileFrames(full, currentCnc: cnc2)
-check(pf.count == 7, "profileFrames: 7 frames")
+check(pf.count == 6, "profileFrames: named-mode profile skips depth (6 frames, #83)")
 check(pf[0] == [0x1F, 0x03, 0x05, 0x02, 0x01, 0x01], "profileFrames: anc aware (START)")
 check(pf[1] == [0x05, 0x05, 0x02, 0x01, 0x14], "profileFrames: volume 20 (SET_GET)")
 check(pf[2] == [0x01, 0x0A, 0x02, 0x01, 0x07], "profileFrames: multipoint on")
 check(pf[3] == [0x01, 0x07, 0x02, 0x02, 0x03, 0x00], "profileFrames: eq bass +3")
 check(pf[5] == [0x01, 0x07, 0x02, 0x02, 0xFD, 0x02], "profileFrames: eq treble -3 (signed)")
-check(pf[6] == [0x1F, 0x0A, 0x02, 0x05, 0x05, 0x01, 0x00, 0x01, 0x01], "profileFrames: cnc depth 5 preserves rest")
-// nil currentCnc → depth frame skipped; empty profile → no frames.
-check(profileFrames(full, currentCnc: nil).count == 6, "profileFrames: nil cnc skips depth")
+check(!pf.contains([0x1F, 0x0A, 0x02, 0x05, 0x05, 0x01, 0x00, 0x01, 0x01]),
+      "profileFrames: no cnc frame for aware+depth (#83)")
+// A CUSTOM-mode profile DOES apply depth (the level IS the mode).
+let customP = Profile(name: "c1", ancMode: "custom1", ancDepth: 5)
+let pfc = profileFrames(customP, currentCnc: cnc2)
+check(pfc.last == [0x1F, 0x0A, 0x02, 0x05, 0x05, 0x01, 0x00, 0x01, 0x01],
+      "profileFrames: custom-mode applies cnc depth 5 preserving rest")
+// nil currentCnc → depth frame skipped even for custom; empty profile → no frames.
+check(profileFrames(customP, currentCnc: nil).count == 1, "profileFrames: nil cnc skips depth")
 check(profileFrames(Profile(name: "empty"), currentCnc: nil).isEmpty, "profileFrames: empty profile -> none")
 // EQ values clamp into -10...10.
 let clampP = profileFrames(Profile(name: "c", eq: EqValues(bass: 99, mid: -99, treble: 0)), currentCnc: nil)

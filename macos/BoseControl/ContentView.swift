@@ -52,7 +52,6 @@ struct ContentView: View {
     @ObservedObject var manager: BoseManager
 
     @State private var volumeSlider: Double = 0
-    @State private var ancDepthSlider: Double = 0
     @State private var eqBass: Double = 0
     @State private var eqMid: Double = 0
     @State private var eqTreble: Double = 0
@@ -79,7 +78,6 @@ struct ContentView: View {
 
     private func syncSliders() {
         volumeSlider = Double(manager.volume)
-        ancDepthSlider = Double(manager.cncLevel)
         eqBass = Double(manager.eq.bass)
         eqMid = Double(manager.eq.mid)
         eqTreble = Double(manager.eq.treble)
@@ -158,31 +156,14 @@ struct ContentView: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundColor(secondaryColor)
                     .tracking(1)
+                // No depth slider: ANC on this firmware is mode-based (Quiet/Aware/
+                // Custom). Writing a raw CNC depth knocks ANC to off (#83), so the
+                // window exposes modes only — depth is not a safe standalone control.
                 HStack(spacing: 4) {
                     ancButton("Quiet", 0)
                     ancButton("Aware", 1)
                     ancButton("C1", 2)
                     ancButton("C2", 3)
-                }
-                // ANC depth (CNC level 0–10). NB: exercises the #83 RMW path.
-                HStack(spacing: 8) {
-                    Text("Depth")
-                        .font(.system(size: 10))
-                        .foregroundColor(secondaryColor)
-                        .frame(width: 38, alignment: .leading)
-                    Slider(
-                        value: $ancDepthSlider,
-                        in: 0...10,
-                        step: 1,
-                        onEditingChanged: { editing in
-                            if !editing { manager.setCncLevel(Int(ancDepthSlider)) }
-                        }
-                    )
-                    .tint(activeColor)
-                    Text("\(Int(ancDepthSlider))")
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(secondaryColor)
-                        .frame(width: 22, alignment: .trailing)
                 }
             }
 

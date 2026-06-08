@@ -62,6 +62,13 @@ struct CncConfig: Equatable {
     var ancToggle: UInt8
 }
 
+/// Multipoint enable from the 01,0A state byte. Bit 0 is the live enable flag; the
+/// higher bits are slot/capability bits the firmware retains across toggles, so a
+/// disabled-but-paired device reads 0x06, not 0x00 (#83). Mask the enable bit — the
+/// old `!= 0` was the bug (0x06 != 0 misread "off" as "on"). Verified live on
+/// fw 8.2.20: multipoint on → 0x07, off → 0x06.
+func parseMultipointEnabled(_ stateByte: UInt8) -> Bool { (stateByte & 0x01) != 0 }
+
 /// Parse the CNC/ANC-depth RESPONSE (1F,0A). Needs the full 5-byte payload
 /// (bytes 4..8). Returns nil on a short/non-RESP frame.
 func parseCncLevel(_ resp: [UInt8]) -> CncConfig? {
@@ -148,7 +155,7 @@ func parseAllState(_ provide: ResponseProvider) -> HeadphoneState {
             : str
     }
 
-    if let r = resp(0x01, 0x0A) { s.multipointEnabled = r[4] != 0 }
+    if let r = resp(0x01, 0x0A) { s.multipointEnabled = parseMultipointEnabled(r[4]) }
     if let r = resp(0x01, 0x0B) { s.autoOffTimer = Array(r[4...]) }
     // 08,07 answers within the warm bulk session (it's silent on a cold standalone
     // channel, e.g. `raw 08 07`). With resp() now matching block/func, this binds to

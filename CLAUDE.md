@@ -28,7 +28,8 @@ is three thin front-ends that shell out to the `cli/` binary (`~/bin/bose-ctl`),
 nothing runs in the background and the Mac only touches the headphones on an
 explicit user action.
 - `macos/BoseControl/` -- **Bose Control.app**: a windowed SwiftUI app (frosted-dark
-  two-panel: battery/ANC mode+depth/volume/multipoint/on-head + device grid + EQ).
+  two-panel: battery/ANC mode/volume/multipoint/on-head + device grid + EQ). No depth
+  slider — ANC is mode-based and a raw depth disables it (#83); modes only.
   It is a **thin front-end that shells `bose-ctl`** — NO RFCOMM, NO IOBluetooth, NO
   protocol code — reading via `bose-ctl info --json` and writing via the verbs. It is
   **user-launched and event-driven**: reads on window-open, on app-focus, after each
@@ -41,7 +42,7 @@ explicit user action.
 - `raycast/bose-connect.sh` / `bose-disconnect.sh` -- Raycast script commands with a device dropdown → `bose-ctl connect|disconnect <device>`
 - `raycast/bose-status.sh` / `bose-full-status.sh` -- `bose-ctl status` / `bose-ctl info`
 - `raycast/bose-anc-depth.sh` / `bose-profile.sh` -- `bose-ctl anc-depth [0-10]` / `bose-ctl profile [name]` (text arg)
-- `profiles.json` (repo root) -- settings presets ({ANC mode, depth, EQ, multipoint, volume}) applied by `bose-ctl profile`; versioned + hand-editable, ships flight/office/music. Runtime JSON (not codegen'd TOML) because `profile save` writes it; loader resolves `$BOSE_PROFILES` → repo path → `~/.config/bose/`. Pure logic in `cli/Profiles.swift`, live apply in `cli/Composites.swift` (`applyProfile`).
+- `profiles.json` (repo root) -- settings presets ({ANC mode, depth, EQ, multipoint, volume}) applied by `bose-ctl profile`; versioned + hand-editable, ships flight/office/music. ANC depth is applied ONLY for custom1/custom2 modes (named modes set mode only — depth over quiet/aware disables ANC, #83). flight = {quiet, multipoint off}. Runtime JSON (not codegen'd TOML) because `profile save` writes it; loader resolves `$BOSE_PROFILES` → repo path → `~/.config/bose/`. Pure logic in `cli/Profiles.swift`, live apply in `cli/Composites.swift` (`applyProfile`).
 - `hammerspoon/bose.lua` -- Hammerspoon module, all **event-driven** (no timers): **Opt+B toggles Mac ↔ phone** (+ one-shot low-battery warn piggybacked on the press), **Opt+N cycles ANC** (quiet→aware→custom1), **Opt+J connects the headphones to this Mac** (unconditional, no toggle direction-guessing; `CONNECT_TARGET` retargets it), and a call-app **launch** watcher (Teams/Zoom/Meet → ANC aware). Returns a table with `.start()`/`.stop()`. Wired in `init.lua` via `BoseCtl = dofile(os.getenv("HOME").."/code/personal/bose/hammerspoon/bose.lua"); BoseCtl.start()`. Edits apply on Hammerspoon reload.
 - The Swift core that does the actual RFCOMM work lives in `cli/` (see below). The macOS app target (`macos/BoseControl/`) is pure SwiftUI/Foundation and does NO RFCOMM — it shells `bose-ctl`, so the two never drift and the app can't reintroduce a transport/poll bug.
 
@@ -227,15 +228,15 @@ BMAP operator (SET/0x06 instead of SET_GET/0x02).
 
 | Setting | Block,Func | Operator | Bytes | Notes |
 |---------|-----------|----------|-------|-------|
-| ANC mode | 1F,03 | START | `1F,03,05,02,{mode},01` | 0=quiet 1=aware 2=custom1 3=custom2; reads 255=off when disabled (decode-only, not settable) |
+| ANC mode | 1F,03 | START | `1F,03,05,02,{mode},01` | 0=quiet 1=aware 2=custom1 3=custom2; reads 255 = OFF (genuinely disabled — confirmed audibly #83). 255 is REACHABLE: writing a raw CNC depth (1F,0A) over a named mode knocks 1F,03 to 255. ANC here is mode-based; depth is the same axis. |
 | Volume | 05,05 | SET_GET | `05,05,02,01,{level}` | 0-31 |
 | Device name | 01,02 | SET | `01,02,06,{len},00,{utf8}` | max 30 UTF-8 bytes |
-| Multipoint | 01,0A | SET_GET | `01,0A,02,01,{07/00}` | 07=on, 00=off |
+| Multipoint | 01,0A | SET_GET | `01,0A,02,01,{07/00}` | SET 07=on/00=off. RESPONSE is a bitfield — bit 0 = enable; fw 8.2.20: on→0x07, off→0x06 (slot bits persist). Parse `& 0x01`, NOT `!= 0` (that misread 0x06 as on, #83). |
 | Connect device | 04,01 | START | `04,01,05,07,00,{MAC}` | Also routes audio |
 | Disconnect | 04,02 | START | `04,02,05,06,{MAC}` | |
 | Media control | 05,03 | START | `05,03,05,01,{action}` | 01=play 02=pause 03=next 04=prev |
 | **EQ band** | 01,07 | **SET_GET** | `01,07,02,02,{value},{band}` | band: 0=bass 1=mid 2=treble, value: signed -10 to +10 |
-| **ANC depth** | 1F,0A | **SET_GET** | `1F,0A,02,05,{level},{autoCNC},{spatial},{windBlock},{ancToggle}` | level 0-10. Read current first, change level, preserve others. |
+| **ANC depth** | 1F,0A | **SET_GET** | `1F,0A,02,05,{level},{autoCNC},{spatial},{windBlock},{ancToggle}` | level 0-10. **SAME axis as ANC mode** — writing depth over a named mode (quiet/aware) sets 1F,03 to 255 = OFF (#83). Only meaningful inside a CUSTOM mode. Profiles + app set named-mode → mode only; never depth alongside quiet/aware. |
 
 **Not supported on QC Ultra 2:** StandbyTimer SET (01,04), MotionAutoOff (01,14), OnHeadDetection SET (01,10).
 Auto-off timer (01,0B) is read-only over RFCOMM — distinct from StandbyTimer (01,04).
