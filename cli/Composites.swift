@@ -94,6 +94,26 @@ extension Transport {
             return ok
         } ?? false
     }
+
+    /// DEBUG probe: in one warm session, read AudioModes function frames to verify the
+    /// 1F,06 (AudioModesModeConfig) reverse-engineering before building the RMW writer.
+    /// Reads UserIndices (1F,07), CurrentMode (1F,03), and ModeConfig (1F,06 GET) for
+    /// mode indices 0..5. Returns a labelled hex dump. Remove once the fix lands.
+    func probeAudioModes() -> [String] {
+        session { ch, t in
+            var out: [String] = []
+            func dump(_ label: String, _ r: [UInt8]?) {
+                out.append("\(label): \(r.map { $0.map { String(format: "%02X", $0) }.joined(separator: " ") } ?? "no response")")
+            }
+            _ = t.send(ch, [0x02, 0x02, 0x01, 0x00], timeout: 2.0)            // prime warm
+            dump("userIndices 1F,07", t.send(ch, [0x1F, 0x07, 0x01, 0x00], timeout: 2.0))
+            dump("currentMode 1F,03", t.send(ch, [0x1F, 0x03, 0x01, 0x00], timeout: 2.0))
+            for idx in UInt8(0)...UInt8(5) {
+                dump("modeConfig 1F,06 idx \(idx)", t.send(ch, [0x1F, 0x06, 0x01, 0x01, idx], timeout: 2.0))
+            }
+            return out
+        } ?? ["session failed"]
+    }
 }
 
 /// Uppercase-hex MAC key for set membership (keeps this file independent of

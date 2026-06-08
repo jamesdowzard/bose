@@ -1,10 +1,10 @@
-# Agent Progress - fix-83-flight-anc-mp
+# Agent Progress - remove-broken-anc-depth
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-06-08T04:37:40Z
+# Created: 2026-06-08T05:09:39Z
 
-feature=fix-83-flight-anc-mp
-name=fix #83 flight ANC + multipoint
+feature=remove-broken-anc-depth
+name=remove broken anc-depth controls
 status=pending
 step=0
 step_name=Not started
-created=2026-06-08T04:37:40Z
+created=2026-06-08T05:09:39Z

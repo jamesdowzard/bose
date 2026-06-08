@@ -541,6 +541,7 @@ case "prev":                   cmdMedia(.prev)
 case "eq":                     cmdEq(args.count >= 3 ? Array(args[2...]) : [])
 case "profile", "profiles":    cmdProfile(args.count >= 3 ? Array(args[2...]) : [])
 case "raw":                    cmdRaw(requireArg("hex"))
+case "cnc-debug":              transport.probeAudioModes().forEach { print($0) }
 case "-h", "--help", "help":   usage()
 default:
     fail("Unknown command: \(args[1])")

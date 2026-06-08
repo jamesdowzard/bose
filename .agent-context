@@ -2,8 +2,8 @@
 # Max 20 lines. Updated by agent on Stop hook.
 
 ## Feature
-fix #83 flight ANC + multipoint
-fix #83 flight ANC + multipoint
+remove broken anc-depth controls
+remove broken anc-depth controls
 
 ## Current State
 Not started. No work has been done yet.
