@@ -1,349 +1,196 @@
-/// BoseManager: Observable state manager for Bose QC Ultra 2 headphones.
-/// Handles polling, auto-reconnect, and all BMAP command dispatch.
+/// BoseManager: Observable state for the windowed Bose app.
+///
+/// This is a THIN FRONT-END over `bose-ctl` — exactly like the Raycast commands and
+/// the Hammerspoon module. It holds NO RFCOMM channel, imports NO IOBluetooth, and
+/// runs NO timer. Every read shells `bose-ctl info --json`; every write shells the
+/// matching verb. Reads happen only on explicit events (window open, window focus,
+/// after a write, manual ⌘R) — never on a poll. The v1 BoseManager's 10 s poll
+/// timer was the audio-dropout root cause (#69-era); this design makes that class of
+/// bug structurally impossible here, and inherits every CLI fix (incl. #83) for free.
 
 import Foundation
 import Combine
-import IOBluetooth
 
-class BoseManager: ObservableObject {
+final class BoseManager: ObservableObject {
 
-    // MARK: - Published State
+    // MARK: - Published State (bound by ContentView)
 
     @Published var isConnected: Bool = false
     @Published var batteryLevel: Int = 0
     @Published var batteryCharging: Bool = false
-    @Published var ancMode: Int = 0  // 0=quiet, 1=aware, 2=custom1, 3=custom2
+    @Published var ancMode: Int = 0          // 0=quiet 1=aware 2=custom1 3=custom2
     @Published var volume: Int = 0
     @Published var volumeMax: Int = 31
     @Published var deviceName: String = "verBosita"
     @Published var firmware: String = ""
-    @Published var serialNumber: String = ""
-    @Published var productName: String = ""
-    @Published var platform: String = ""
-    @Published var codename: String = ""
-    @Published var audioCodec: String = ""
     @Published var multipointEnabled: Bool = false
-    @Published var autoOffTimer: String = ""
-    @Published var immersionLevel: String = ""
-    @Published var cncLevel: Int = 0
+    @Published var cncLevel: Int = 0         // ANC depth 0–10
     @Published var onHead: Bool = false
     @Published var eq: (bass: Int, mid: Int, treble: Int) = (0, 0, 0)
-
-    // Device connection states: "active", "connected", "offline"
-    @Published var deviceStates: [String: String] = [
-        "phone": "offline",
-        "mac": "offline",
-        "ipad": "offline",
-        "iphone": "offline",
-        "tv": "offline",
-        "quest": "offline",
-    ]
-
     @Published var isRefreshing: Bool = false
+
+    // Device routing states: "active" / "connected" / "offline"
+    @Published var deviceStates: [String: String] = [
+        "mac": "offline", "phone": "offline", "ipad": "offline",
+        "iphone": "offline", "tv": "offline", "quest": "offline",
+    ]
 
     // MARK: - Private
 
-    private var bose: BoseRFCOMM?
-    private var boseReady = false
-    private let rfcommQueue = DispatchQueue(label: "com.jamesdowzard.bose-control.rfcomm")
-    private var pollTimer: Timer?
-    private let pollInterval: TimeInterval = 10.0
+    /// Serial queue: one `bose-ctl` invocation at a time (RFCOMM is single-session;
+    /// serialising here mirrors the CLI's own serial channel discipline).
+    private let queue = DispatchQueue(label: "com.jamesdowzard.bose-control.cli")
 
-    private let boseMac = "E4:58:BC:C0:2F:72"
-
-    // MARK: - Polling
-
-    func startPolling() {
-        // Init BoseRFCOMM off main thread (BTReadyWaiter + SDP warmup blocks for ~6s)
-        rfcommQueue.async { [weak self] in
-            guard let self = self else { return }
-            self.bose = BoseRFCOMM()
-            self.boseReady = true
+    /// Resolve the engine: $BOSE_CTL → ~/bin/bose-ctl → repo cli/build/bose-ctl.
+    private static func resolveBinary() -> String {
+        let fm = FileManager.default
+        if let env = ProcessInfo.processInfo.environment["BOSE_CTL"], fm.isExecutableFile(atPath: env) {
+            return env
         }
-
-        // Initial check
-        checkConnectionAndRefresh()
-
-        // Poll every 10 seconds
-        pollTimer = Timer.scheduledTimer(withTimeInterval: pollInterval, repeats: true) { [weak self] _ in
-            self?.checkConnectionAndRefresh()
-        }
+        let home = fm.homeDirectoryForCurrentUser.path
+        let candidates = [
+            "\(home)/bin/bose-ctl",
+            "\(home)/code/personal/bose/cli/build/bose-ctl",
+        ]
+        return candidates.first { fm.isExecutableFile(atPath: $0) } ?? "\(home)/bin/bose-ctl"
     }
 
-    func stopPolling() {
-        pollTimer?.invalidate()
-        pollTimer = nil
-    }
+    private lazy var binary: String = Self.resolveBinary()
 
-    // MARK: - Connection Check
+    // MARK: - Process runner
 
-    private func checkConnectionAndRefresh() {
-        rfcommQueue.async { [weak self] in
-            guard let self = self else { return }
-            let connected = self.isBluetoothConnected()
-
-            if connected && self.boseReady, let bose = self.bose {
-                let state = bose.getAllState()
-                DispatchQueue.main.async {
-                    self.isConnected = true
-                    self.applyState(state)
-                }
-            } else {
-                DispatchQueue.main.async {
-                    self.isConnected = connected
-                    if !connected {
-                        for key in self.deviceStates.keys {
-                            self.deviceStates[key] = "offline"
-                        }
-                    }
-                }
-            }
+    /// Run `bose-ctl <args>` synchronously (caller is already off the main thread).
+    /// Returns (exitCode, stdout). A spawn failure returns (-1, "").
+    @discardableResult
+    private func run(_ args: [String]) -> (code: Int32, out: String) {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: binary)
+        proc.arguments = args
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        proc.standardError = Pipe()
+        do {
+            try proc.run()
+        } catch {
+            return (-1, "")
         }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        proc.waitUntilExit()
+        return (proc.terminationStatus, String(data: data, encoding: .utf8) ?? "")
     }
 
-    // MARK: - State Refresh
+    // MARK: - Read
 
+    /// Read full state via `info --json` and publish it. Event-driven only.
     func refreshState() {
         DispatchQueue.main.async { self.isRefreshing = true }
-        rfcommQueue.async { [weak self] in
+        queue.async { [weak self] in
             guard let self = self else { return }
-
-            let connected = self.isBluetoothConnected()
-            if connected && self.boseReady {
-                // fetchAllState dispatches to rfcommQueue — but we're already on it,
-                // so inline the work here to avoid deadlock
-                guard let bose = self.bose else {
-                    DispatchQueue.main.async { self.isRefreshing = false }
-                    return
-                }
-                let state = bose.getAllState()
-                DispatchQueue.main.async {
-                    self.applyState(state)
-                }
-            } else {
-                DispatchQueue.main.async {
-                    self.isConnected = connected
-                    if !connected {
-                        for key in self.deviceStates.keys {
-                            self.deviceStates[key] = "offline"
-                        }
-                    }
-                    self.isRefreshing = false
-                }
+            let (_, out) = self.run(["info", "--json"])
+            let parsed = Self.parse(out)
+            DispatchQueue.main.async {
+                self.apply(parsed)
+                self.isRefreshing = false
             }
         }
     }
 
-    /// Apply headphone state snapshot to published properties. Must be called on main thread.
-    private func applyState(_ state: BoseRFCOMM.HeadphoneState?) {
-        guard let bose = self.bose else {
-            self.isRefreshing = false
+    /// Decode the `info --json` payload. Returns nil-equivalent (connected=false) on
+    /// any failure so the UI shows the disconnected state rather than stale values.
+    private static func parse(_ out: String) -> [String: Any] {
+        guard let data = out.data(using: .utf8),
+              let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        else { return ["connected": false] }
+        return obj
+    }
+
+    /// Apply a decoded snapshot to published properties. Must run on the main thread.
+    private func apply(_ s: [String: Any]) {
+        let connected = (s["connected"] as? Bool) ?? false
+        isConnected = connected
+        guard connected else {
+            for k in deviceStates.keys { deviceStates[k] = "offline" }
             return
         }
-
-        if let s = state {
-            self.batteryLevel = s.batteryLevel
-            self.batteryCharging = s.batteryCharging
-            self.ancMode = s.ancMode
-            self.volume = s.volume
-            self.volumeMax = s.volumeMax
-            self.firmware = s.firmware
-            self.serialNumber = s.serialNumber
-            self.productName = s.productName
-            self.platform = s.platform
-            self.codename = s.codename
-            self.audioCodec = s.audioCodec
-            self.deviceName = s.deviceName.isEmpty ? "verBosita" : s.deviceName
-            self.multipointEnabled = s.multipointEnabled
-            self.onHead = s.onHead
-            self.eq = s.eq
-            self.isConnected = true
-
-            // Parse auto-off timer
-            if !s.autoOffTimer.isEmpty {
-                let minutes = s.autoOffTimer.count >= 2
-                    ? Int(s.autoOffTimer[0]) * 256 + Int(s.autoOffTimer[1])
-                    : Int(s.autoOffTimer[0])
-                if minutes == 0 {
-                    self.autoOffTimer = "Never"
-                } else {
-                    self.autoOffTimer = "\(minutes) min"
-                }
-            }
-
-            // Parse immersion level
-            if !s.immersionLevel.isEmpty {
-                self.immersionLevel = s.immersionLevel
-                    .map { String(format: "%02X", $0) }.joined(separator: " ")
-            }
-
-            // Build device states: audio-connected = active, ACL-only = connected
-            var newStates: [String: String] = [:]
-            for key in self.deviceStates.keys {
-                newStates[key] = "offline"
-            }
-
-            let audioMacs = Set(s.connectedDevices.map { bose.macToString($0) })
-            let aclMacs = Set(s.aclConnectedDevices.map { bose.macToString($0) })
-
-            for (name, mac) in boseKnownDevices {
-                let macStr = bose.macToString(mac)
-                if audioMacs.contains(macStr) {
-                    newStates[name] = "active"
-                } else if aclMacs.contains(macStr) {
-                    newStates[name] = "connected"
-                } else {
-                    newStates[name] = "offline"
-                }
-            }
-            self.deviceStates = newStates
-        } else {
-            self.isConnected = false
+        batteryLevel = (s["batteryLevel"] as? Int) ?? batteryLevel
+        batteryCharging = (s["batteryCharging"] as? Bool) ?? false
+        ancMode = (s["ancMode"] as? Int) ?? ancMode
+        cncLevel = (s["ancDepth"] as? Int) ?? cncLevel
+        volume = (s["volume"] as? Int) ?? volume
+        volumeMax = (s["volumeMax"] as? Int) ?? volumeMax
+        multipointEnabled = (s["multipoint"] as? Bool) ?? false
+        onHead = (s["onHead"] as? Bool) ?? false
+        if let name = s["deviceName"] as? String, !name.isEmpty { deviceName = name }
+        if let fw = s["firmware"] as? String { firmware = fw }
+        if let e = s["eq"] as? [String: Any] {
+            eq = (bass: (e["bass"] as? Int) ?? 0,
+                  mid: (e["mid"] as? Int) ?? 0,
+                  treble: (e["treble"] as? Int) ?? 0)
         }
-
-        self.isRefreshing = false
+        if let d = s["devices"] as? [String: String] {
+            for (name, state) in d { deviceStates[name] = state }
+        }
     }
 
-    // MARK: - Commands
+    // MARK: - Write (each: run verb, optimistic local update, then re-read)
 
     func setAncMode(_ mode: Int) {
-        let modeNames = ["quiet", "aware", "custom1", "custom2"]
-        guard mode >= 0 && mode < modeNames.count else { return }
-        rfcommQueue.async { [weak self] in
-            guard let self = self, let bose = self.bose else { return }
-            let success = bose.setAncMode(modeNames[mode])
-            if success {
-                DispatchQueue.main.async {
-                    self.ancMode = mode
-                }
-            }
-        }
+        let names = ["quiet", "aware", "custom1", "custom2"]
+        guard names.indices.contains(mode) else { return }
+        ancMode = mode
+        write(["anc", names[mode]])
     }
 
     func setVolume(_ level: Int) {
-        rfcommQueue.async { [weak self] in
-            guard let self = self, let bose = self.bose else { return }
-            let success = bose.setVolume(level)
-            if success {
-                DispatchQueue.main.async {
-                    self.volume = level
-                }
-            }
-        }
-    }
-
-    func connectDevice(_ name: String) {
-        rfcommQueue.async { [weak self] in
-            guard let self = self, let bose = self.bose else { return }
-            guard let mac = bose.macForName(name) else { return }
-
-            // If connecting Mac, blueutil connect first for A2DP
-            if name == "mac" {
-                runBlueutil(["--connect", self.boseMac])
-                Thread.sleep(forTimeInterval: 1.5)
-            }
-
-            let success = bose.connectDevice(mac)
-            if success {
-                Thread.sleep(forTimeInterval: 0.5)
-                DispatchQueue.main.async {
-                    self.refreshState()
-                }
-            }
-        }
-    }
-
-    func disconnectDevice(_ name: String) {
-        rfcommQueue.async { [weak self] in
-            guard let self = self, let bose = self.bose else { return }
-            guard let mac = bose.macForName(name) else { return }
-
-            let success = bose.disconnectDevice(mac)
-            if success {
-                if name == "mac" {
-                    runBlueutil(["--disconnect", self.boseMac])
-                }
-                Thread.sleep(forTimeInterval: 0.5)
-                DispatchQueue.main.async {
-                    self.refreshState()
-                }
-            }
-        }
-    }
-
-    func sendMediaControl(_ action: UInt8) {
-        rfcommQueue.async { [weak self] in
-            guard let bose = self?.bose else { return }
-            _ = bose.sendMediaControl(action)
-        }
-    }
-
-    func setDeviceName(_ name: String) {
-        rfcommQueue.async { [weak self] in
-            guard let self = self, let bose = self.bose else { return }
-            let success = bose.setDeviceName(name)
-            if success {
-                DispatchQueue.main.async {
-                    self.deviceName = name
-                }
-            }
-        }
+        let clamped = max(0, min(volumeMax, level))
+        volume = clamped
+        write(["volume", String(clamped)])
     }
 
     func setEQ(bass: Int, mid: Int, treble: Int) {
-        rfcommQueue.async { [weak self] in
-            guard let self = self, let bose = self.bose else { return }
-            let success = bose.setEQ(bass: bass, mid: mid, treble: treble)
-            if success {
-                DispatchQueue.main.async {
-                    self.eq = (bass: bass, mid: mid, treble: treble)
-                }
-            }
-        }
+        eq = (bass: bass, mid: mid, treble: treble)
+        write(["eq", String(bass), String(mid), String(treble)])
     }
 
     func setMultipoint(_ enabled: Bool) {
-        rfcommQueue.async { [weak self] in
-            guard let self = self, let bose = self.bose else { return }
-            let success = bose.setMultipoint(enabled)
-            if success {
-                DispatchQueue.main.async {
-                    self.multipointEnabled = enabled
-                }
-            }
-        }
+        multipointEnabled = enabled
+        write(["multipoint", enabled ? "on" : "off"])
     }
 
+    /// ANC depth (CNC level 0–10). Note: exercises the #83 RMW path on hardware.
     func setCncLevel(_ level: Int) {
-        rfcommQueue.async { [weak self] in
-            guard let self = self, let bose = self.bose else { return }
-            let success = bose.setCncLevel(level)
-            if success {
-                DispatchQueue.main.async {
-                    self.cncLevel = level
-                }
-            }
+        let clamped = max(0, min(10, level))
+        cncLevel = clamped
+        write(["anc-depth", String(clamped)])
+    }
+
+    func connectDevice(_ name: String) {
+        write(["connect", name])
+    }
+
+    func applyProfile(_ name: String) {
+        write(["profile", name])
+    }
+
+    /// Run a write verb off the main thread, then refresh to reflect the device's
+    /// real post-write state (the optimistic update above is just for snappiness).
+    private func write(_ args: [String]) {
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            _ = self.run(args)
+            self.refreshState()
         }
     }
 
-    // MARK: - Bluetooth Helpers
-
-    private func isBluetoothConnected() -> Bool {
-        // Native IOBluetooth — no subprocess spawn needed for polling
-        let dashMac = boseMac.replacingOccurrences(of: ":", with: "-")
-        guard let device = IOBluetoothDevice(addressString: dashMac) else { return false }
-        return device.isConnected()
-    }
-
-    // MARK: - Computed Properties
+    // MARK: - Computed
 
     var ancModeName: String {
-        switch ancMode {
-        case 0: return "Quiet"
-        case 1: return "Aware"
-        case 2: return "Custom 1"
-        case 3: return "Custom 2"
-        default: return "Unknown"
-        }
+        ["Quiet", "Aware", "Custom 1", "Custom 2"][safe: ancMode] ?? "Unknown"
+    }
+}
+
+private extension Array {
+    subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
     }
 }

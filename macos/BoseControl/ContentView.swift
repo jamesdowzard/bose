@@ -52,6 +52,7 @@ struct ContentView: View {
     @ObservedObject var manager: BoseManager
 
     @State private var volumeSlider: Double = 0
+    @State private var ancDepthSlider: Double = 0
     @State private var eqBass: Double = 0
     @State private var eqMid: Double = 0
     @State private var eqTreble: Double = 0
@@ -69,7 +70,7 @@ struct ContentView: View {
         .onAppear {
             manager.refreshState()
             syncSliders()
-            installCmdMShortcut()
+            installShortcuts()
         }
         .onReceive(manager.objectWillChange) { _ in
             DispatchQueue.main.async { syncSliders() }
@@ -78,18 +79,31 @@ struct ContentView: View {
 
     private func syncSliders() {
         volumeSlider = Double(manager.volume)
+        ancDepthSlider = Double(manager.cncLevel)
         eqBass = Double(manager.eq.bass)
         eqMid = Double(manager.eq.mid)
         eqTreble = Double(manager.eq.treble)
     }
 
-    private func installCmdMShortcut() {
+    /// In-window keyboard shortcuts (only while the app is focused — global hotkeys
+    /// stay in Hammerspoon). ⌘1/2/3/4 ANC modes, ⌘↑/⌘↓ volume, ⌘R refresh, ⌘M Mac.
+    private func installShortcuts() {
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "m" {
-                manager.connectDevice("mac")
-                return nil
+            guard event.modifierFlags.contains(.command) else { return event }
+            switch event.charactersIgnoringModifiers {
+            case "1": manager.setAncMode(0); return nil
+            case "2": manager.setAncMode(1); return nil
+            case "3": manager.setAncMode(2); return nil
+            case "4": manager.setAncMode(3); return nil
+            case "r": manager.refreshState(); return nil
+            case "m": manager.connectDevice("mac"); return nil
+            default: break
             }
-            return event
+            switch event.keyCode {
+            case 126: manager.setVolume(manager.volume + 1); return nil  // ↑
+            case 125: manager.setVolume(manager.volume - 1); return nil  // ↓
+            default: return event
+            }
         }
     }
 
@@ -150,6 +164,26 @@ struct ContentView: View {
                     ancButton("C1", 2)
                     ancButton("C2", 3)
                 }
+                // ANC depth (CNC level 0–10). NB: exercises the #83 RMW path.
+                HStack(spacing: 8) {
+                    Text("Depth")
+                        .font(.system(size: 10))
+                        .foregroundColor(secondaryColor)
+                        .frame(width: 38, alignment: .leading)
+                    Slider(
+                        value: $ancDepthSlider,
+                        in: 0...10,
+                        step: 1,
+                        onEditingChanged: { editing in
+                            if !editing { manager.setCncLevel(Int(ancDepthSlider)) }
+                        }
+                    )
+                    .tint(activeColor)
+                    Text("\(Int(ancDepthSlider))")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(secondaryColor)
+                        .frame(width: 22, alignment: .trailing)
+                }
             }
 
             // Volume
@@ -175,6 +209,19 @@ struct ContentView: View {
                 )
                 .tint(activeColor)
             }
+
+            // Multipoint
+            Toggle(isOn: Binding(
+                get: { manager.multipointEnabled },
+                set: { manager.setMultipoint($0) }
+            )) {
+                Text("MULTIPOINT")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(secondaryColor)
+                    .tracking(1)
+            }
+            .toggleStyle(.switch)
+            .tint(activeColor)
 
             // Wear detection
             VStack(alignment: .leading, spacing: 4) {

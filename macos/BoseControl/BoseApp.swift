@@ -10,7 +10,13 @@ struct BoseControlApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView(manager: manager)
-                .onAppear { manager.startPolling() }
+                // Event-driven reads only (no poll): ContentView reads on open, and
+                // this re-reads whenever the app regains focus. The v1 10 s poll
+                // timer — the audio-dropout cause — is gone for good.
+                .onReceive(NotificationCenter.default.publisher(
+                    for: NSApplication.didBecomeActiveNotification)) { _ in
+                    manager.refreshState()
+                }
         }
         .defaultSize(width: 640, height: 360)
         .windowResizability(.contentSize)
