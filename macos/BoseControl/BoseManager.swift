@@ -24,7 +24,6 @@ final class BoseManager: ObservableObject {
     @Published var deviceName: String = "verBosita"
     @Published var firmware: String = ""
     @Published var multipointEnabled: Bool = false
-    @Published var cncLevel: Int = 0         // ANC depth 0–10
     @Published var onHead: Bool = false
     @Published var eq: (bass: Int, mid: Int, treble: Int) = (0, 0, 0)
     @Published var isRefreshing: Bool = false
@@ -115,7 +114,6 @@ final class BoseManager: ObservableObject {
         batteryLevel = (s["batteryLevel"] as? Int) ?? batteryLevel
         batteryCharging = (s["batteryCharging"] as? Bool) ?? false
         ancMode = (s["ancMode"] as? Int) ?? ancMode
-        cncLevel = (s["ancDepth"] as? Int) ?? cncLevel
         volume = (s["volume"] as? Int) ?? volume
         volumeMax = (s["volumeMax"] as? Int) ?? volumeMax
         multipointEnabled = (s["multipoint"] as? Bool) ?? false
@@ -155,13 +153,6 @@ final class BoseManager: ObservableObject {
     func setMultipoint(_ enabled: Bool) {
         multipointEnabled = enabled
         write(["multipoint", enabled ? "on" : "off"])
-    }
-
-    /// ANC depth (CNC level 0–10). Note: exercises the #83 RMW path on hardware.
-    func setCncLevel(_ level: Int) {
-        let clamped = max(0, min(10, level))
-        cncLevel = clamped
-        write(["anc-depth", String(clamped)])
     }
 
     func connectDevice(_ name: String) {

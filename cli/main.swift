@@ -411,12 +411,12 @@ func cmdMultipoint(_ arg: String?) {
         // intermittently returns nil — the false "query failed" seen on-device).
         guard let r = transport.oneShot(BMAP.setMultipoint(state: on ? 0x07 : 0x00)),
               r.count >= 5, r[2] == OP_RESP_BYTE else { fail("multipoint set failed") }
-        print((r[4] & 0xFF) != 0 ? "on" : "off")
+        print(parseMultipointEnabled(r[4]) ? "on" : "off")
         return
     }
     guard let r = transport.oneShot(BMAP.getMultipoint()),
           r.count >= 5, r[2] == OP_RESP_BYTE else { fail("multipoint query failed") }
-    print((r[4] & 0xFF) != 0 ? "on" : "off")
+    print(parseMultipointEnabled(r[4]) ? "on" : "off")
 }
 
 /// play / pause / next / prev — generated mediaControl builder.

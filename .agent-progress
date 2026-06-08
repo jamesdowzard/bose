@@ -1,10 +1,10 @@
-# Agent Progress - restore-windowed-mac-app
+# Agent Progress - fix-83-flight-anc-mp
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-06-08T04:05:35Z
+# Created: 2026-06-08T04:37:40Z
 
-feature=restore-windowed-mac-app
-name=restore windowed Mac app on v2 core (event-driven, no polling)
+feature=fix-83-flight-anc-mp
+name=fix #83 flight ANC + multipoint
 status=pending
 step=0
 step_name=Not started
-created=2026-06-08T04:05:35Z
+created=2026-06-08T04:37:40Z

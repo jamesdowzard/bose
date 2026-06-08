@@ -1,7 +1,6 @@
 {
   "profiles" : [
     {
-      "ancDepth" : 10,
       "ancMode" : "quiet",
       "multipoint" : false,
       "name" : "flight"

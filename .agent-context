@@ -2,8 +2,8 @@
 # Max 20 lines. Updated by agent on Stop hook.
 
 ## Feature
-restore windowed Mac app on v2 core (event-driven, no polling)
-restore windowed Mac app on v2 core (event-driven, no polling)
+fix #83 flight ANC + multipoint
+fix #83 flight ANC + multipoint
 
 ## Current State
 Not started. No work has been done yet.

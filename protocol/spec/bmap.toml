@@ -83,6 +83,12 @@ composite = true
 summary = "ANC/CNC depth level 0-10 (read-modify-write, preserve other fields)."
 # `1F,0A,02,05,{level},{autoCNC},{spatial},{windBlock},{ancToggle}` — SET_GET.
 # No verified_bytes: the payload depends on a prior read of live device state.
+# DANGER (#83, confirmed audibly fw 8.2.20): CNC depth is the SAME axis as the named
+# ANC mode (1F,03). Writing a raw depth over a named mode (quiet/aware) knocks 1F,03
+# to 0xFF (255 = genuinely OFF — ANC stops cancelling; the `ancToggle` byte still
+# reads 1 but is NOT the real radio state). So depth is only meaningful inside a
+# CUSTOM mode (custom1/custom2). Never write depth alongside quiet/aware — profiles
+# and the macOS app enforce this (named mode → mode only).
 
 
 # ── Block 0x01 — Settings / Device ─────────────────────────────────────────────
@@ -129,7 +135,11 @@ get = {}
 [commands.multipoint]
 block = 0x01
 function = 0x0A
-summary = "Toggle 2-device multipoint (07=on, 00=off)."
+# SET sends 07=on / 00=off. The RESPONSE state byte is a bitfield: bit 0 is the live
+# enable flag; higher bits are slot/capability bits the firmware retains. Verified
+# live on fw 8.2.20: on -> 0x07, off -> 0x06 (NOT 0x00 — slot bits persist). Parse the
+# enable bit (`& 0x01`), never `!= 0` — that misread 0x06 as "on" (#83).
+summary = "Toggle 2-device multipoint (SET 07=on/00=off; RESP enable bit: 0x07=on, 0x06=off)."
 
 [commands.multipoint.set]
 operator = "SET_GET"        # CLAUDE.md: multipoint REQUIRES SET_GET (0x02)
