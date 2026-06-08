@@ -28,6 +28,14 @@ final class BoseManager: ObservableObject {
     @Published var eq: (bass: Int, mid: Int, treble: Int) = (0, 0, 0)
     @Published var isRefreshing: Bool = false
 
+    // Active mode's noise level (1F,06): 0 = max cancellation … 10 = transparency.
+    // `noiseAdjustable` (the firmware cncMutable bit) gates the slider — only custom
+    // modes are tunable; Quiet/Aware/spatial modes are fixed. Writing is via the CLI
+    // `anc-level`, which refuses on fixed modes, so the slider can't disable ANC (#83).
+    @Published var noiseLevel: Int = 0
+    @Published var noiseAdjustable: Bool = false
+    @Published var modeName: String = ""
+
     // Device routing states: "active" / "connected" / "offline"
     @Published var deviceStates: [String: String] = [
         "mac": "offline", "phone": "offline", "ipad": "offline",
@@ -128,6 +136,9 @@ final class BoseManager: ObservableObject {
         if let d = s["devices"] as? [String: String] {
             for (name, state) in d { deviceStates[name] = state }
         }
+        noiseLevel = (s["noiseLevel"] as? Int) ?? noiseLevel
+        noiseAdjustable = (s["noiseAdjustable"] as? Bool) ?? false
+        modeName = (s["modeName"] as? String) ?? modeName
     }
 
     // MARK: - Write (each: run verb, optimistic local update, then re-read)
@@ -153,6 +164,16 @@ final class BoseManager: ObservableObject {
     func setMultipoint(_ enabled: Bool) {
         multipointEnabled = enabled
         write(["multipoint", enabled ? "on" : "off"])
+    }
+
+    /// Set the active mode's noise level (0 = max cancel … 10 = transparency) via the
+    /// CLI `anc-level` (the 1F,06 RMW). No-op unless the active mode is adjustable —
+    /// the CLI refuses on fixed modes anyway, so ANC can never be disabled here.
+    func setNoiseLevel(_ level: Int) {
+        guard noiseAdjustable else { return }
+        let clamped = max(0, min(10, level))
+        noiseLevel = clamped
+        write(["anc-level", String(clamped)])
     }
 
     func connectDevice(_ name: String) {

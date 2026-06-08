@@ -151,21 +151,35 @@ func cmdInfoJSON() {
         }
     }
 
-    emit([
+    // Active mode's noise config (1F,06) — drives the app's noise slider. Its own warm
+    // session (event-driven read, not polled). `noiseAdjustable` (cncMutable) gates the
+    // slider so a level write can never disable ANC (#83). nil → slider hidden/disabled.
+    var mode: [String: Any] = ["noiseAdjustable": false]
+    if let cfg = transport.readActiveModeConfig() {
+        mode = [
+            "modeName": cfg.displayName,
+            "modeIndex": Int(cfg.index),
+            "noiseLevel": Int(cfg.cncLevel),
+            "noiseAdjustable": cfg.cncMutable,
+        ]
+    }
+
+    var out: [String: Any] = [
         "connected": true,
         "deviceName": s.deviceName.isEmpty ? "verBosita" : s.deviceName,
         "firmware": s.firmware,
         "batteryLevel": s.batteryLevel,
         "batteryCharging": s.batteryCharging,
         "ancMode": s.ancMode,
-        "ancDepth": s.cncLevel,
         "volume": s.volume,
         "volumeMax": s.volumeMax,
         "eq": ["bass": s.eq.bass, "mid": s.eq.mid, "treble": s.eq.treble],
         "multipoint": s.multipointEnabled,
         "onHead": s.onHead.map { $0 as Any } ?? NSNull(),
         "devices": deviceStates,
-    ])
+    ]
+    out.merge(mode) { _, new in new }
+    emit(out)
 }
 
 func ancModeName(_ mode: Int) -> String {

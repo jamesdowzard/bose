@@ -1,10 +1,10 @@
-# Agent Progress - fix-connect-idle-multipoint
+# Agent Progress - app-noise-slider
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-06-08T05:22:00Z
+# Created: 2026-06-08T07:20:53Z
 
-feature=fix-connect-idle-multipoint
-name=connect reports idle under multipoint
+feature=app-noise-slider
+name=macOS app noise slider via anc-level
 status=pending
 step=0
 step_name=Not started
-created=2026-06-08T05:22:00Z
+created=2026-06-08T07:20:53Z

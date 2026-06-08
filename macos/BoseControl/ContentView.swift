@@ -52,6 +52,7 @@ struct ContentView: View {
     @ObservedObject var manager: BoseManager
 
     @State private var volumeSlider: Double = 0
+    @State private var noiseSlider: Double = 0
     @State private var eqBass: Double = 0
     @State private var eqMid: Double = 0
     @State private var eqTreble: Double = 0
@@ -78,6 +79,7 @@ struct ContentView: View {
 
     private func syncSliders() {
         volumeSlider = Double(manager.volume)
+        noiseSlider = Double(manager.noiseLevel)
         eqBass = Double(manager.eq.bass)
         eqMid = Double(manager.eq.mid)
         eqTreble = Double(manager.eq.treble)
@@ -156,14 +158,41 @@ struct ContentView: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundColor(secondaryColor)
                     .tracking(1)
-                // No depth slider: ANC on this firmware is mode-based (Quiet/Aware/
-                // Custom). Writing a raw CNC depth knocks ANC to off (#83), so the
-                // window exposes modes only — depth is not a safe standalone control.
                 HStack(spacing: 4) {
                     ancButton("Quiet", 0)
                     ancButton("Aware", 1)
                     ancButton("C1", 2)
                     ancButton("C2", 3)
+                }
+                // Noise level (1F,06): 0 = max cancellation … 10 = transparency.
+                // Adjustable ONLY on custom modes (firmware cncMutable bit) — disabled
+                // on Quiet/Aware/spatial modes. The CLI `anc-level` refuses on fixed
+                // modes, so dragging this can never disable ANC (#83).
+                HStack(spacing: 8) {
+                    Text("Level")
+                        .font(.system(size: 10))
+                        .foregroundColor(manager.noiseAdjustable ? secondaryColor : offlineColor)
+                        .frame(width: 38, alignment: .leading)
+                    Slider(
+                        value: $noiseSlider,
+                        in: 0...10,
+                        step: 1,
+                        onEditingChanged: { editing in
+                            if !editing { manager.setNoiseLevel(Int(noiseSlider)) }
+                        }
+                    )
+                    .tint(activeColor)
+                    .disabled(!manager.noiseAdjustable)
+                    Text(manager.noiseAdjustable ? "\(Int(noiseSlider))" : "—")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(manager.noiseAdjustable ? secondaryColor : offlineColor)
+                        .frame(width: 22, alignment: .trailing)
+                }
+                .opacity(manager.noiseAdjustable ? 1.0 : 0.5)
+                if !manager.noiseAdjustable {
+                    Text("\(manager.modeName.isEmpty ? "This mode" : manager.modeName)'s level is fixed — pick a custom mode")
+                        .font(.system(size: 9))
+                        .foregroundColor(offlineColor)
                 }
             }
 
