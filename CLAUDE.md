@@ -10,8 +10,8 @@ Both Mac and phone control headphones independently via on-demand RFCOMM.
 No persistent connections. No coordination. No Tailscale dependency.
 
 ```
-Mac:   BoseControl.app (SwiftUI menu bar) → IOBluetooth RFCOMM → Headphones
 Mac:   bose-ctl (CLI)                     → IOBluetooth RFCOMM → Headphones
+Mac:   Raycast / Hammerspoon / Bose Control.app  ─shell→ bose-ctl → Headphones
 Phone: BoseControl (Android/Compose)      → Android RFCOMM     → Headphones
 ```
 
@@ -21,17 +21,29 @@ simultaneously one waits, but in practice commands are too brief to collide.
 
 ## Components
 
-### macOS — no resident app; on-demand surfaces over `bose-ctl`
-There is intentionally **no menu-bar app or LaunchAgent** (a resident poller was the
-original audio-dropout cause — #69-era). The Mac control surface is two thin
-front-ends that shell out to the `cli/` binary (`~/bin/bose-ctl`), so nothing runs
-in the background and the Mac only touches the headphones on an explicit keypress.
+### macOS — no resident poller; on-demand surfaces over `bose-ctl`
+There is intentionally **no LaunchAgent and nothing that polls** (a resident 10 s
+poll timer was the original audio-dropout cause — #69-era). The Mac control surface
+is three thin front-ends that shell out to the `cli/` binary (`~/bin/bose-ctl`), so
+nothing runs in the background and the Mac only touches the headphones on an
+explicit user action.
+- `macos/BoseControl/` -- **Bose Control.app**: a windowed SwiftUI app (frosted-dark
+  two-panel: battery/ANC mode+depth/volume/multipoint/on-head + device grid + EQ).
+  It is a **thin front-end that shells `bose-ctl`** — NO RFCOMM, NO IOBluetooth, NO
+  protocol code — reading via `bose-ctl info --json` and writing via the verbs. It is
+  **user-launched and event-driven**: reads on window-open, on app-focus, after each
+  write, and on ⌘R — never on a timer. Build `bash macos/build.sh [--install]`
+  (Developer-ID signed → `/Applications`; no LaunchAgent). In-window keys: ⌘1/2/3/4
+  ANC modes, ⌘↑/⌘↓ volume, ⌘R refresh, ⌘M connect Mac. Global hotkeys stay in
+  Hammerspoon. The `--json` read seam lives in `cli/main.swift` (`cmdInfoJSON`, pure
+  formatting over `getAllState` + `getDeviceStates`). It surfaces — but does not fix —
+  the #83 flight/ancDepth behaviour; that fix lands in the CLI and the app inherits it.
 - `raycast/bose-connect.sh` / `bose-disconnect.sh` -- Raycast script commands with a device dropdown → `bose-ctl connect|disconnect <device>`
 - `raycast/bose-status.sh` / `bose-full-status.sh` -- `bose-ctl status` / `bose-ctl info`
 - `raycast/bose-anc-depth.sh` / `bose-profile.sh` -- `bose-ctl anc-depth [0-10]` / `bose-ctl profile [name]` (text arg)
 - `profiles.json` (repo root) -- settings presets ({ANC mode, depth, EQ, multipoint, volume}) applied by `bose-ctl profile`; versioned + hand-editable, ships flight/office/music. Runtime JSON (not codegen'd TOML) because `profile save` writes it; loader resolves `$BOSE_PROFILES` → repo path → `~/.config/bose/`. Pure logic in `cli/Profiles.swift`, live apply in `cli/Composites.swift` (`applyProfile`).
 - `hammerspoon/bose.lua` -- Hammerspoon module, all **event-driven** (no timers): **Opt+B toggles Mac ↔ phone** (+ one-shot low-battery warn piggybacked on the press), **Opt+N cycles ANC** (quiet→aware→custom1), **Opt+J connects the headphones to this Mac** (unconditional, no toggle direction-guessing; `CONNECT_TARGET` retargets it), and a call-app **launch** watcher (Teams/Zoom/Meet → ANC aware). Returns a table with `.start()`/`.stop()`. Wired in `init.lua` via `BoseCtl = dofile(os.getenv("HOME").."/code/personal/bose/hammerspoon/bose.lua"); BoseCtl.start()`. Edits apply on Hammerspoon reload.
-- The Swift core that does the actual RFCOMM work lives in `cli/` (see below) — there is no separate macOS Swift target.
+- The Swift core that does the actual RFCOMM work lives in `cli/` (see below). The macOS app target (`macos/BoseControl/`) is pure SwiftUI/Foundation and does NO RFCOMM — it shells `bose-ctl`, so the two never drift and the app can't reintroduce a transport/poll bug.
 
 ### Android (`android/`) — regenerated protocol on the kept architecture
 - `android/` -- Jetpack Compose app (package: `au.com.jd.bose`)
@@ -72,6 +84,9 @@ bash cli/build.sh
 cp cli/build/bose-ctl ~/bin/bose-ctl                       # the engine
 cp raycast/*.sh ~/.config/raycast/script-commands/         # Raycast commands
 # hammerspoon/bose.lua is dofile'd from this repo path by init.lua — no copy needed
+
+# Bose Control.app (windowed) → Developer-ID signed, installed to /Applications
+bash macos/build.sh --install                              # needs ~/bin/bose-ctl present
 
 # Android app (deploy to S21 via ADB)
 cd android && ./gradlew assembleDebug

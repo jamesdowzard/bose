@@ -120,6 +120,54 @@ func cmdInfo() {
     }
 }
 
+/// info --json — the same getAllState snapshot as `info`, plus the per-device 3-state
+/// (active/connected/offline) from getDeviceStates, emitted as one JSON object. This
+/// is the read seam the windowed macOS app consumes — the app shells `bose-ctl` and
+/// never touches RFCOMM itself, so it can't reintroduce the polling/transport bugs.
+/// Pure formatting over existing composites — no protocol/spec change.
+func cmdInfoJSON() {
+    func emit(_ obj: [String: Any]) {
+        guard let data = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]),
+              let str = String(data: data, encoding: .utf8) else { print("{\"connected\":false}"); return }
+        print(str)
+    }
+
+    guard let s = transport.getAllState() else { emit(["connected": false]); return }
+
+    // Per-device 3-state, resolved by NAME (same logic as cmdDevices, #81). If the
+    // dedicated probe is unreachable, fall back to active-only from getAllState.
+    var deviceStates: [String: String] = [:]
+    let activeFromAll = Set(s.connectedDevices.map { activeName(forMac: $0) })
+    if let states = transport.getDeviceStates(query: BoseDeviceMap.knownDevices.map { $0.mac }) {
+        let active = Set(states.active.map { activeName(forMac: $0) })
+        let idle = Set(states.connected.map { displayName(forMac: $0) })
+        for dev in BoseDeviceMap.knownDevices {
+            deviceStates[dev.name] = active.contains(dev.name) ? "active"
+                                   : idle.contains(dev.name) ? "connected" : "offline"
+        }
+    } else {
+        for dev in BoseDeviceMap.knownDevices {
+            deviceStates[dev.name] = activeFromAll.contains(dev.name) ? "active" : "offline"
+        }
+    }
+
+    emit([
+        "connected": true,
+        "deviceName": s.deviceName.isEmpty ? "verBosita" : s.deviceName,
+        "firmware": s.firmware,
+        "batteryLevel": s.batteryLevel,
+        "batteryCharging": s.batteryCharging,
+        "ancMode": s.ancMode,
+        "ancDepth": s.cncLevel,
+        "volume": s.volume,
+        "volumeMax": s.volumeMax,
+        "eq": ["bass": s.eq.bass, "mid": s.eq.mid, "treble": s.eq.treble],
+        "multipoint": s.multipointEnabled,
+        "onHead": s.onHead.map { $0 as Any } ?? NSNull(),
+        "devices": deviceStates,
+    ])
+}
+
 func ancModeName(_ mode: Int) -> String {
     AncMode(rawValue: UInt8(truncatingIfNeeded: mode))
         .map { "\($0)" } ?? "unknown(\(mode))"
@@ -445,7 +493,7 @@ func usage() {
 
     Usage:
       bose-ctl status               Connection, battery, ANC, volume, EQ (one session)
-      bose-ctl info                 Full state: identity, power, all audio config, devices
+      bose-ctl info [--json]        Full state: identity, power, all audio config, devices (--json for the app)
       bose-ctl battery              Battery level
       bose-ctl devices              Known devices: ● active / ○ connected / · offline
       bose-ctl connect <device>     Route audio to device (poll-confirmed)
@@ -475,7 +523,7 @@ func requireArg(_ name: String) -> String {
 
 switch args[1].lowercased() {
 case "status", "s":            cmdStatus()
-case "info":                   cmdInfo()
+case "info":                   args.contains("--json") ? cmdInfoJSON() : cmdInfo()
 case "battery", "b":           cmdBattery()
 case "anc":                    cmdAnc(args.count >= 3 ? args[2] : nil)
 case "anc-depth":              cmdAncDepth(args.count >= 3 ? args[2] : nil)
