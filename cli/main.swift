@@ -542,6 +542,17 @@ case "eq":                     cmdEq(args.count >= 3 ? Array(args[2...]) : [])
 case "profile", "profiles":    cmdProfile(args.count >= 3 ? Array(args[2...]) : [])
 case "raw":                    cmdRaw(requireArg("hex"))
 case "cnc-debug":              transport.probeAudioModes().forEach { print($0) }
+case "cnc-roundtrip":
+    let idx = UInt8(args.count >= 3 ? args[2] : "4") ?? 4
+    let (b, a) = transport.cncRoundTrip(index: idx)
+    print("before: \(b.map { "\($0.displayName) lvl=\($0.cncLevel) anc=\($0.ancToggle)" } ?? "nil")")
+    print("after:  \(a.map { "\($0.displayName) lvl=\($0.cncLevel) anc=\($0.ancToggle)" } ?? "nil")")
+    print(b != nil && a == b ? "ROUND-TRIP CLEAN (byte-identical)" : "MISMATCH — do not proceed")
+case "cnc-set":
+    let idx = UInt8(args.count >= 3 ? args[2] : "2") ?? 2
+    let lvl = Int(args.count >= 4 ? args[3] : "0") ?? 0
+    let r = transport.setModeCncLevel(index: idx, level: lvl, activate: true)
+    print(r.map { "set \($0.displayName) lvl=\($0.cncLevel) anc=\($0.ancToggle)" } ?? "failed")
 case "-h", "--help", "help":   usage()
 default:
     fail("Unknown command: \(args[1])")

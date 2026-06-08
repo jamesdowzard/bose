@@ -114,6 +114,35 @@ extension Transport {
             return out
         } ?? ["session failed"]
     }
+
+    /// SAFETY validation for the 1F,06 write path: GET mode `index`, rebuild the SET
+    /// payload UNCHANGED, write it, re-GET, and return (before, after) so the caller
+    /// can assert byte-identity. Run on an EMPTY ("None") slot first — if the SET
+    /// layout is wrong it scrambles only a throwaway slot, not a real mode.
+    func cncRoundTrip(index: UInt8) -> (before: ModeConfig?, after: ModeConfig?) {
+        session { ch, t in
+            _ = t.send(ch, [0x02, 0x02, 0x01, 0x00], timeout: 2.0)  // prime warm
+            guard let r1 = t.send(ch, [0x1F, 0x06, 0x01, 0x01, index], timeout: 2.0),
+                  let before = parseModeConfig(r1) else { return (nil, nil) }
+            _ = t.send(ch, buildModeConfigSet(before, newLevel: nil), timeout: 2.0)
+            let r2 = t.send(ch, [0x1F, 0x06, 0x01, 0x01, index], timeout: 2.0)
+            return (before, r2.flatMap(parseModeConfig))
+        } ?? (nil, nil)
+    }
+
+    /// Set a mode's CNC level via the 1F,06 read-modify-write, then activate it.
+    /// Returns the post-write ModeConfig, or nil. Keeps ANC anchored to the mode.
+    func setModeCncLevel(index: UInt8, level: Int, activate: Bool) -> ModeConfig? {
+        session { ch, t in
+            _ = t.send(ch, [0x02, 0x02, 0x01, 0x00], timeout: 2.0)  // prime warm
+            guard let r1 = t.send(ch, [0x1F, 0x06, 0x01, 0x01, index], timeout: 2.0),
+                  let cfg = parseModeConfig(r1) else { return nil }
+            _ = t.send(ch, buildModeConfigSet(cfg, newLevel: level), timeout: 2.0)
+            if activate { _ = t.send(ch, [0x1F, 0x03, 0x05, 0x02, index, 0x00], timeout: 2.0) }
+            let r2 = t.send(ch, [0x1F, 0x06, 0x01, 0x01, index], timeout: 2.0)
+            return r2.flatMap(parseModeConfig)
+        } ?? nil
+    }
 }
 
 /// Uppercase-hex MAC key for set membership (keeps this file independent of
