@@ -191,7 +191,11 @@ func cmdAnc(_ mode: String?) {
         case "aware": modeByte = AncMode.aware.rawValue
         case "custom1": modeByte = AncMode.custom1.rawValue
         case "custom2": modeByte = AncMode.custom2.rawValue
-        default: fail("unknown ANC mode: \(mode) (quiet/aware/custom1/custom2)")
+        // Bare mode slot index (0-5). Slots beyond the named four are the device's
+        // own modes (e.g. Immersion/Cinema) and the adjustable custom slots — the
+        // ones whose noise level `anc-level` can set. `info`/`anc-level` show names.
+        case let s where UInt8(s).map({ $0 <= 5 }) == true: modeByte = UInt8(s)!
+        default: fail("unknown ANC mode: \(mode) (quiet/aware/custom1/custom2, or a slot index 0-5)")
         }
         // Set + read-back in ONE session. A separate oneShot for the verify-GET
         // would open a second channel back-to-back and intermittently return nil
@@ -210,20 +214,27 @@ func cmdAnc(_ mode: String?) {
     print("ANC: \(ancModeName(Int(r[4])))")
 }
 
-/// anc-depth [0-10] — get/set ANC/CNC depth. SET is a read-modify-write composite
-/// (preserves autoCNC/spatial/windBlock/ancToggle); GET reads the live level.
-func cmdAncDepth(_ arg: String?) {
+/// anc-level [0-10] — get/set the ACTIVE mode's CNC noise level via the correct
+/// AudioModesModeConfig (1F,06) read-modify-write. 0 = max cancellation, 10 = full
+/// transparency. ANC stays anchored to the mode (never the 255/off the old 1F,0A
+/// `anc-depth` caused, #83). Refuses on a fixed-level mode (Quiet/Aware/spatial).
+func cmdAncLevel(_ arg: String?) {
     if let arg = arg {
-        guard let level = Int(arg), (0...10).contains(level) else { fail("anc-depth must be 0-10") }
-        // setCncLevel does the read-modify-write in one session and validates the
-        // RESP, so it already confirms success — trust it instead of a separate
-        // verify-GET (a second back-to-back channel that intermittently returns nil).
-        guard transport.setCncLevel(level) else { fail("failed to set ANC depth") }
-        print("ANC depth: \(level)/10")
+        guard let level = Int(arg), (0...10).contains(level) else {
+            fail("anc-level must be 0-10 (0 = max cancellation, 10 = transparency)")
+        }
+        switch transport.setActiveModeLevel(level) {
+        case .ok(let name, let lvl):
+            print("\(name): noise level \(lvl)/10  (0 = max cancel … 10 = transparent)")
+        case .fixed(let name):
+            fail("\(name)'s noise level is fixed — switch to a custom (adjustable) mode to set a level")
+        case .unreachable:
+            fail("headphones not reachable")
+        }
         return
     }
-    guard let level = transport.getCncLevel() else { fail("ANC depth query failed") }
-    print("ANC depth: \(level)/10")
+    guard let cfg = transport.readActiveModeConfig() else { fail("headphones not reachable") }
+    print("\(cfg.displayName): noise level \(cfg.cncLevel)/10\(cfg.cncMutable ? "" : " (fixed)")")
 }
 
 /// name [new name] — get/set the headphone name. SET is `01,02,06,{len},00,{utf8}`
@@ -500,7 +511,7 @@ func usage() {
       bose-ctl disconnect <device>  Disconnect a device
       bose-ctl swap <device>        Route audio to device (multipoint; keeps others)
       bose-ctl anc [mode]           Get/set ANC (quiet/aware/custom1/custom2)
-      bose-ctl anc-depth [0-10]     Get/set ANC depth (0=min … 10=max)
+      bose-ctl anc-level [0-10]     Get/set active mode's noise level (0=max cancel … 10=transparent; custom modes only)
       bose-ctl name [new name]      Get/set headphone name (max 30 UTF-8 bytes)
       bose-ctl volume [0-31]        Get/set volume
       bose-ctl multipoint [on|off]  Get/set multipoint
@@ -526,7 +537,7 @@ case "status", "s":            cmdStatus()
 case "info":                   args.contains("--json") ? cmdInfoJSON() : cmdInfo()
 case "battery", "b":           cmdBattery()
 case "anc":                    cmdAnc(args.count >= 3 ? args[2] : nil)
-case "anc-depth":              cmdAncDepth(args.count >= 3 ? args[2] : nil)
+case "anc-level":              cmdAncLevel(args.count >= 3 ? args[2] : nil)
 case "name":                   cmdName(args.count >= 3 ? args[2...].joined(separator: " ") : nil)
 case "devices":                cmdDevices()
 case "connect", "c":           cmdConnect(requireArg("device"))
@@ -541,18 +552,6 @@ case "prev":                   cmdMedia(.prev)
 case "eq":                     cmdEq(args.count >= 3 ? Array(args[2...]) : [])
 case "profile", "profiles":    cmdProfile(args.count >= 3 ? Array(args[2...]) : [])
 case "raw":                    cmdRaw(requireArg("hex"))
-case "cnc-debug":              transport.probeAudioModes().forEach { print($0) }
-case "cnc-roundtrip":
-    let idx = UInt8(args.count >= 3 ? args[2] : "4") ?? 4
-    let (b, a) = transport.cncRoundTrip(index: idx)
-    print("before: \(b.map { "\($0.displayName) lvl=\($0.cncLevel) anc=\($0.ancToggle)" } ?? "nil")")
-    print("after:  \(a.map { "\($0.displayName) lvl=\($0.cncLevel) anc=\($0.ancToggle)" } ?? "nil")")
-    print(b != nil && a == b ? "ROUND-TRIP CLEAN (byte-identical)" : "MISMATCH — do not proceed")
-case "cnc-set":
-    let idx = UInt8(args.count >= 3 ? args[2] : "2") ?? 2
-    let lvl = Int(args.count >= 4 ? args[3] : "0") ?? 0
-    let r = transport.setModeCncLevel(index: idx, level: lvl, activate: true)
-    print(r.map { "set \($0.displayName) lvl=\($0.cncLevel) anc=\($0.ancToggle)" } ?? "failed")
 case "-h", "--help", "help":   usage()
 default:
     fail("Unknown command: \(args[1])")

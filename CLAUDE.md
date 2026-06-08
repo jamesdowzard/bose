@@ -41,7 +41,7 @@ explicit user action.
   the #83 flight/ancDepth behaviour; that fix lands in the CLI and the app inherits it.
 - `raycast/bose-connect.sh` / `bose-disconnect.sh` -- Raycast script commands with a device dropdown → `bose-ctl connect|disconnect <device>`
 - `raycast/bose-status.sh` / `bose-full-status.sh` -- `bose-ctl status` / `bose-ctl info`
-- `raycast/bose-anc-depth.sh` / `bose-profile.sh` -- `bose-ctl anc-depth [0-10]` / `bose-ctl profile [name]` (text arg)
+- `raycast/bose-anc-level.sh` / `bose-profile.sh` -- `bose-ctl anc-level [0-10]` (active mode's noise level, custom modes only) / `bose-ctl profile [name]` (text arg)
 - `profiles.json` (repo root) -- settings presets ({ANC mode, depth, EQ, multipoint, volume}) applied by `bose-ctl profile`; versioned + hand-editable, ships flight/office/music. ANC depth is applied ONLY for custom1/custom2 modes (named modes set mode only — depth over quiet/aware disables ANC, #83). flight = {quiet, multipoint off}. Runtime JSON (not codegen'd TOML) because `profile save` writes it; loader resolves `$BOSE_PROFILES` → repo path → `~/.config/bose/`. Pure logic in `cli/Profiles.swift`, live apply in `cli/Composites.swift` (`applyProfile`).
 - `hammerspoon/bose.lua` -- Hammerspoon module, all **event-driven** (no timers): **Opt+B toggles Mac ↔ phone** (+ one-shot low-battery warn piggybacked on the press), **Opt+N cycles ANC** (quiet→aware→custom1), **Opt+J connects the headphones to this Mac** (unconditional, no toggle direction-guessing; `CONNECT_TARGET` retargets it), and a call-app **launch** watcher (Teams/Zoom/Meet → ANC aware). Returns a table with `.start()`/`.stop()`. Wired in `init.lua` via `BoseCtl = dofile(os.getenv("HOME").."/code/personal/bose/hammerspoon/bose.lua"); BoseCtl.start()`. Edits apply on Hammerspoon reload.
 - The Swift core that does the actual RFCOMM work lives in `cli/` (see below). The macOS app target (`macos/BoseControl/`) is pure SwiftUI/Foundation and does NO RFCOMM — it shells `bose-ctl`, so the two never drift and the app can't reintroduce a transport/poll bug.
@@ -236,10 +236,30 @@ BMAP operator (SET/0x06 instead of SET_GET/0x02).
 | Disconnect | 04,02 | START | `04,02,05,06,{MAC}` | |
 | Media control | 05,03 | START | `05,03,05,01,{action}` | 01=play 02=pause 03=next 04=prev |
 | **EQ band** | 01,07 | **SET_GET** | `01,07,02,02,{value},{band}` | band: 0=bass 1=mid 2=treble, value: signed -10 to +10 |
-| **ANC depth** | 1F,0A | **SET_GET** | `1F,0A,02,05,{level},{autoCNC},{spatial},{windBlock},{ancToggle}` | level 0-10. **SAME axis as ANC mode** — writing depth over a named mode (quiet/aware) sets 1F,03 to 255 = OFF (#83). Only meaningful inside a CUSTOM mode. Profiles + app set named-mode → mode only; never depth alongside quiet/aware. |
+| **Noise level** | **1F,06** | **SET_GET** | per-mode read-modify-write (see below) | 0 = max cancel … 10 = transparency. The CORRECT level command (`bose-ctl anc-level`). Reads a mode's config, changes only the level, forces `ancToggle=1`, writes back — ANC stays anchored to the mode. Only on `cncMutable` modes (custom slots); Quiet/Aware/spatial modes are fixed. |
+| ~~ANC depth~~ | ~~1F,0A~~ | — | — | **DO NOT USE.** `1F,0A` (AudioModesSettingsConfig) is GLOBAL live-tuning; writing it over an active mode DETACHES the mode → 1F,03 reads 255 = ANC OFF (#83, confirmed audibly). The old `anc-depth` command + Raycast used this — removed. Use `anc-level` (1F,06) instead. |
 
 **Not supported on QC Ultra 2:** StandbyTimer SET (01,04), MotionAutoOff (01,14), OnHeadDetection SET (01,10).
 Auto-off timer (01,0B) is read-only over RFCOMM — distinct from StandbyTimer (01,04).
+
+### AudioModes (block 0x1F) — ANC is MODE-based (reverse-engineered from the Bose app, confirmed live fw 8.2.20)
+
+Block `0x1F` is **AudioModes**, not "ANC". The headphone has a list of **mode slots**
+(by index): on verBosita — 0 Quiet, 1 Aware, 2 Immersion, 3 Cinema, 4/5 empty user
+slots ("None"). Each mode carries a CNC noise level + autoCNC + spatial + windBlock +
+ancToggle. **Level semantics: 0 = max cancellation (Quiet end), 10 = full transparency
+(Aware end)** — NOT "cancellation strength 0..10".
+
+| Func | Name | Use |
+|------|------|-----|
+| 1F,03 | AudioModesCurrentMode | select/activate a mode by **slot index** (START). Our `anc` command: 0-3 named + `anc <0-5>` for any slot. Reads 255 = "no mode" = ANC off. |
+| 1F,06 | **AudioModesModeConfig** | read/define a mode (index, prompt, name[32], …, cncLevel, …, ancToggle). The CORRECT level command — RMW it. **GET only answers inside a warm bulk session** (prime with a 02,02 read first). |
+| 1F,0A | AudioModesSettingsConfig | GLOBAL live tuning. **Footgun** — detaches the active mode → 255/off (#83). Never use. |
+
+- **1F,06 GET** request `1F 06 01 01 {index}`. RESPONSE `1F 06 03 30 {48-byte payload}`; offsets (payload = frame[4:]): `[0]`index, `[1..2]`prompt, `[3]`userConfigurable, `[6..37]`32-byte name, `[41]`mutability bitfield (**bit0 = cncMutable** = level editable; bit4 = ancToggleMutable), `[42]`cncLevel, `[43]`autoCNC, `[44]`spatial, `[46]`windBlock, `[47]`ancToggle.
+- **1F,06 SET_GET** (DIFFERENT layout) `1F 06 02 28 {payload}`: `[0]`index, `[1..2]`prompt, `[3..34]`32-byte name, `[35]`cncLevel, `[36]`autoCNC, `[37]`spatial, `[38]`windBlock, `[39]`ancToggle.
+- `bose-ctl anc-level [0-10]` does the GET→change-level→SET_GET RMW on the **active** mode, forcing `ancToggle=1`, and refuses if the mode's `cncMutable` is false (so it can never disable ANC). Pure parse/build = `parseModeConfig`/`buildModeConfigSet` (Parsers); session RMW = `setActiveModeLevel` (Composites).
+- Implementation derived from decompiling `com.bose.bosemusic` (`AudioModesModeConfigResponse`, `FBlockAudioModesKt`); see `docs/plans/2026-06-08-cnc-mode-config-proper.md`.
 
 ### BMAP Function IDs (Block 0x05 — Audio)
 
@@ -264,7 +284,7 @@ surface. Keep this in sync when adding a verb or control.
 | Capability | Block,Func | `bose-ctl` | Raycast | Hammerspoon | Android |
 |------------|-----------|-----------|---------|-------------|---------|
 | ANC mode | 1F,03 | ✅ `anc` | 👁 (in status) | ✅ Opt+N cycle + call-app hook | ✅ mode selector |
-| ANC depth (CNC) | 1F,0A | ✅ `anc-depth` | ✅ `bose-anc-depth` | — | ✅ slider |
+| Noise level (CNC) | **1F,06** | ✅ `anc-level` (custom modes) | ✅ `bose-anc-level` | — | ⚠️ slider still on 1F,0A — FIX PENDING |
 | Device name | 01,02 | ✅ `name` | — | — | ✅ rename |
 | EQ band | 01,07 | ✅ `eq` | 👁 (in status) | — | ✅ 3-band |
 | Multipoint | 01,0A | ✅ `multipoint` | — | — | ✅ toggle |
