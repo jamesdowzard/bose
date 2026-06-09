@@ -135,12 +135,18 @@ access verBosita?" prompt. Association persists across app reinstalls.
 Buttons use `PendingIntent.getForegroundService()` to send `ACTION_CONNECT_DEVICE`
 directly to `BoseService`. No broadcast receiver in the click path.
 
-**State colors:**
-- Green (#00FF88) = active (audio routed here)
-- Orange (#FF9500) = connected but not active
-- Grey (#666666) = offline/not connected
+**State colors** (warm-paper card, shared with the #98 app retheme):
+- Burnt-orange chip (#AF3A03) = active (audio routed here)
+- Blue chip (#1B4A82) = connected but not active
+- Muted paper chip (#E6DCC6 fill / #6E6A5E text) = offline/not connected
 
-Battery percentage shown as overlay text.
+The widget is a paper **card** (`@drawable/widget_card_bg`: #FCFAF4 fill, #E6DCC6
+hairline border, rounded) sitting on the home-screen wallpaper. Active/connected
+are solid filled chips so they read on any wallpaper. Constants live in
+`BoseWidgetProvider.kt` (independent of the app's Compose palette in `MainActivity.kt`).
+
+Battery percentage shown as overlay text — own on-paper thresholds: warm-red
+(#A82E2E) ≤15, burnt-orange (#AF3A03) ≤30, secondary grey (#6E6A5E) otherwise.
 
 ### BoseService (Foreground Service)
 

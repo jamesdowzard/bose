@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Warm-paper widget card (matches the #98 app retheme). Rounded paper fill
+     with a hairline border so it reads as a card on the home-screen wallpaper. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#FCFAF4" />
+    <corners android:radius="16dp" />
+    <stroke
+        android:width="1dp"
+        android:color="#E6DCC6" />
+</shape>

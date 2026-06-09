@@ -1,10 +1,10 @@
-# Agent Progress - bose-light-theme
+# Agent Progress - widget-paper-theme
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-06-09T06:26:47Z
+# Created: 2026-06-09T07:14:40Z
 
-feature=bose-light-theme
-name=Light theme redesign Android and macOS
+feature=widget-paper-theme
+name=Re-theme Android widget to warm-paper palette
 status=pending
 step=0
 step_name=Not started
-created=2026-06-09T06:26:47Z
+created=2026-06-09T07:14:40Z

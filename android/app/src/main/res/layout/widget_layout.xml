@@ -3,9 +3,9 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#0D0D0D"
+    android:background="@drawable/widget_card_bg"
     android:gravity="center"
-    android:padding="4dp">
+    android:padding="6dp">
 
     <!-- Battery percentage overlay -->
     <TextView
@@ -14,7 +14,7 @@
         android:layout_height="wrap_content"
         android:text=""
         android:textSize="10sp"
-        android:textColor="#00FF88"
+        android:textColor="#6E6A5E"
         android:textStyle="bold"
         android:gravity="end"
         android:paddingEnd="6dp"
@@ -36,10 +36,10 @@
             android:layout_weight="1"
             android:text="phone"
             android:textSize="11sp"
-            android:textColor="#666666"
+            android:textColor="#6E6A5E"
             android:textStyle="bold"
             android:gravity="center"
-            android:background="#222222"
+            android:background="#E6DCC6"
             android:layout_margin="2dp"
             android:clickable="true"
             android:focusable="true" />
@@ -51,10 +51,10 @@
             android:layout_weight="1"
             android:text="mac"
             android:textSize="11sp"
-            android:textColor="#666666"
+            android:textColor="#6E6A5E"
             android:textStyle="bold"
             android:gravity="center"
-            android:background="#222222"
+            android:background="#E6DCC6"
             android:layout_margin="2dp"
             android:clickable="true"
             android:focusable="true" />
@@ -66,10 +66,10 @@
             android:layout_weight="1"
             android:text="ipad"
             android:textSize="11sp"
-            android:textColor="#666666"
+            android:textColor="#6E6A5E"
             android:textStyle="bold"
             android:gravity="center"
-            android:background="#222222"
+            android:background="#E6DCC6"
             android:layout_margin="2dp"
             android:clickable="true"
             android:focusable="true" />
@@ -81,10 +81,10 @@
             android:layout_weight="1"
             android:text="iphone"
             android:textSize="11sp"
-            android:textColor="#666666"
+            android:textColor="#6E6A5E"
             android:textStyle="bold"
             android:gravity="center"
-            android:background="#222222"
+            android:background="#E6DCC6"
             android:layout_margin="2dp"
             android:clickable="true"
             android:focusable="true" />
@@ -96,10 +96,10 @@
             android:layout_weight="1"
             android:text="quest"
             android:textSize="11sp"
-            android:textColor="#666666"
+            android:textColor="#6E6A5E"
             android:textStyle="bold"
             android:gravity="center"
-            android:background="#222222"
+            android:background="#E6DCC6"
             android:layout_margin="2dp"
             android:clickable="true"
             android:focusable="true" />
