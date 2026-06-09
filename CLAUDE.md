@@ -27,8 +27,11 @@ poll timer was the original audio-dropout cause — #69-era). The Mac control su
 is three thin front-ends that shell out to the `cli/` binary (`~/bin/bose-ctl`), so
 nothing runs in the background and the Mac only touches the headphones on an
 explicit user action.
-- `macos/BoseControl/` -- **Bose Control.app**: a windowed SwiftUI app (frosted-dark
-  two-panel: battery/ANC mode/volume/multipoint/on-head + device grid + EQ). Six ANC
+- `macos/BoseControl/` -- **Bose Control.app**: a windowed SwiftUI app (warm-paper light
+  two-panel: battery/ANC mode/volume/multipoint/on-head + device grid + EQ). The light
+  theme (burnt-orange `#AF3A03` accent on warm paper, from the Midterm `paper-hc` palette)
+  is shared with the Android app; macOS colours live in `ContentView.swift`, Android in
+  `MainActivity.kt` (`BoseAccent`/`BoseConnected`/…). Six ANC
   mode buttons (Quiet/Aware/Immersion/Cinema/C1/C2 = slots 0-5) + a **noise-level
   slider** driven by `anc-level` (1F,06) — NOT a raw depth (1F,0A disables ANC, #83).
   The slider is enabled only on the adjustable custom slots (4/5, firmware `cncMutable`)

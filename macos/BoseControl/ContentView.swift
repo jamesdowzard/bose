@@ -1,17 +1,24 @@
-/// ContentView: Frosted-dark two-panel layout for Bose headphone control.
+/// ContentView: Warm-paper two-panel layout for Bose headphone control.
 /// Left panel = status sidebar (220px), right panel = device grid + EQ.
-/// Uses NSVisualEffectView for macOS vibrancy/translucency.
+/// Light theme — burnt-orange accent on warm paper (drawn from the Midterm "paper-hc"
+/// terminal theme), matching the Android app.
 
 import SwiftUI
 
 // MARK: - Theme Colors
 
-/// No neon green. White/light grey for active, warm grey for secondary, 40% opacity grey for offline.
-private let activeColor = Color.white
-private let secondaryColor = Color(white: 0.55)
-private let offlineColor = Color(white: 0.4)
-private let cardColor = Color.white.opacity(0.06)
-private let dividerColor = Color.white.opacity(0.08)
+/// Midterm "paper-hc" inspired: warm paper, burnt-orange accent, earthy neutrals.
+private let inkColor = Color(red: 0x21 / 255, green: 0x20 / 255, blue: 0x1C / 255)        // primary text
+private let boseAccent = Color(red: 0xAF / 255, green: 0x3A / 255, blue: 0x03 / 255)     // burnt orange — accent
+private let connectedColor = Color(red: 0x1B / 255, green: 0x4A / 255, blue: 0x82 / 255)  // calm blue — connected
+private let secondaryColor = Color(red: 0x6E / 255, green: 0x6A / 255, blue: 0x5E / 255)  // secondary text
+private let offlineColor = Color(red: 0xA8 / 255, green: 0xA1 / 255, blue: 0x8E / 255)    // tertiary / offline
+private let warnColor = Color(red: 0xA8 / 255, green: 0x2E / 255, blue: 0x2E / 255)       // warm red
+private let paperColor = Color(red: 0xF4 / 255, green: 0xEE / 255, blue: 0xDE / 255)      // window background
+private let cardColor = Color(red: 0xFC / 255, green: 0xFA / 255, blue: 0xF4 / 255)       // card / control fill
+private let activeBg = Color(red: 0xF6 / 255, green: 0xEA / 255, blue: 0xDC / 255)        // active device tint
+private let hairColor = Color(red: 0xE6 / 255, green: 0xDC / 255, blue: 0xC6 / 255)       // hairline border / divider
+private let dividerColor = hairColor
 
 // MARK: - Device Button Model
 
@@ -29,22 +36,6 @@ private let deviceButtons: [DeviceButton] = [
     DeviceButton(id: "tv", label: "TV", symbol: "tv"),
     DeviceButton(id: "quest", label: "Quest", symbol: "visionpro"),
 ]
-
-// MARK: - Visual Effect Background
-
-/// NSViewRepresentable wrapping NSVisualEffectView with .hudWindow material
-/// for macOS dark vibrancy/translucency.
-struct VisualEffectBackground: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.material = .hudWindow
-        view.blendingMode = .behindWindow
-        view.state = .active
-        return view
-    }
-
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
-}
 
 // MARK: - Main View
 
@@ -66,7 +57,8 @@ struct ContentView: View {
             }
         }
         .frame(width: 640, height: 360)
-        .background(VisualEffectBackground())
+        .background(paperColor)
+        .preferredColorScheme(.light)
         .onAppear {
             manager.refreshState()
             syncSliders()
@@ -137,7 +129,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(manager.deviceName)
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(activeColor)
+                    .foregroundColor(inkColor)
 
                 HStack(spacing: 6) {
                     Image(systemName: batteryIcon)
@@ -149,7 +141,7 @@ struct ContentView: View {
                     if manager.batteryCharging {
                         Image(systemName: "bolt.fill")
                             .font(.system(size: 10))
-                            .foregroundColor(.orange)
+                            .foregroundColor(boseAccent)
                     }
                 }
             }
@@ -191,7 +183,7 @@ struct ContentView: View {
                             if !editing { manager.setNoiseLevel(Int(noiseSlider)) }
                         }
                     )
-                    .tint(activeColor)
+                    .tint(boseAccent)
                     .disabled(!manager.noiseAdjustable)
                     Text(manager.noiseAdjustable ? "\(Int(noiseSlider))" : "—")
                         .font(.system(size: 10, design: .monospaced))
@@ -227,7 +219,7 @@ struct ContentView: View {
                         }
                     }
                 )
-                .tint(activeColor)
+                .tint(boseAccent)
             }
 
             // Multipoint
@@ -241,7 +233,7 @@ struct ContentView: View {
                     .tracking(1)
             }
             .toggleStyle(.switch)
-            .tint(activeColor)
+            .tint(boseAccent)
 
             // Wear detection
             VStack(alignment: .leading, spacing: 4) {
@@ -251,11 +243,11 @@ struct ContentView: View {
                     .tracking(1)
                 HStack(spacing: 4) {
                     Circle()
-                        .fill(manager.onHead ? Color.green : Color.orange)
+                        .fill(manager.onHead ? boseAccent : offlineColor)
                         .frame(width: 6, height: 6)
                     Text(manager.onHead ? "On head" : "Off head")
                         .font(.system(size: 12))
-                        .foregroundColor(activeColor)
+                        .foregroundColor(inkColor)
                 }
             }
 
@@ -301,9 +293,9 @@ struct ContentView: View {
         let isActive = state == "active"
         let isConnected = state == "connected"
 
-        let textColor: Color = isActive ? activeColor : (isConnected ? secondaryColor : offlineColor)
-        let bg: Color = isActive ? Color.white.opacity(0.14) : cardColor
-        let borderColor: Color = isActive ? activeColor.opacity(0.7) : Color.white.opacity(0.04)
+        let textColor: Color = isActive ? boseAccent : (isConnected ? connectedColor : offlineColor)
+        let bg: Color = isActive ? activeBg : cardColor
+        let borderColor: Color = isActive ? boseAccent.opacity(0.7) : hairColor
 
         return Button(action: { manager.connectDevice(button.id) }) {
             VStack(spacing: 3) {
@@ -355,10 +347,14 @@ struct ContentView: View {
                 }) {
                     Text(preset.name)
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(selected ? .black : secondaryColor)
+                        .foregroundColor(selected ? .white : secondaryColor)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 5)
-                        .background(selected ? activeColor : cardColor)
+                        .background(selected ? boseAccent : cardColor)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(selected ? boseAccent : hairColor, lineWidth: 1)
+                        )
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                 }
                 .buttonStyle(.plain)
@@ -394,7 +390,7 @@ struct ContentView: View {
                     if !editing { onCommit() }
                 }
             )
-            .tint(activeColor)
+            .tint(boseAccent)
             Text("\(Int(value.wrappedValue))")
                 .font(.system(size: 10, design: .monospaced))
                 .foregroundColor(secondaryColor)
@@ -409,11 +405,15 @@ struct ContentView: View {
                 .font(.system(size: 10, weight: .semibold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
-                .foregroundColor(isActive ? .black : secondaryColor)
+                .foregroundColor(isActive ? .white : secondaryColor)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 5)
                 .padding(.horizontal, 2)
-                .background(isActive ? activeColor : cardColor)
+                .background(isActive ? boseAccent : cardColor)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(isActive ? boseAccent : hairColor, lineWidth: 1)
+                )
                 .clipShape(RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain)
@@ -438,10 +438,10 @@ struct ContentView: View {
             }) {
                 Text("Connect")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.black)
+                    .foregroundColor(.white)
                     .padding(.horizontal, 24)
                     .padding(.vertical, 8)
-                    .background(activeColor)
+                    .background(boseAccent)
                     .cornerRadius(8)
             }
             .buttonStyle(.plain)
@@ -465,9 +465,7 @@ struct ContentView: View {
     }
 
     private var batteryColor: Color {
-        if manager.batteryCharging { return .green }
-        if manager.batteryLevel < 15 { return .red }
-        if manager.batteryLevel < 30 { return .orange }
-        return activeColor
+        if manager.batteryLevel < 15 { return warnColor }
+        return boseAccent
     }
 }

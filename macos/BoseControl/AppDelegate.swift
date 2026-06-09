@@ -1,4 +1,4 @@
-/// AppDelegate: Window chrome configuration for frosted-dark redesign.
+/// AppDelegate: Window chrome configuration for the warm-paper light redesign.
 
 import AppKit
 
@@ -13,6 +13,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.styleMask.insert(.fullSizeContentView)
         window.isMovableByWindowBackground = true
         window.backgroundColor = .clear
-        window.appearance = NSAppearance(named: .darkAqua)
+        window.appearance = NSAppearance(named: .aqua)
     }
 }
