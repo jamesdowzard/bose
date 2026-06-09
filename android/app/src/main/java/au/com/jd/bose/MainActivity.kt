@@ -48,7 +48,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -241,30 +241,35 @@ class MainActivity : ComponentActivity() {
 // Theme
 // ======================================================================
 
-val BoseGreen = Color(0xFF00FF88)
-val BoseOrange = Color(0xFFFF9500)
-val BoseBg = Color(0xFF0D0D0D)
-val BoseCardBg = Color(0xFF1A1A1A)
-val BoseText = Color(0xFFE0E0E0)
-val BoseDim = Color(0xFF666666)
-val BoseActiveBg = Color(0xFF002211)
+// Palette — Midterm "paper-hc" inspired: warm paper, burnt-orange accent, earthy neutrals.
+val BoseAccent = Color(0xFFAF3A03)      // burnt orange — primary accent (was neon green)
+val BoseAccentSoft = Color(0xFFF3E4D5)  // soft accent tint (active/selected fills)
+val BoseConnected = Color(0xFF1B4A82)   // calm blue — connected-but-not-active (was orange)
+val BoseBg = Color(0xFFF4EEDE)          // warm paper background
+val BoseCardBg = Color(0xFFFCFAF4)      // warm near-white card
+val BoseText = Color(0xFF21201C)        // warm near-black primary text
+val BoseDim = Color(0xFF6E6A5E)         // secondary text
+val BoseFaint = Color(0xFFA8A18E)       // tertiary text / disabled
+val BoseHair = Color(0xFFE6DCC6)        // hairline border / slider track
+val BoseActiveBg = Color(0xFFF6EADC)    // active device fill (subtle warm tint)
+val BoseError = Color(0xFFA82E2E)       // warm red
 
-private val BoseDarkScheme = darkColorScheme(
-    primary = BoseGreen,
-    secondary = BoseOrange,
+private val BoseLightScheme = lightColorScheme(
+    primary = BoseAccent,
+    secondary = BoseConnected,
     background = BoseBg,
     surface = BoseCardBg,
-    onPrimary = BoseBg,
-    onSecondary = BoseBg,
+    onPrimary = Color(0xFFFFFFFF),      // white text on the orange fill
+    onSecondary = Color(0xFFFFFFFF),
     onBackground = BoseText,
     onSurface = BoseText,
-    error = Color(0xFFFF4444),
+    error = BoseError,
 )
 
 @Composable
 fun BoseTheme(content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = BoseDarkScheme,
+        colorScheme = BoseLightScheme,
         content = content,
     )
 }
@@ -298,7 +303,7 @@ fun BoseApp(vm: BoseViewModel = viewModel()) {
                     text = "Bose",
                     fontSize = 28.sp,
                     fontWeight = FontWeight.Bold,
-                    color = BoseGreen,
+                    color = BoseAccent,
                 )
                 Text(
                     text = "QC Ultra Controller",
@@ -310,7 +315,7 @@ fun BoseApp(vm: BoseViewModel = viewModel()) {
                 // Loading indicator
                 if (state.loading) {
                     CircularProgressIndicator(
-                        color = BoseGreen,
+                        color = BoseAccent,
                         modifier = Modifier.size(24.dp),
                         strokeWidth = 2.dp,
                     )
@@ -382,11 +387,11 @@ fun BoseApp(vm: BoseViewModel = viewModel()) {
                         .padding(16.dp),
                     action = {
                         TextButton(onClick = { vm.clearError() }) {
-                            Text("Dismiss", color = BoseGreen)
+                            Text("Dismiss", color = BoseAccent)
                         }
                     },
-                    containerColor = Color(0xFF2A1A1A),
-                    contentColor = Color(0xFFFF4444),
+                    containerColor = Color(0xFFF6E3E0),
+                    contentColor = BoseError,
                 ) {
                     Text(error)
                 }
@@ -437,7 +442,7 @@ fun DashboardCard(state: BoseViewModel.UiState) {
                     Icon(
                         painter = painterResource(id = R.drawable.ic_headphones),
                         contentDescription = "Headphones",
-                        tint = BoseGreen,
+                        tint = BoseAccent,
                         modifier = Modifier.size(20.dp),
                     )
                     Spacer(modifier = Modifier.width(8.dp))
@@ -455,16 +460,16 @@ fun DashboardCard(state: BoseViewModel.UiState) {
                             fontSize = 24.sp,
                             fontWeight = FontWeight.Bold,
                             color = when {
-                                state.batteryLevel <= 15 -> Color(0xFFFF4444)
-                                state.batteryLevel <= 30 -> BoseOrange
-                                else -> BoseGreen
+                                state.batteryLevel <= 15 -> BoseError
+                                state.batteryLevel <= 30 -> BoseConnected
+                                else -> BoseAccent
                             },
                         )
                         if (state.batteryCharging) {
                             Text(
                                 text = " +",
                                 fontSize = 18.sp,
-                                color = BoseGreen,
+                                color = BoseAccent,
                             )
                         }
                     }
@@ -527,11 +532,11 @@ fun DevicesSection(
         for ((name, deviceState) in state.deviceStates) {
             val (bgColor, textColor, borderColor) = when (deviceState) {
                 BoseViewModel.DeviceState.ACTIVE ->
-                    Triple(BoseActiveBg, BoseGreen, BoseGreen)
+                    Triple(BoseActiveBg, BoseAccent, BoseAccent)
                 BoseViewModel.DeviceState.CONNECTED ->
-                    Triple(Color(0xFF1A1500), BoseOrange, BoseOrange)
+                    Triple(Color(0xFFE9EFF6), BoseConnected, BoseConnected)
                 BoseViewModel.DeviceState.OFFLINE ->
-                    Triple(BoseCardBg, BoseDim, Color(0xFF333333))
+                    Triple(BoseCardBg, BoseDim, BoseHair)
             }
 
             Surface(
@@ -593,8 +598,9 @@ fun AncSection(
                             .weight(1f)
                             .height(44.dp)
                             .clip(RoundedCornerShape(10.dp))
+                            .border(1.dp, if (isActive) BoseAccent else BoseHair, RoundedCornerShape(10.dp))
                             .clickable { onSetAnc(mode) },
-                        color = if (isActive) BoseGreen else BoseCardBg,
+                        color = if (isActive) BoseAccent else BoseCardBg,
                         shape = RoundedCornerShape(10.dp),
                     ) {
                         Box(contentAlignment = Alignment.Center) {
@@ -603,7 +609,7 @@ fun AncSection(
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 maxLines = 1,
-                                color = if (isActive) BoseBg else BoseDim,
+                                color = if (isActive) Color.White else BoseDim,
                                 textAlign = TextAlign.Center,
                             )
                         }
@@ -641,7 +647,7 @@ fun VolumeSection(
                 Text(
                     "${sliderValue.toInt()}/${state.volumeMax}",
                     fontSize = 14.sp,
-                    color = BoseGreen,
+                    color = BoseAccent,
                     fontWeight = FontWeight.Bold,
                 )
             }
@@ -654,9 +660,9 @@ fun VolumeSection(
                 steps = state.volumeMax - 1,
                 modifier = Modifier.fillMaxWidth(),
                 colors = SliderDefaults.colors(
-                    thumbColor = BoseGreen,
-                    activeTrackColor = BoseGreen,
-                    inactiveTrackColor = Color(0xFF333333),
+                    thumbColor = BoseAccent,
+                    activeTrackColor = BoseAccent,
+                    inactiveTrackColor = BoseHair,
                 ),
             )
         }
@@ -700,9 +706,11 @@ fun EqSection(
                     val selected = state.eqBass == preset.bass &&
                         state.eqMid == preset.mid && state.eqTreble == preset.treble
                     Surface(
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .border(1.dp, if (selected) BoseAccent else BoseHair, RoundedCornerShape(8.dp)),
                         shape = RoundedCornerShape(8.dp),
-                        color = if (selected) BoseGreen else Color(0xFF333333),
+                        color = if (selected) BoseAccent else BoseCardBg,
                         onClick = {
                             bass = preset.bass.toFloat()
                             mid = preset.mid.toFloat()
@@ -715,7 +723,7 @@ fun EqSection(
                             modifier = Modifier.padding(vertical = 8.dp),
                             fontSize = 12.sp,
                             fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                            color = if (selected) Color.Black else BoseDim,
+                            color = if (selected) Color.White else BoseDim,
                             textAlign = TextAlign.Center,
                         )
                     }
@@ -754,9 +762,9 @@ private fun EqBandSlider(
             steps = 19,
             modifier = Modifier.weight(1f),
             colors = SliderDefaults.colors(
-                thumbColor = BoseGreen,
-                activeTrackColor = BoseGreen,
-                inactiveTrackColor = Color(0xFF333333),
+                thumbColor = BoseAccent,
+                activeTrackColor = BoseAccent,
+                inactiveTrackColor = BoseHair,
             ),
         )
         Text(
@@ -832,10 +840,10 @@ fun SettingsSection(
                 value = nameText,
                 onValueChange = { nameText = it },
                 textStyle = TextStyle(color = BoseText, fontSize = 14.sp),
-                cursorBrush = SolidColor(BoseGreen),
+                cursorBrush = SolidColor(BoseAccent),
                 modifier = Modifier
                     .weight(1f)
-                    .background(Color(0xFF222222), RoundedCornerShape(6.dp))
+                    .background(BoseHair, RoundedCornerShape(6.dp))
                     .padding(horizontal = 8.dp, vertical = 4.dp),
             )
             Spacer(modifier = Modifier.width(8.dp))
@@ -843,7 +851,7 @@ fun SettingsSection(
                 onSetName(nameText)
                 editingName = false
             }) {
-                Text("Save", color = BoseGreen, fontSize = 12.sp)
+                Text("Save", color = BoseAccent, fontSize = 12.sp)
             }
         } else {
             Text(
@@ -865,17 +873,17 @@ fun SettingsSection(
         Text(
             text = if (state.multipointEnabled) "On" else "Off",
             fontSize = 14.sp,
-            color = if (state.multipointEnabled) BoseGreen else BoseDim,
+            color = if (state.multipointEnabled) BoseAccent else BoseDim,
             modifier = Modifier.weight(1f),
         )
         Switch(
             checked = state.multipointEnabled,
             onCheckedChange = { onSetMultipoint(it) },
             colors = SwitchDefaults.colors(
-                checkedThumbColor = BoseGreen,
-                checkedTrackColor = Color(0xFF003322),
+                checkedThumbColor = Color(0xFFFFFFFF),
+                checkedTrackColor = BoseAccent,
                 uncheckedThumbColor = BoseDim,
-                uncheckedTrackColor = Color(0xFF333333),
+                uncheckedTrackColor = BoseHair,
             ),
         )
     }
@@ -896,18 +904,18 @@ fun SettingsSection(
             enabled = state.noiseAdjustable,
             modifier = Modifier.weight(1f),
             colors = SliderDefaults.colors(
-                thumbColor = BoseGreen,
-                activeTrackColor = BoseGreen,
-                inactiveTrackColor = Color(0xFF333333),
-                disabledThumbColor = BoseDim,
-                disabledActiveTrackColor = Color(0xFF333333),
-                disabledInactiveTrackColor = Color(0xFF333333),
+                thumbColor = BoseAccent,
+                activeTrackColor = BoseAccent,
+                inactiveTrackColor = BoseHair,
+                disabledThumbColor = BoseFaint,
+                disabledActiveTrackColor = BoseFaint,
+                disabledInactiveTrackColor = BoseHair,
             ),
         )
         Text(
             if (state.noiseAdjustable) "${noiseValue.toInt()}" else "—",
             fontSize = 14.sp,
-            color = if (state.noiseAdjustable) BoseGreen else BoseDim,
+            color = if (state.noiseAdjustable) BoseAccent else BoseDim,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.width(28.dp),
             textAlign = TextAlign.End,
@@ -953,7 +961,7 @@ fun SettingsSection(
         Text(
             text = if (state.wearDetected) "On Head" else "Off Head",
             fontSize = 14.sp,
-            color = if (state.wearDetected) BoseGreen else BoseDim,
+            color = if (state.wearDetected) BoseAccent else BoseDim,
         )
     }
 }

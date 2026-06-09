@@ -1,10 +1,10 @@
-# Agent Progress - bose-v2-followups
+# Agent Progress - bose-light-theme
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-06-09T05:30:56Z
+# Created: 2026-06-09T06:26:47Z
 
-feature=bose-v2-followups
-name=bose v2 followups issue 96
+feature=bose-light-theme
+name=Light theme redesign Android and macOS
 status=pending
 step=0
 step_name=Not started
-created=2026-06-09T05:30:56Z
+created=2026-06-09T06:26:47Z
