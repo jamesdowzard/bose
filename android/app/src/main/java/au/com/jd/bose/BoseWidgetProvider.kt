@@ -6,19 +6,22 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
 import android.util.Log
 import android.widget.RemoteViews
 
 /**
  * Home screen widget showing device buttons with connection state.
  *
- * States:
- * - Green (#00FF88) = active (audio routed here)
- * - Orange (#FF9500) = connected but not active
- * - Grey (#666666) = offline/not connected
+ * Paper-card surface — matches the #98 app retheme (warm paper + burnt-orange).
+ * The card sits on the user's home-screen wallpaper, so active/connected are
+ * solid filled chips (read on any wallpaper); offline is a recessed paper chip.
  *
- * Shows battery percentage overlay.
+ * States (chip fill / text):
+ * - Burnt-orange fill (#AF3A03), paper text = active (audio routed here)
+ * - Blue fill (#1B4A82), paper text = connected but not active
+ * - Muted paper fill (#E6DCC6), secondary text (#6E6A5E) = offline/not connected
+ *
+ * Shows battery percentage overlay (own on-paper thresholds, see below).
  * Tapping a device sends CONNECT command directly to BoseService
  * via PendingIntent.getForegroundService (companion device grants
  * background FGS start privileges).
@@ -27,12 +30,19 @@ class BoseWidgetProvider : AppWidgetProvider() {
 
     companion object {
         private const val TAG = "BoseWidget"
-        private const val COLOR_ACTIVE = 0xFF00FF88.toInt()
-        private const val COLOR_CONNECTED = 0xFFFF9500.toInt()
-        private const val COLOR_OFFLINE = 0xFF666666.toInt()
-        private const val COLOR_ACTIVE_BG = 0xFF002211.toInt()
-        private const val COLOR_CONNECTED_BG = 0xFF1A1500.toInt()
-        private const val COLOR_OFFLINE_BG = 0xFF222222.toInt()
+        // Paper-card palette — shared with the #98 app retheme. Active/connected are
+        // filled chips (strong fill + paper text); offline is a recessed paper chip.
+        private const val COLOR_PAPER = 0xFFFCFAF4.toInt()        // chip text on filled states
+        private const val COLOR_ACTIVE = COLOR_PAPER              // text on the burnt-orange chip
+        private const val COLOR_CONNECTED = COLOR_PAPER           // text on the blue chip
+        private const val COLOR_OFFLINE = 0xFF6E6A5E.toInt()      // secondary text on the paper chip
+        private const val COLOR_ACTIVE_BG = 0xFFAF3A03.toInt()    // burnt-orange
+        private const val COLOR_CONNECTED_BG = 0xFF1B4A82.toInt() // blue
+        private const val COLOR_OFFLINE_BG = 0xFFE6DCC6.toInt()   // hairline / muted paper
+        // Battery overlay sits on the paper card — needs on-paper-readable colours.
+        private const val COLOR_BATTERY_LOW = 0xFFA82E2E.toInt()  // warm red,     <= 15
+        private const val COLOR_BATTERY_MID = 0xFFAF3A03.toInt()  // burnt-orange, <= 30
+        private const val COLOR_BATTERY_OK = 0xFF6E6A5E.toInt()   // secondary grey, healthy
         private const val PREFS_NAME = "bose_ctl"
 
         fun updateAll(context: Context, activeDevice: String?, connectedDevices: Set<String> = emptySet()) {
@@ -109,9 +119,9 @@ class BoseWidgetProvider : AppWidgetProvider() {
             if (batteryLevel >= 0) {
                 views.setTextViewText(R.id.txt_battery, "${batteryLevel}%")
                 views.setTextColor(R.id.txt_battery, when {
-                    batteryLevel <= 15 -> Color.RED
-                    batteryLevel <= 30 -> COLOR_CONNECTED
-                    else -> COLOR_ACTIVE
+                    batteryLevel <= 15 -> COLOR_BATTERY_LOW
+                    batteryLevel <= 30 -> COLOR_BATTERY_MID
+                    else -> COLOR_BATTERY_OK
                 })
             }
 
