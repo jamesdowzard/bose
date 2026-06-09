@@ -290,21 +290,34 @@ struct ContentView: View {
 
     private func deviceButton(_ button: DeviceButton) -> some View {
         let state = manager.deviceStates[button.id] ?? "offline"
+        let isConnecting = manager.connectingDevice == button.id
         let isActive = state == "active"
         let isConnected = state == "connected"
+        // Another tile is mid-connect — dim this one and ignore taps until it settles.
+        let isBlocked = manager.connectingDevice != nil && !isConnecting
 
-        let textColor: Color = isActive ? boseAccent : (isConnected ? connectedColor : offlineColor)
-        let bg: Color = isActive ? activeBg : cardColor
-        let borderColor: Color = isActive ? boseAccent.opacity(0.7) : hairColor
+        let textColor: Color = (isActive || isConnecting) ? boseAccent
+            : (isConnected ? connectedColor : offlineColor)
+        let bg: Color = (isActive || isConnecting) ? activeBg : cardColor
+        let borderColor: Color = (isActive || isConnecting) ? boseAccent.opacity(0.7) : hairColor
 
         return Button(action: { manager.connectDevice(button.id) }) {
             VStack(spacing: 3) {
-                Image(systemName: button.symbol)
-                    .font(.system(size: 18, weight: .regular))
-                    .foregroundColor(textColor)
-                Text(button.label)
+                if isConnecting {
+                    ProgressView()
+                        .controlSize(.small)
+                        .scaleEffect(0.7)
+                        .frame(height: 18)
+                } else {
+                    Image(systemName: button.symbol)
+                        .font(.system(size: 18, weight: .regular))
+                        .foregroundColor(textColor)
+                }
+                Text(isConnecting ? "Connecting…" : button.label)
                     .font(.system(size: 10, weight: .medium))
                     .foregroundColor(textColor)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             .frame(maxWidth: .infinity)
             .frame(height: 52)
@@ -314,9 +327,11 @@ struct ContentView: View {
                     .stroke(borderColor, lineWidth: 1)
             )
             .clipShape(RoundedRectangle(cornerRadius: 10))
+            .contentShape(RoundedRectangle(cornerRadius: 10))  // whole tile is the hit area
         }
         .buttonStyle(.plain)
-        .opacity(state == "offline" ? 0.6 : 1.0)
+        .disabled(isBlocked)
+        .opacity(isBlocked ? 0.4 : (state == "offline" && !isConnecting ? 0.6 : 1.0))
     }
 
     private struct EqPreset {
@@ -400,21 +415,33 @@ struct ContentView: View {
 
     private func ancButton(_ label: String, _ mode: Int) -> some View {
         let isActive = manager.ancMode == mode
+        let isPending = manager.pendingAncMode == mode  // optimistic + awaiting confirm
         return Button(action: { manager.setAncMode(mode) }) {
-            Text(label)
-                .font(.system(size: 10, weight: .semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                .foregroundColor(isActive ? .white : secondaryColor)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 5)
-                .padding(.horizontal, 2)
-                .background(isActive ? boseAccent : cardColor)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(isActive ? boseAccent : hairColor, lineWidth: 1)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+            ZStack {
+                Text(label)
+                    .font(.system(size: 10, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .foregroundColor(isActive ? .white : secondaryColor)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 5)
+                    .padding(.horizontal, 2)
+                if isPending {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .scaleEffect(0.55)
+                        .tint(.white)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .padding(.trailing, 3)
+                }
+            }
+            .background(isActive ? boseAccent : cardColor)
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(isActive ? boseAccent : hairColor, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .contentShape(RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain)
     }

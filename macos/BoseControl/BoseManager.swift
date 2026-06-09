@@ -42,6 +42,28 @@ final class BoseManager: ObservableObject {
         "iphone": "offline", "tv": "offline", "quest": "offline",
     ]
 
+    // MARK: - Pending-write state (drives the "applying / connecting" UI)
+    //
+    // Writes are optimistic AND confirmed. The catch: a `bose-ctl info` read fired on
+    // window-open / focus can still be in flight when the user acts, then land a beat
+    // later carrying the PRE-change value and revert the optimistic update — the visible
+    // flicker (tap Quiet → snaps back to Aware → settles on Quiet). These flags both
+    // surface a spinner and let `apply()` reject a stale snapshot until the change lands.
+
+    /// ANC slot awaiting device confirmation (nil when settled). `ancMode` already shows
+    /// the optimistic target; this marks it "applying" and protects it from a stale revert.
+    @Published var pendingAncMode: Int? = nil
+
+    /// Device tile awaiting a `connect` result (nil when settled) — renders its spinner.
+    @Published var connectingDevice: String? = nil
+
+    /// Last device we successfully told the headphones to make the active sink. The
+    /// `info` routing probe reports everything "offline" when off-head/idle (the #81
+    /// quirk), which would dark out a tile we just confirmed connected — so we trust the
+    /// `connect` result over the probe and keep this tile lit until the probe positively
+    /// reports a *different* device as active.
+    private var assertedActiveDevice: String? = nil
+
     // MARK: - Private
 
     /// Serial queue: one `bose-ctl` invocation at a time (RFCOMM is single-session;
@@ -121,7 +143,16 @@ final class BoseManager: ObservableObject {
         }
         batteryLevel = (s["batteryLevel"] as? Int) ?? batteryLevel
         batteryCharging = (s["batteryCharging"] as? Bool) ?? false
-        ancMode = (s["ancMode"] as? Int) ?? ancMode
+        let snapAnc = (s["ancMode"] as? Int) ?? ancMode
+        if let pending = pendingAncMode {
+            // A mode change is in flight: ignore a snapshot still showing the old mode
+            // (an info read that started before the change landed) so it can't revert the
+            // optimistic highlight. Once the snapshot agrees, the change has applied —
+            // accept it and clear the pending flag.
+            if snapAnc == pending { ancMode = pending; pendingAncMode = nil }
+        } else {
+            ancMode = snapAnc
+        }
         volume = (s["volume"] as? Int) ?? volume
         volumeMax = (s["volumeMax"] as? Int) ?? volumeMax
         multipointEnabled = (s["multipoint"] as? Bool) ?? false
@@ -135,6 +166,17 @@ final class BoseManager: ObservableObject {
         }
         if let d = s["devices"] as? [String: String] {
             for (name, state) in d { deviceStates[name] = state }
+            // Off-head/idle, the routing probe reports every device "offline" (#81),
+            // which would wrongly dark out a device we just confirmed connected. Trust
+            // the connect result: keep the asserted tile lit unless the probe positively
+            // reports a *different* device as the active sink (a real, external switch).
+            if let asserted = assertedActiveDevice {
+                if d.contains(where: { $0.key != asserted && $0.value == "active" }) {
+                    assertedActiveDevice = nil
+                } else if (deviceStates[asserted] ?? "offline") == "offline" {
+                    deviceStates[asserted] = "active"
+                }
+            }
         }
         noiseLevel = (s["noiseLevel"] as? Int) ?? noiseLevel
         noiseAdjustable = (s["noiseAdjustable"] as? Bool) ?? false
@@ -149,8 +191,15 @@ final class BoseManager: ObservableObject {
     /// (read back from `info`) is the same slot index, so button highlighting matches.
     func setAncMode(_ mode: Int) {
         guard (0...5).contains(mode) else { return }
-        ancMode = mode
-        write(["anc", String(mode)])
+        ancMode = mode            // optimistic highlight
+        pendingAncMode = mode      // mark "applying" + reject any stale revert in apply()
+        confirmWrite(["anc", String(mode)],
+                     confirm: { ($0["ancMode"] as? Int) == mode },
+                     onTimeout: { [weak self] in
+                         // Write never confirmed (rare — a genuinely failed set). Drop the
+                         // pending guard so the next refresh can show the real mode.
+                         if self?.pendingAncMode == mode { self?.pendingAncMode = nil }
+                     })
     }
 
     func setVolume(_ level: Int) {
@@ -179,8 +228,33 @@ final class BoseManager: ObservableObject {
         write(["anc-level", String(clamped)])
     }
 
+    /// Tell the headphones to make `name` the active sink. The tile shows a spinner
+    /// ("Connecting…") for the duration — `bose-ctl connect` poll-confirms internally
+    /// (ACK is never success) and can take up to ~15 s paging a sleeping device — then
+    /// settles to active/connected from the CLI's result, which we trust over the flaky
+    /// off-head routing probe (see `assertedActiveDevice`).
     func connectDevice(_ name: String) {
-        write(["connect", name])
+        guard connectingDevice == nil else { return }   // ignore taps while one is in flight
+        connectingDevice = name
+        DispatchQueue.main.async { self.isRefreshing = true }
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            let (code, out) = self.run(["connect", name])
+            // The CLI prints "Connected <name>" on success, with "(idle …)" when
+            // multipoint kept audio on the previous device (ACL up, not the active sink).
+            let ok = code == 0 && out.range(of: "connected", options: .caseInsensitive) != nil
+            let idle = out.range(of: "(idle", options: .caseInsensitive) != nil
+            let snapshot = Self.parse(self.run(["info", "--json"]).out)
+            DispatchQueue.main.async {
+                if ok { self.assertedActiveDevice = idle ? nil : name }
+                self.apply(snapshot)   // refresh battery/EQ/etc; honours the assertion above
+                if ok && idle && (self.deviceStates[name] ?? "offline") == "offline" {
+                    self.deviceStates[name] = "connected"
+                }
+                self.connectingDevice = nil
+                self.isRefreshing = false
+            }
+        }
     }
 
     func applyProfile(_ name: String) {
@@ -194,6 +268,36 @@ final class BoseManager: ObservableObject {
             guard let self = self else { return }
             _ = self.run(args)
             self.refreshState()
+        }
+    }
+
+    /// Run a write verb, then read `info` a few times until `confirm` reports the new
+    /// value has landed (applying each snapshot so the rest of the UI stays fresh). This
+    /// is a BOUNDED, self-terminating post-write settle — it returns the instant the
+    /// change confirms (almost always the first read) and nothing reschedules it, so it
+    /// is NOT the resident poll that caused the #69-era dropout. It closes the window in
+    /// which an already-in-flight refresh could leave the optimistic value reverted.
+    /// `onTimeout` runs only if the change never confirms (a failed write) so a pending
+    /// spinner can't stick forever.
+    private func confirmWrite(_ verb: [String],
+                              confirm: @escaping ([String: Any]) -> Bool,
+                              attempts: Int = 5, gap: TimeInterval = 0.3,
+                              onTimeout: @escaping () -> Void) {
+        DispatchQueue.main.async { self.isRefreshing = true }
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            _ = self.run(verb)
+            for i in 0..<attempts {
+                let parsed = Self.parse(self.run(["info", "--json"]).out)
+                let ok = confirm(parsed)
+                DispatchQueue.main.async {
+                    self.apply(parsed)
+                    if ok || i == attempts - 1 { self.isRefreshing = false }
+                }
+                if ok { return }
+                if i < attempts - 1 { Thread.sleep(forTimeInterval: gap) }
+            }
+            DispatchQueue.main.async { onTimeout() }
         }
     }
 
