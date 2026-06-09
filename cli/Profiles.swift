@@ -1,4 +1,4 @@
-/// Profiles: named bundles of settings ({ANC mode, ANC depth, EQ, multipoint,
+/// Profiles: named bundles of settings ({ANC mode, noise level, EQ, multipoint,
 /// volume}) saved and applied as a unit. Foundation-only (no IOBluetooth): the
 /// pure frame-building + JSON load/save live here and unit-test without hardware;
 /// the live-session apply is `Transport.applyProfile` in Composites.swift.
@@ -20,12 +20,15 @@ struct EqValues: Codable, Equatable {
 struct Profile: Codable, Equatable {
     var name: String
     var ancMode: String? = nil      // quiet / aware / custom1 / custom2
-    var ancDepth: Int? = nil        // 0-10
+    var noiseLevel: Int? = nil      // 0 = max cancel … 10 = transparency; applied via the
+                                    // 1F,06 RMW, only takes effect on adjustable custom modes (4/5)
+    var ancDepth: Int? = nil        // DEPRECATED (inert): retained only so old profiles.json
+                                    // files with the removed 1F,0A depth still decode (#83)
     var eq: EqValues? = nil
     var multipoint: Bool? = nil
     var volume: Int? = nil          // 0-31
 
-    enum CodingKeys: String, CodingKey { case name, ancMode, ancDepth, eq, multipoint, volume }
+    enum CodingKeys: String, CodingKey { case name, ancMode, noiseLevel, ancDepth, eq, multipoint, volume }
 
     // Custom encode so unset fields are omitted (clean, human-editable JSON) rather
     // than written as nulls.
@@ -33,6 +36,7 @@ struct Profile: Codable, Equatable {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(name, forKey: .name)
         try c.encodeIfPresent(ancMode, forKey: .ancMode)
+        try c.encodeIfPresent(noiseLevel, forKey: .noiseLevel)
         try c.encodeIfPresent(ancDepth, forKey: .ancDepth)
         try c.encodeIfPresent(eq, forKey: .eq)
         try c.encodeIfPresent(multipoint, forKey: .multipoint)
@@ -43,7 +47,7 @@ struct Profile: Codable, Equatable {
     var summary: String {
         var parts: [String] = []
         if let m = ancMode { parts.append("anc \(m)") }
-        if let d = ancDepth { parts.append("depth \(d)") }
+        if let n = noiseLevel { parts.append("noise \(n)") }
         if let e = eq { parts.append("eq \(e.bass)/\(e.mid)/\(e.treble)") }
         if let mp = multipoint { parts.append("mp \(mp ? "on" : "off")") }
         if let v = volume { parts.append("vol \(v)") }
@@ -54,15 +58,18 @@ struct Profile: Codable, Equatable {
     init(capturing s: HeadphoneState, name: String) {
         self.name = name
         self.ancMode = AncMode(rawValue: UInt8(truncatingIfNeeded: s.ancMode)).map { "\($0)" }
-        self.ancDepth = s.cncLevel
+        // Capture the live noise level into the active `noiseLevel` field (not the inert
+        // `ancDepth`). On replay it applies via the 1F,06 RMW where the mode is custom;
+        // on a named/spatial mode `applyProfile` treats it as a no-op.
+        self.noiseLevel = s.cncLevel
         self.eq = EqValues(bass: s.eq.bass, mid: s.eq.mid, treble: s.eq.treble)
         self.multipoint = s.multipointEnabled
         self.volume = s.volume
     }
 
-    init(name: String, ancMode: String? = nil, ancDepth: Int? = nil,
+    init(name: String, ancMode: String? = nil, noiseLevel: Int? = nil, ancDepth: Int? = nil,
          eq: EqValues? = nil, multipoint: Bool? = nil, volume: Int? = nil) {
-        self.name = name; self.ancMode = ancMode; self.ancDepth = ancDepth
+        self.name = name; self.ancMode = ancMode; self.noiseLevel = noiseLevel; self.ancDepth = ancDepth
         self.eq = eq; self.multipoint = multipoint; self.volume = volume
     }
 }

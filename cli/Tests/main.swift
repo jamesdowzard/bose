@@ -173,6 +173,11 @@ let pfc = profileFrames(customP, currentCnc: cnc2)
 check(!pfc.contains(where: { $0.count >= 2 && $0[0] == 0x1F && $0[1] == 0x0A }),
       "profileFrames: ancDepth profile emits no CNC frame")
 check(pfc.count == 1, "profileFrames: custom1+depth -> just the mode-select frame")
+// noiseLevel is applied via the live 1F,06 RMW in applyProfile, NOT as a static frame —
+// so a custom-mode profile carrying a noiseLevel still emits only the mode-select frame.
+let nlP = profileFrames(Profile(name: "nl", ancMode: "custom1", noiseLevel: 3), currentCnc: nil)
+check(nlP.count == 1 && nlP[0] == [0x1F, 0x03, 0x05, 0x02, 0x04, 0x01],
+      "profileFrames: noiseLevel adds no static frame (RMW lives in applyProfile)")
 check(profileFrames(Profile(name: "empty"), currentCnc: nil).isEmpty, "profileFrames: empty profile -> none")
 // EQ values clamp into -10...10.
 let clampP = profileFrames(Profile(name: "c", eq: EqValues(bass: 99, mid: -99, treble: 0)), currentCnc: nil)
@@ -185,11 +190,18 @@ let store = try! JSONDecoder().decode(ProfileStore.self, from: Data(pjson.utf8))
 check(store.profiles.count == 1, "profileStore: decodes 1")
 check(store.profile(named: "FLIGHT")?.ancDepth == 10, "profileStore: case-insensitive lookup")
 check(store.profile(named: "flight")?.volume == nil, "profile: absent field stays nil")
+// New noiseLevel field decodes; legacy inert ancDepth still decodes alongside it.
+let njson = "{\"profiles\":[{\"name\":\"c\",\"ancMode\":\"custom1\",\"noiseLevel\":3}]}"
+let nstore = try! JSONDecoder().decode(ProfileStore.self, from: Data(njson.utf8))
+check(nstore.profile(named: "c")?.noiseLevel == 3, "profile: decodes noiseLevel")
+check(nstore.profile(named: "c")?.ancDepth == nil, "profile: noiseLevel-only profile has nil ancDepth")
 
 // Encode omits unset fields (clean human-editable JSON).
 let encoded = String(data: try! JSONEncoder().encode(Profile(name: "x", ancMode: "quiet")), encoding: .utf8)!
 check(encoded.contains("ancMode"), "profile encode: keeps set field")
 check(!encoded.contains("volume"), "profile encode: omits nil fields")
+let encN = String(data: try! JSONEncoder().encode(Profile(name: "x", noiseLevel: 4)), encoding: .utf8)!
+check(encN.contains("noiseLevel"), "profile encode: keeps noiseLevel")
 
 // upsert replaces by name (case-insensitive), doesn't duplicate.
 var st = ProfileStore(profiles: [Profile(name: "a", volume: 5)])
@@ -204,9 +216,14 @@ snap.ancMode = 1; snap.cncLevel = 8; snap.eq = (bass: 2, mid: -1, treble: 4)
 snap.multipointEnabled = true; snap.volume = 12
 let cap = Profile(capturing: snap, name: "now")
 check(cap.ancMode == "aware", "profile capture: ancMode name")
-check(cap.ancDepth == 8 && cap.volume == 12, "profile capture: depth + volume")
+check(cap.noiseLevel == 8 && cap.volume == 12, "profile capture: noise level + volume")
+check(cap.ancDepth == nil, "profile capture: inert ancDepth left nil (level → noiseLevel)")
 check(cap.eq == EqValues(bass: 2, mid: -1, treble: 4), "profile capture: eq")
 check(cap.multipoint == true, "profile capture: multipoint")
+
+// summary surfaces the noise level (not the inert depth).
+check(Profile(name: "s", ancMode: "custom1", noiseLevel: 3).summary == " — anc custom1, noise 3",
+      "profile summary: shows noise level")
 
 // ── summary ─────────────────────────────────────────────────────────────────────
 

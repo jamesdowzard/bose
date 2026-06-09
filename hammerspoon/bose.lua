@@ -33,7 +33,7 @@ local TO_PHONE     = "phone"
 -- ANC cycle (Opt+N). Rebind freely — these are personal-config defaults.
 local ANC_MODS     = { "alt" }
 local ANC_KEY      = "n"
-local ANC_CYCLE    = { "quiet", "aware", "custom1" }
+local ANC_CYCLE    = { "quiet", "aware", "immersion" }
 
 -- Connect hotkey (Opt+J): always bring the headphones to THIS Mac, no toggle
 -- guessing. `connect mac` does the A2DP bring-up + BMAP route + poll-confirm.

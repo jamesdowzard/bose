@@ -1,10 +1,10 @@
-# Agent Progress - android-mode-slots
+# Agent Progress - bose-v2-followups
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-06-09T04:57:37Z
+# Created: 2026-06-09T05:30:56Z
 
-feature=android-mode-slots
-name=Fix Android AncMode UI enum to 6 real slots so customs reach 4/5
+feature=bose-v2-followups
+name=bose v2 followups issue 96
 status=pending
 step=0
 step_name=Not started
-created=2026-06-09T04:57:37Z
+created=2026-06-09T05:30:56Z

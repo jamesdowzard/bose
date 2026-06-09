@@ -168,10 +168,35 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun setAncMode(mode: BoseProtocol.AncMode) = command("Failed to set ANC",
-        action = { BoseProtocol.setAncMode(mode) },
-        onSuccess = { _state.value = _state.value.copy(ancMode = mode) },
-    )
+    /**
+     * Set the ANC mode, then re-read the active mode's config in the SAME warm session
+     * so the noise slider's enabled state + level update immediately. A mode change can
+     * flip `cncMutable`/`cncLevel` (e.g. quiet → custom1), and without this re-read the
+     * slider stayed stale until a manual Refresh (#96). Falls back to the optimistic
+     * `ancMode` copy if the config read is unreachable.
+     */
+    fun setAncMode(mode: BoseProtocol.AncMode) {
+        viewModelScope.launch {
+            try {
+                val cfg = BoseProtocol.withConnection {
+                    BoseProtocol.setAncMode(mode)
+                    Composites.readActiveModeConfig()
+                }
+                _state.value = if (cfg != null) {
+                    _state.value.copy(
+                        ancMode = mode,
+                        noiseLevel = cfg.cncLevel,
+                        noiseAdjustable = cfg.cncMutable,
+                        modeName = cfg.displayName,
+                    )
+                } else {
+                    _state.value.copy(ancMode = mode)
+                }
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(error = "Failed to set ANC: ${e.message}")
+            }
+        }
+    }
 
     fun setVolume(level: Int) = command("Failed to set volume",
         action = { BoseProtocol.setVolume(level) },
