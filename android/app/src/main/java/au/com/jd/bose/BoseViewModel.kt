@@ -35,7 +35,11 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
 
         // Settings
         val multipointEnabled: Boolean = false,
-        val cncLevel: Int = 0,
+        // Noise level (1F,06) — the active mode's CNC level + whether it's adjustable
+        // (firmware cncMutable: only the custom slots 4/5). modeName labels the hint.
+        val noiseLevel: Int = 0,
+        val noiseAdjustable: Boolean = false,
+        val modeName: String = "",
         val autoOffTimer: String = "",
         val immersionLevel: IntArray? = null,
         val wearDetected: Boolean = false,
@@ -95,7 +99,9 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
                     BoseProtocol.getFirmwareVersion()?.let { s = s.copy(firmwareVersion = it) }
                     BoseProtocol.getDeviceName()?.let { s = s.copy(deviceName = it) }
                     BoseProtocol.getMultipoint()?.let { s = s.copy(multipointEnabled = it) }
-                    Composites.getCncLevel()?.let { s = s.copy(cncLevel = it) }
+                    Composites.readActiveModeConfig()?.let {
+                        s = s.copy(noiseLevel = it.cncLevel, noiseAdjustable = it.cncMutable, modeName = it.displayName)
+                    }
                     BoseProtocol.getAutoOffTimer()?.let { s = s.copy(autoOffTimer = BoseProtocol.autoOffTimerDescription(it)) }
                     BoseProtocol.getWearState()?.let { s = s.copy(wearDetected = it) }
                     BoseProtocol.getSerialNumber()?.let { s = s.copy(serialNumber = it) }
@@ -187,10 +193,18 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
         onSuccess = { _state.value = _state.value.copy(eqBass = bass, eqMid = mid, eqTreble = treble) },
     )
 
-    fun setCncLevel(level: Int) = command("Failed to set ANC depth",
-        action = { Composites.setCncLevel(level) },
-        onSuccess = { _state.value = _state.value.copy(cncLevel = level) },
-    )
+    /**
+     * Set the active mode's noise level via the 1F,06 RMW. No-op on a fixed mode (the
+     * slider is disabled there anyway, and `setActiveModeLevel` refuses) so it can never
+     * disable ANC (#83).
+     */
+    fun setNoiseLevel(level: Int) {
+        if (!_state.value.noiseAdjustable) return
+        command("Failed to set noise level",
+            action = { Composites.setActiveModeLevel(level) },
+            onSuccess = { _state.value = _state.value.copy(noiseLevel = level) },
+        )
+    }
 
     fun toggleSettings() {
         _state.value = _state.value.copy(

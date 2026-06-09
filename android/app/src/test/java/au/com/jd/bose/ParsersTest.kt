@@ -2,6 +2,7 @@ package au.com.jd.bose
 
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -55,34 +56,50 @@ class ParsersTest {
         assertTrue(Parsers.parseConnectedDevices(intArrayOf()).isEmpty())
     }
 
-    // ── parseCncLevel (1F,0A) + buildCncSet ───────────────────────────────────
+    // ── parseModeConfig (1F,06) + buildModeConfigSet ──────────────────────────
+    // The CORRECT noise-level path (1F,06 RMW), replacing the 1F,0A footgun (#83).
+    // Mirrors macOS `cli/Tests/main.swift` byte-for-byte (52-byte response).
 
-    private val cncResp = intArrayOf(0x1F, 0x0A, 0x03, 0x05, 0x07, 0x01, 0x00, 0x01, 0x01)
-
-    @Test
-    fun cncLevel_parsesAndPreservesFields() {
-        val cfg = Parsers.parseCncLevel(cncResp)!!
-        assertEquals(7, cfg.level)
-        assertEquals(1, cfg.autoCNC)
-        assertEquals(0, cfg.spatial)
-        assertEquals(1, cfg.windBlock)
-        assertEquals(1, cfg.ancToggle)
+    private fun mc(index: Int, name: String, mutability: Int, level: Int, anc: Int): IntArray {
+        val p = IntArray(48)
+        p[0] = index; p[3] = 1 // userConfigurable
+        name.toByteArray(Charsets.UTF_8).forEachIndexed { i, b -> if (i < 32) p[6 + i] = b.toInt() and 0xFF }
+        p[41] = mutability; p[42] = level; p[47] = anc
+        return intArrayOf(0x1F, 0x06, 0x03, 0x30) + p
     }
 
     @Test
-    fun cncLevel_shortOrNonRespIsNull() {
-        assertNull(Parsers.parseCncLevel(intArrayOf(0x1F, 0x0A, 0x03, 0x01, 0x05)))
-        assertNull(Parsers.parseCncLevel(intArrayOf(0x1F, 0x0A, 0x01, 0x00)))
+    fun modeConfig_parsesAdjustableCustom() {
+        val cfg = Parsers.parseModeConfig(mc(5, "None", 0x1D, 7, 1))!!
+        assertTrue(cfg.cncMutable) // 0x1D bit0 → adjustable
+        assertEquals(7, cfg.cncLevel)
+        assertEquals("None", cfg.displayName)
     }
 
     @Test
-    fun buildCncSet_changesLevelPreservesRest() {
-        val cfg = Parsers.parseCncLevel(cncResp)!!
-        assertArrayEquals(
-            intArrayOf(0x1F, 0x0A, 0x02, 0x05, 0x03, 0x01, 0x00, 0x01, 0x01),
-            Parsers.buildCncSet(3, cfg),
-        )
-        assertEquals(10, Parsers.buildCncSet(99, cfg)[4]) // clamps to 10
+    fun modeConfig_fixedModeNotMutable() {
+        val cfg = Parsers.parseModeConfig(mc(0, "Quiet", 0x00, 0, 1))!!
+        assertFalse(cfg.cncMutable) // Quiet/Aware/spatial → fixed
+    }
+
+    @Test
+    fun modeConfig_shortOrNonRespIsNull() {
+        assertNull(Parsers.parseModeConfig(intArrayOf(0x1F, 0x06, 0x03, 0x05, 0, 0)))
+        assertNull(Parsers.parseModeConfig(intArrayOf(0x1F, 0x06, 0x01, 0x00)))
+    }
+
+    @Test
+    fun buildModeConfigSet_changesLevelForcesAnc() {
+        val cfg = Parsers.parseModeConfig(mc(5, "None", 0x1D, 7, 1))!!
+        val f = Parsers.buildModeConfigSet(cfg, 3)
+        assertArrayEquals(intArrayOf(0x1F, 0x06, 0x02, 0x28), f.copyOfRange(0, 4)) // SET_GET len 40
+        val sp = f.copyOfRange(4, f.size)
+        assertEquals(5, sp[0]) // modeIndex @0
+        assertArrayEquals("None".map { it.code }.toIntArray(), sp.copyOfRange(3, 7)) // name @3
+        assertEquals(3, sp[35]) // new cncLevel @35
+        assertEquals(1, sp[39]) // ancToggle forced ON @39 (level change can't disable ANC)
+        assertEquals(7, Parsers.buildModeConfigSet(cfg, null).copyOfRange(4, 4 + 40)[35]) // nil keeps current
+        assertEquals(10, Parsers.buildModeConfigSet(cfg, 99).copyOfRange(4, 4 + 40)[35]) // clamps to 10
     }
 
     // ── parseAllState (bulk session) ──────────────────────────────────────────
@@ -94,7 +111,6 @@ class ParsersTest {
             (0x1F to 0x03) to intArrayOf(0x1F, 0x03, 0x03, 0x01, 0x01),                   // ANC aware
             (0x05 to 0x05) to intArrayOf(0x05, 0x05, 0x03, 0x02, 0x1F, 0x14),             // volMax 31, vol 20
             (0x05 to 0x01) to twoDevices,
-            (0x1F to 0x0A) to cncResp,                                                    // cnc level 7
             (0x01 to 0x0A) to intArrayOf(0x01, 0x0A, 0x03, 0x01, 0x07),                   // multipoint on
             (0x08 to 0x07) to intArrayOf(0x08, 0x07, 0x03, 0x01, 0x04),                   // on head
             (0x00 to 0x05) to (intArrayOf(0x00, 0x05, 0x03, 0x05) + "1.2.3".map { it.code }.toIntArray()),
@@ -113,7 +129,6 @@ class ParsersTest {
         assertEquals(20, s.volume)
         assertEquals(31, s.volumeMax)
         assertEquals(2, s.connectedDevices.size)
-        assertEquals(7, s.cncLevel)
         assertTrue(s.multipointEnabled)
         assertTrue(s.onHead)
         assertEquals("1.2.3", s.firmware)

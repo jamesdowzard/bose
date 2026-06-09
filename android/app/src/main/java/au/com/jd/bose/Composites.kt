@@ -8,8 +8,9 @@ import android.util.Log
  * These need read-modify-write, multi-frame list parsing, or poll-confirm loops, so
  * they can't be a single generated builder. They orchestrate over `Transport` (the
  * RFCOMM channel), construct frames via generated `BMAP` where a primitive exists,
- * and decode with the pure `Parsers`. Kept to ~3 (CNC RMW, connected-devices list,
- * bulk getAllState) plus connectDevice's poll-confirm — same split as macOS.
+ * and decode with the pure `Parsers`. Kept to ~3 (noise-level 1F,06 RMW,
+ * connected-devices list, bulk getAllState) plus connectDevice's poll-confirm — same
+ * split as macOS.
  */
 object Composites {
 
@@ -21,7 +22,6 @@ object Composites {
     // bmap.toml (variable-length / RMW response shapes the codegen DSL can't express),
     // so the GET frame is the plain header here and the response is parsed by Parsers.
     private val GET_CONNECTED_DEVICES = intArrayOf(0x05, 0x01, 0x01, 0x00)
-    private val GET_CNC_LEVEL = intArrayOf(0x1F, 0x0A, 0x01, 0x00)
 
     /** GET connected devices (05,01) — the audio-active ground truth. */
     fun getConnectedDevices(): List<IntArray> {
@@ -29,22 +29,43 @@ object Composites {
         return Parsers.parseConnectedDevices(resp)
     }
 
-    /** GET CNC level (custom ANC depth) — first byte of the SettingsConfig (1F,0A). */
-    fun getCncLevel(): Int? {
-        val resp = Transport.send(GET_CNC_LEVEL) ?: return null
-        return Parsers.parseCncLevel(resp)?.level
+    /** Outcome of a noise-level write — mirrors macOS `AncLevelResult`. */
+    sealed class AncLevelResult {
+        data class Ok(val name: String, val level: Int) : AncLevelResult()
+        data class Fixed(val name: String) : AncLevelResult()
+        object Unreachable : AncLevelResult()
     }
 
     /**
-     * SET CNC level (read-modify-write). Reads the current SettingsConfig, changes only
-     * `level`, preserves autoCNC/spatial/windBlock/ancToggle, writes it back via SET_GET.
+     * Read the ACTIVE mode's full AudioModesModeConfig (1F,06). Resolves the current mode
+     * index (1F,03) first, after priming with a 02,02 read — the 1F,06 GET only answers
+     * inside a warm session. Caller must be inside `Transport.withConnection { }`. null if
+     * unreachable.
      */
-    fun setCncLevel(level: Int): Boolean {
-        if (level !in 0..10) return false
-        val current = Transport.send(GET_CNC_LEVEL) ?: return false
-        val cfg = Parsers.parseCncLevel(current) ?: return false
-        val resp = Transport.send(Parsers.buildCncSet(level, cfg)) ?: return false
-        return resp.size >= 4 && resp[2] == 0x03 // RESP
+    fun readActiveModeConfig(): Parsers.ModeConfig? {
+        Transport.send(intArrayOf(0x02, 0x02, 0x01, 0x00)) // prime warm session
+        val cur = Transport.send(intArrayOf(0x1F, 0x03, 0x01, 0x00)) ?: return null
+        if (cur.size < 5) return null
+        val resp = Transport.send(intArrayOf(0x1F, 0x06, 0x01, 0x01, cur[4])) ?: return null
+        return Parsers.parseModeConfig(resp)
+    }
+
+    /**
+     * Set the ACTIVE mode's CNC noise level (0 = max cancellation … 10 = transparency) via
+     * the 1F,06 read-modify-write — the correct, ANC-anchored path (#83). Refuses on a mode
+     * whose level is fixed (`cncMutable == false`: Quiet/Aware/spatial), so a level write
+     * can never disable ANC. Caller must be inside `Transport.withConnection { }`.
+     */
+    fun setActiveModeLevel(level: Int): AncLevelResult {
+        Transport.send(intArrayOf(0x02, 0x02, 0x01, 0x00)) // prime warm session
+        val cur = Transport.send(intArrayOf(0x1F, 0x03, 0x01, 0x00)) ?: return AncLevelResult.Unreachable
+        if (cur.size < 5) return AncLevelResult.Unreachable
+        val r1 = Transport.send(intArrayOf(0x1F, 0x06, 0x01, 0x01, cur[4])) ?: return AncLevelResult.Unreachable
+        val cfg = Parsers.parseModeConfig(r1) ?: return AncLevelResult.Unreachable
+        if (!cfg.cncMutable) return AncLevelResult.Fixed(cfg.displayName)
+        Transport.send(Parsers.buildModeConfigSet(cfg, level))
+        val after = Transport.send(intArrayOf(0x1F, 0x06, 0x01, 0x01, cur[4]))?.let { Parsers.parseModeConfig(it) }
+        return AncLevelResult.Ok(cfg.displayName, after?.cncLevel ?: cfg.cncLevel)
     }
 
     /**

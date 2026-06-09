@@ -1,10 +1,10 @@
-# Agent Progress - app-noise-slider
+# Agent Progress - android-noise-slider
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-06-08T07:20:53Z
+# Created: 2026-06-09T04:27:42Z
 
-feature=app-noise-slider
-name=macOS app noise slider via anc-level
+feature=android-noise-slider
+name=Port 1F,06 anc-level RMW to Kotlin, replace Android depth slider, closes 90
 status=pending
 step=0
 step_name=Not started
-created=2026-06-08T07:20:53Z
+created=2026-06-09T04:27:42Z

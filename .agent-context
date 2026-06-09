@@ -2,8 +2,8 @@
 # Max 20 lines. Updated by agent on Stop hook.
 
 ## Feature
-macOS app noise slider via anc-level
-macOS app noise slider via anc-level
+Port 1F,06 anc-level RMW to Kotlin, replace Android depth slider, closes 90
+Port 1F,06 anc-level RMW to Kotlin, replace Android depth slider, closes 90
 
 ## Current State
 Not started. No work has been done yet.
