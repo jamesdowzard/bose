@@ -32,7 +32,10 @@ local MAC_SPEAKERS = "MacBook Pro Speakers"  -- Mac audio falls back here after 
 -- tiles do live connect/switch with a pending → connected state.
 local OPEN_MODS    = { "alt" }
 local OPEN_KEY     = "b"
-local APP_NAME     = "Bose Control"
+-- Match by bundle ID, not display name: the .app's CFBundleName is "Bose" (not
+-- "Bose Control"), so hs.application.get("Bose Control") returns nil and the toggle
+-- could never find the running app to hide it. The bundle ID is unambiguous.
+local APP_BUNDLE_ID = "com.jamesdowzard.bose-control"
 
 -- No-look Mac↔phone toggle, moved to Opt+⇧B (was Opt+B). Kept as a fallback to the app.
 local HOTKEY_MODS  = { "alt", "shift" }
@@ -101,11 +104,11 @@ end
 -- again (while it's frontmost) to hide it. Not running → launch it; running but behind
 -- → bring it forward; running + frontmost → hide. So Opt+B both summons and dismisses.
 local function toggleApp()
-  local app = hs.application.get(APP_NAME)
+  local app = hs.application.get(APP_BUNDLE_ID)
   if app and app:isFrontmost() then
     app:hide()
   else
-    hs.application.launchOrFocus(APP_NAME)
+    hs.application.launchOrFocusByBundleID(APP_BUNDLE_ID)
   end
 end
 
