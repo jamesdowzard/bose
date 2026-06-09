@@ -577,30 +577,39 @@ fun AncSection(
     state: BoseViewModel.UiState,
     onSetAnc: (BoseProtocol.AncMode) -> Unit,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        for (mode in BoseProtocol.AncMode.entries) {
-            val isActive = state.ancMode == mode
-            Surface(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(44.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .clickable { onSetAnc(mode) },
-                color = if (isActive) BoseGreen else BoseCardBg,
-                shape = RoundedCornerShape(10.dp),
+    // Six hardware slots (Quiet/Aware/Immersion/Cinema fixed, C1/C2 adjustable) laid out
+    // 3-per-row so the longer labels fit on a phone. The customs (slots 4/5) are what the
+    // Noise Level slider needs — they were unreachable while this enum mislabelled 2/3.
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        BoseProtocol.AncMode.entries.chunked(3).forEach { rowModes ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        text = mode.label,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isActive) BoseBg else BoseDim,
-                        textAlign = TextAlign.Center,
-                    )
+                for (mode in rowModes) {
+                    val isActive = state.ancMode == mode
+                    Surface(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { onSetAnc(mode) },
+                        color = if (isActive) BoseGreen else BoseCardBg,
+                        shape = RoundedCornerShape(10.dp),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                text = mode.label,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                color = if (isActive) BoseBg else BoseDim,
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+                    }
                 }
+                repeat(3 - rowModes.size) { Spacer(modifier = Modifier.weight(1f)) }
             }
         }
     }

@@ -2,8 +2,8 @@
 # Max 20 lines. Updated by agent on Stop hook.
 
 ## Feature
-Port 1F,06 anc-level RMW to Kotlin, replace Android depth slider, closes 90
-Port 1F,06 anc-level RMW to Kotlin, replace Android depth slider, closes 90
+Fix Android AncMode UI enum to 6 real slots so customs reach 4/5
+Fix Android AncMode UI enum to 6 real slots so customs reach 4/5
 
 ## Current State
 Not started. No work has been done yet.

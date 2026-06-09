@@ -1,10 +1,10 @@
-# Agent Progress - android-noise-slider
+# Agent Progress - android-mode-slots
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-06-09T04:27:42Z
+# Created: 2026-06-09T04:57:37Z
 
-feature=android-noise-slider
-name=Port 1F,06 anc-level RMW to Kotlin, replace Android depth slider, closes 90
+feature=android-mode-slots
+name=Fix Android AncMode UI enum to 6 real slots so customs reach 4/5
 status=pending
 step=0
 step_name=Not started
-created=2026-06-09T04:27:42Z
+created=2026-06-09T04:57:37Z
