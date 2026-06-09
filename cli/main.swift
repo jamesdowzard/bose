@@ -203,13 +203,15 @@ func cmdAnc(_ mode: String?) {
         switch mode.lowercased() {
         case "quiet": modeByte = AncMode.quiet.rawValue
         case "aware": modeByte = AncMode.aware.rawValue
+        case "immersion": modeByte = AncMode.immersion.rawValue
+        case "cinema": modeByte = AncMode.cinema.rawValue
         case "custom1": modeByte = AncMode.custom1.rawValue
         case "custom2": modeByte = AncMode.custom2.rawValue
-        // Bare mode slot index (0-5). Slots beyond the named four are the device's
-        // own modes (e.g. Immersion/Cinema) and the adjustable custom slots — the
-        // ones whose noise level `anc-level` can set. `info`/`anc-level` show names.
+        // Bare mode slot index (0-5): 0 quiet, 1 aware, 2 immersion, 3 cinema (fixed),
+        // 4/5 custom (adjustable — the slots whose noise level `anc-level` can set).
+        // `info`/`anc-level` show names.
         case let s where UInt8(s).map({ $0 <= 5 }) == true: modeByte = UInt8(s)!
-        default: fail("unknown ANC mode: \(mode) (quiet/aware/custom1/custom2, or a slot index 0-5)")
+        default: fail("unknown ANC mode: \(mode) (quiet/aware/immersion/cinema/custom1/custom2, or a slot index 0-5)")
         }
         // Set + read-back in ONE session. A separate oneShot for the verify-GET
         // would open a second channel back-to-back and intermittently return nil
@@ -537,7 +539,7 @@ func usage() {
       bose-ctl connect <device>     Route audio to device (poll-confirmed)
       bose-ctl disconnect <device>  Disconnect a device
       bose-ctl swap <device>        Route audio to device (multipoint; keeps others)
-      bose-ctl anc [mode]           Get/set ANC (quiet/aware/custom1/custom2)
+      bose-ctl anc [mode]           Get/set ANC (quiet/aware/immersion/cinema/custom1/custom2, or slot 0-5)
       bose-ctl anc-level [0-10]     Get/set active mode's noise level (0=max cancel … 10=transparent; custom modes only)
       bose-ctl name [new name]      Get/set headphone name (max 30 UTF-8 bytes)
       bose-ctl volume [0-31]        Get/set volume

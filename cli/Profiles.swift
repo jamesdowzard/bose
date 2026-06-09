@@ -121,6 +121,8 @@ func ancModeByte(_ name: String) -> UInt8? {
     switch name.lowercased() {
     case "quiet": return AncMode.quiet.rawValue
     case "aware": return AncMode.aware.rawValue
+    case "immersion": return AncMode.immersion.rawValue
+    case "cinema": return AncMode.cinema.rawValue
     case "custom1": return AncMode.custom1.rawValue
     case "custom2": return AncMode.custom2.rawValue
     default: return nil

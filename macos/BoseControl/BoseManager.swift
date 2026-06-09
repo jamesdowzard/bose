@@ -18,7 +18,7 @@ final class BoseManager: ObservableObject {
     @Published var isConnected: Bool = false
     @Published var batteryLevel: Int = 0
     @Published var batteryCharging: Bool = false
-    @Published var ancMode: Int = 0          // 0=quiet 1=aware 2=custom1 3=custom2
+    @Published var ancMode: Int = 0          // hardware slot: 0=quiet 1=aware 2=immersion 3=cinema 4=custom1 5=custom2
     @Published var volume: Int = 0
     @Published var volumeMax: Int = 31
     @Published var deviceName: String = "verBosita"
@@ -143,11 +143,14 @@ final class BoseManager: ObservableObject {
 
     // MARK: - Write (each: run verb, optimistic local update, then re-read)
 
+    /// Activate an ANC mode by hardware slot index (0-5): 0 quiet, 1 aware,
+    /// 2 immersion, 3 cinema (fixed), 4/5 custom (adjustable). Passes the bare
+    /// slot to `bose-ctl anc <n>` so app and CLI share one numbering; `ancMode`
+    /// (read back from `info`) is the same slot index, so button highlighting matches.
     func setAncMode(_ mode: Int) {
-        let names = ["quiet", "aware", "custom1", "custom2"]
-        guard names.indices.contains(mode) else { return }
+        guard (0...5).contains(mode) else { return }
         ancMode = mode
-        write(["anc", names[mode]])
+        write(["anc", String(mode)])
     }
 
     func setVolume(_ level: Int) {
@@ -197,7 +200,7 @@ final class BoseManager: ObservableObject {
     // MARK: - Computed
 
     var ancModeName: String {
-        ["Quiet", "Aware", "Custom 1", "Custom 2"][safe: ancMode] ?? "Unknown"
+        ["Quiet", "Aware", "Immersion", "Cinema", "Custom 1", "Custom 2"][safe: ancMode] ?? "Unknown"
     }
 }
 

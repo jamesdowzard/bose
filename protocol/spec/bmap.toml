@@ -18,14 +18,20 @@
 # ── Enums ──────────────────────────────────────────────────────────────────────
 
 [enums.AncMode]
-# ANC mode (1F,03). CLAUDE.md: 0=quiet 1=aware 2=custom1 3=custom2.
+# ANC mode (1F,03). Hardware slots (QC Ultra 2, fw 8.2.20, verified live #88/#91):
+#   0=quiet 1=aware 2=immersion 3=cinema  (all fixed-level)
+#   4=custom1 5=custom2                   (the adjustable "None" slots; 1F,06/anc-level)
+# Earlier the enum mislabelled slots 2/3 as the customs; #91 confirmed 2=Immersion,
+# 3=Cinema, and the real adjustable custom slots are 4/5.
 # 255 (0xFF) is the disabled/off sentinel the QC Ultra 2 reports when ANC is off
 # (observed on-device at depth 0). Decode-only — renders reads as "off" instead of
 # "unknown(255)"; NOT offered as a settable mode (setting 0xFF is unverified).
 quiet = 0
 aware = 1
-custom1 = 2
-custom2 = 3
+immersion = 2
+cinema = 3
+custom1 = 4
+custom2 = 5
 off = 255
 
 [enums.EqBand]
@@ -47,7 +53,7 @@ prev = 4
 [commands.anc_mode]
 block = 0x1F
 function = 0x03
-summary = "Set/get active-noise-cancellation mode (quiet/aware/custom1/custom2)."
+summary = "Set/get active-noise-cancellation mode (quiet/aware/immersion/cinema/custom1/custom2)."
 enum = "AncMode"
 
 [commands.anc_mode.set]
@@ -59,18 +65,22 @@ operator = "GET"
 payload = []
 
 [commands.anc_mode.verified_bytes]
-# `1F,03,05,02,{mode},01`
+# `1F,03,05,02,{mode},01` — slot indices verified live on verBosita (#91).
 set_quiet = "1F 03 05 02 00 01"
 set_aware = "1F 03 05 02 01 01"
-set_custom1 = "1F 03 05 02 02 01"
-set_custom2 = "1F 03 05 02 03 01"
+set_immersion = "1F 03 05 02 02 01"
+set_cinema = "1F 03 05 02 03 01"
+set_custom1 = "1F 03 05 02 04 01"
+set_custom2 = "1F 03 05 02 05 01"
 get = "1F 03 01 00"
 
 [commands.anc_mode.test_args]
 set_quiet = { mode = 0 }
 set_aware = { mode = 1 }
-set_custom1 = { mode = 2 }
-set_custom2 = { mode = 3 }
+set_immersion = { mode = 2 }
+set_cinema = { mode = 3 }
+set_custom1 = { mode = 4 }
+set_custom2 = { mode = 5 }
 get = {}
 
 # ANC depth (1F,0A, SET_GET) is a composite: read current state first, change

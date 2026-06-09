@@ -28,14 +28,17 @@ is three thin front-ends that shell out to the `cli/` binary (`~/bin/bose-ctl`),
 nothing runs in the background and the Mac only touches the headphones on an
 explicit user action.
 - `macos/BoseControl/` -- **Bose Control.app**: a windowed SwiftUI app (frosted-dark
-  two-panel: battery/ANC mode/volume/multipoint/on-head + device grid + EQ). No depth
-  slider — ANC is mode-based and a raw depth disables it (#83); modes only.
+  two-panel: battery/ANC mode/volume/multipoint/on-head + device grid + EQ). Six ANC
+  mode buttons (Quiet/Aware/Immersion/Cinema/C1/C2 = slots 0-5) + a **noise-level
+  slider** driven by `anc-level` (1F,06) — NOT a raw depth (1F,0A disables ANC, #83).
+  The slider is enabled only on the adjustable custom slots (4/5, firmware `cncMutable`)
+  and greys out with a "level is fixed" hint on Quiet/Aware/Immersion/Cinema.
   It is a **thin front-end that shells `bose-ctl`** — NO RFCOMM, NO IOBluetooth, NO
   protocol code — reading via `bose-ctl info --json` and writing via the verbs. It is
   **user-launched and event-driven**: reads on window-open, on app-focus, after each
   write, and on ⌘R — never on a timer. Build `bash macos/build.sh [--install]`
-  (Developer-ID signed → `/Applications`; no LaunchAgent). In-window keys: ⌘1/2/3/4
-  ANC modes, ⌘↑/⌘↓ volume, ⌘R refresh, ⌘M connect Mac. Global hotkeys stay in
+  (Developer-ID signed → `/Applications`; no LaunchAgent). In-window keys: ⌘1-6
+  ANC modes (slots 0-5), ⌘↑/⌘↓ volume, ⌘R refresh, ⌘M connect Mac. Global hotkeys stay in
   Hammerspoon. The `--json` read seam lives in `cli/main.swift` (`cmdInfoJSON`, pure
   formatting over `getAllState` + `getDeviceStates`). It surfaces — but does not fix —
   the #83 flight/ancDepth behaviour; that fix lands in the CLI and the app inherits it.
@@ -228,7 +231,7 @@ BMAP operator (SET/0x06 instead of SET_GET/0x02).
 
 | Setting | Block,Func | Operator | Bytes | Notes |
 |---------|-----------|----------|-------|-------|
-| ANC mode | 1F,03 | START | `1F,03,05,02,{mode},01` | 0=quiet 1=aware 2=custom1 3=custom2; reads 255 = OFF (genuinely disabled — confirmed audibly #83). 255 is REACHABLE: writing a raw CNC depth (1F,0A) over a named mode knocks 1F,03 to 255. ANC here is mode-based; depth is the same axis. |
+| ANC mode | 1F,03 | START | `1F,03,05,02,{mode},01` | slots: 0=quiet 1=aware 2=immersion 3=cinema (fixed) 4=custom1 5=custom2 (adjustable); reads 255 = OFF (genuinely disabled — confirmed audibly #83). 255 is REACHABLE: writing a raw CNC depth (1F,0A) over a named mode knocks 1F,03 to 255. ANC here is mode-based; depth is the same axis. |
 | Volume | 05,05 | SET_GET | `05,05,02,01,{level}` | 0-31 |
 | Device name | 01,02 | SET | `01,02,06,{len},00,{utf8}` | max 30 UTF-8 bytes |
 | Multipoint | 01,0A | SET_GET | `01,0A,02,01,{07/00}` | SET 07=on/00=off. RESPONSE is a bitfield — bit 0 = enable; fw 8.2.20: on→0x07, off→0x06 (slot bits persist). Parse `& 0x01`, NOT `!= 0` (that misread 0x06 as on, #83). |
@@ -252,7 +255,7 @@ ancToggle. **Level semantics: 0 = max cancellation (Quiet end), 10 = full transp
 
 | Func | Name | Use |
 |------|------|-----|
-| 1F,03 | AudioModesCurrentMode | select/activate a mode by **slot index** (START). Our `anc` command: 0-3 named + `anc <0-5>` for any slot. Reads 255 = "no mode" = ANC off. |
+| 1F,03 | AudioModesCurrentMode | select/activate a mode by **slot index** (START). Our `anc` command: 6 named (quiet/aware/immersion/cinema/custom1/custom2) + `anc <0-5>` for any slot. custom1/custom2 = slots 4/5 (the adjustable ones). Reads 255 = "no mode" = ANC off. |
 | 1F,06 | **AudioModesModeConfig** | read/define a mode (index, prompt, name[32], …, cncLevel, …, ancToggle). The CORRECT level command — RMW it. **GET only answers inside a warm bulk session** (prime with a 02,02 read first). |
 | 1F,0A | AudioModesSettingsConfig | GLOBAL live tuning. **Footgun** — detaches the active mode → 255/off (#83). Never use. |
 

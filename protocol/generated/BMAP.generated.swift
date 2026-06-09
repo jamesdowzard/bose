@@ -17,8 +17,10 @@ enum BMAPOperator: UInt8 {
 enum AncMode: UInt8 {
     case quiet = 0
     case aware = 1
-    case custom1 = 2
-    case custom2 = 3
+    case immersion = 2
+    case cinema = 3
+    case custom1 = 4
+    case custom2 = 5
     case off = 255
 }
 
