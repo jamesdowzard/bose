@@ -14,7 +14,7 @@ See `CLAUDE.md` for the protocol tables, device map, and hard-won lessons.
 | `protocol/` | `bmap.toml` + `devices.toml` spec, Python codegen, golden byte tests. `make gen` regenerates `protocol/generated/{BMAP,Devices}.generated.{swift,kt}`. |
 | `cli/` | `bose-ctl` CLI + the Swift core (`Transport`/`Parsers`/`Composites`) + generated Swift. The on-demand RFCOMM engine the Mac front-ends call. |
 | `raycast/` | Raycast script commands (connect / disconnect / status / full-status / anc-level / profile) → `bose-ctl`. |
-| `hammerspoon/` | `bose.lua` — Opt+B opens the app, Opt+⇧B toggles Mac ↔ phone, Opt+N cycles ANC, call-app launch → ANC aware, low-battery warning on toggle. All event-driven. |
+| `hammerspoon/` | `bose.lua` — Opt+B shows/hides the app, Opt+⇧B toggles Mac ↔ phone, Opt+N cycles ANC, call-app launch → ANC aware, low-battery warning on toggle. All event-driven. |
 | `profiles.json` | Settings presets ({ANC mode, noise level, EQ, multipoint, volume}) applied via `bose-ctl profile`. Versioned + editable. |
 | `android/` | Jetpack Compose app + foreground service (package `au.com.jd.bose`). |
 
@@ -79,7 +79,7 @@ The cardinal rule is **no background polling of the headphones**. These hooks fi
 keypress or an OS event, then make one on-demand `bose-ctl` call.
 
 **Hammerspoon** (`hammerspoon/bose.lua`, reload Hammerspoon after editing):
-- `Opt+B` — open (launch/focus) the Bose Control app — switch devices/ANC/EQ from its tiles.
+- `Opt+B` — show/hide the Bose Control app (press once to open/focus, again to hide) — switch devices/ANC/EQ from its tiles.
 - `Opt+⇧B` — toggle audio Mac ↔ phone (also warns if battery ≤ 20%, piggybacking the press).
 - `Opt+N` — cycle ANC quiet → aware → immersion.
 - `Opt+J` — bring the headphones to this Mac (always connects the Mac, no direction-guessing).

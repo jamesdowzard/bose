@@ -5,8 +5,8 @@
 -- poller was the original audio-dropout cause, so this module must never introduce one.
 --
 -- Features:
---   • Opt+B  — open (launch/focus) the Bose Control app, the windowed control surface.
---              Switch devices, ANC and EQ from there (its device tiles do the connect).
+--   • Opt+B  — show/hide the Bose Control app, the windowed control surface (press once
+--              to open/focus, again to hide). Switch devices/ANC/EQ from its tiles.
 --   • Opt+⇧B — no-look toggle of audio between Mac and phone (direction from Mac's
 --              output device). The former Opt+B; kept as a fallback to the app. On the
 --              way, reads battery and warns if low (piggybacks the keypress; no poll).
@@ -97,10 +97,16 @@ local function warnIfLowBattery()
   end)
 end
 
--- Open / focus the windowed control app. launchOrFocus brings it forward if it's
--- already running, else launches it from /Applications.
-local function openApp()
-  hs.application.launchOrFocus(APP_NAME)
+-- Show/hide toggle for the windowed control app: press once to open/focus it, press
+-- again (while it's frontmost) to hide it. Not running → launch it; running but behind
+-- → bring it forward; running + frontmost → hide. So Opt+B both summons and dismisses.
+local function toggleApp()
+  local app = hs.application.get(APP_NAME)
+  if app and app:isFrontmost() then
+    app:hide()
+  else
+    hs.application.launchOrFocus(APP_NAME)
+  end
 end
 
 local function toggle()
@@ -163,7 +169,7 @@ local function onAppEvent(name, event)
 end
 
 function M.start()
-  M.openHotkey = hs.hotkey.bind(OPEN_MODS, OPEN_KEY, openApp)
+  M.openHotkey = hs.hotkey.bind(OPEN_MODS, OPEN_KEY, toggleApp)
   M.hotkey = hs.hotkey.bind(HOTKEY_MODS, HOTKEY_KEY, toggle)
   M.ancHotkey = hs.hotkey.bind(ANC_MODS, ANC_KEY, cycleAnc)
   M.connectHotkey = hs.hotkey.bind(CONNECT_MODS, CONNECT_KEY, connectHere)
