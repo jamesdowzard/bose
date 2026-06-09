@@ -1,10 +1,10 @@
-# Agent Progress - opt-b-toggle-app-window
+# Agent Progress - fix-optb-bundleid
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-06-09T21:53:42Z
+# Created: 2026-06-09T22:01:34Z
 
-feature=opt-b-toggle-app-window
-name=Opt+B show/hide toggle for Bose Control app
+feature=fix-optb-bundleid
+name=match Bose app by bundleID so Opt+B hides it
 status=pending
 step=0
 step_name=Not started
-created=2026-06-09T21:53:42Z
+created=2026-06-09T22:01:34Z
