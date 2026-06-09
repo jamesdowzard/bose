@@ -103,7 +103,7 @@ func cmdInfo() {
 
     // Audio
     row("ANC:", ancModeName(s.ancMode))
-    row("ANC depth:", "\(s.cncLevel)/10")
+    row("Noise level:", "\(s.cncLevel)/10")
     row("Volume:", "\(s.volume)/\(s.volumeMax)")
     row("EQ:", "bass \(s.eq.bass)  mid \(s.eq.mid)  treble \(s.eq.treble)")
     if !s.audioCodec.isEmpty { row("Codec:", s.audioCodec) }
@@ -273,7 +273,7 @@ func cmdName(_ newName: String?) {
 }
 
 /// profile [name | save <name> | rm <name>] — list, apply, save, or remove a settings
-/// preset. A preset bundles {ANC mode, ANC depth, EQ, multipoint, volume}; applying
+/// preset. A preset bundles {ANC mode, noise level, EQ, multipoint, volume}; applying
 /// sends only the fields a preset defines, in ONE RFCOMM session. Presets live in a
 /// git-tracked JSON file (see Profiles.swift); `save` snapshots the current state.
 func cmdProfile(_ a: [String]) {

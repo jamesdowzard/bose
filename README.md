@@ -13,9 +13,9 @@ See `CLAUDE.md` for the protocol tables, device map, and hard-won lessons.
 |------|------|
 | `protocol/` | `bmap.toml` + `devices.toml` spec, Python codegen, golden byte tests. `make gen` regenerates `protocol/generated/{BMAP,Devices}.generated.{swift,kt}`. |
 | `cli/` | `bose-ctl` CLI + the Swift core (`Transport`/`Parsers`/`Composites`) + generated Swift. The on-demand RFCOMM engine the Mac front-ends call. |
-| `raycast/` | Raycast script commands (connect / disconnect / status / full-status / anc-depth / profile) → `bose-ctl`. |
+| `raycast/` | Raycast script commands (connect / disconnect / status / full-status / anc-level / profile) → `bose-ctl`. |
 | `hammerspoon/` | `bose.lua` — Opt+B toggles Mac ↔ phone, Opt+N cycles ANC, call-app launch → ANC aware, low-battery warning on toggle. All event-driven. |
-| `profiles.json` | Settings presets ({ANC, depth, EQ, multipoint, volume}) applied via `bose-ctl profile`. Versioned + editable. |
+| `profiles.json` | Settings presets ({ANC mode, noise level, EQ, multipoint, volume}) applied via `bose-ctl profile`. Versioned + editable. |
 | `android/` | Jetpack Compose app + foreground service (package `au.com.jd.bose`). |
 
 The Mac has **no resident app** — Raycast + Hammerspoon shell out to `bose-ctl` on demand (a background poller was the original audio-dropout cause).
@@ -48,7 +48,7 @@ bose-ctl connect <device>     Route audio to device (poll-confirmed)
 bose-ctl disconnect <device>  Disconnect a device
 bose-ctl swap <device>        Route audio to device (multipoint; keeps others)
 bose-ctl anc [mode]           Get/set ANC (quiet/aware/custom1/custom2)
-bose-ctl anc-depth [0-10]     Get/set ANC depth (0=min … 10=max)
+bose-ctl anc-level [0-10]     Get/set active mode noise level (0=max cancel … 10=transparent; custom modes only)
 bose-ctl name [new name]      Get/set headphone name (max 30 UTF-8 bytes)
 bose-ctl volume [0-31]        Get/set volume
 bose-ctl multipoint [on|off]  Get/set multipoint
@@ -60,7 +60,7 @@ bose-ctl raw <hex>            Send raw BMAP bytes
 
 ## Profiles
 
-A profile is a named bundle of settings — ANC mode, ANC depth, EQ, multipoint, volume —
+A profile is a named bundle of settings — ANC mode, noise level, EQ, multipoint, volume —
 applied in one RFCOMM session. They live in `profiles.json` (versioned, hand-editable);
 ships with `flight`, `office`, `music`. A profile only sets the fields it defines.
 
@@ -80,7 +80,7 @@ keypress or an OS event, then make one on-demand `bose-ctl` call.
 
 **Hammerspoon** (`hammerspoon/bose.lua`, reload Hammerspoon after editing):
 - `Opt+B` — toggle audio Mac ↔ phone (also warns if battery ≤ 20%, piggybacking the press).
-- `Opt+N` — cycle ANC quiet → aware → custom1.
+- `Opt+N` — cycle ANC quiet → aware → immersion.
 - Launching a call app (Teams / Zoom / Meet) switches ANC to aware. Edit `AWARE_ON_LAUNCH`
   / the chords at the top of `bose.lua` to taste.
 
