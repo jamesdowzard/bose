@@ -45,12 +45,20 @@ object BoseProtocol {
 
     // ── ANC ──────────────────────────────────────────────────────────────────────
 
-    /** UI-facing ANC mode (label-carrying). Wire values match generated `AncMode`. */
+    /**
+     * UI-facing ANC mode (label-carrying). Wire values are the real hardware slots
+     * (verBosita, fw 8.2.20, #91): 0 Quiet, 1 Aware, 2 Immersion, 3 Cinema (all fixed),
+     * 4/5 the adjustable custom slots whose noise level `anc-level` (1F,06) can set.
+     * Keep in sync with generated `AncMode` (custom1=4, custom2=5). `off` (255) is
+     * decode-only and intentionally NOT a settable mode/button.
+     */
     enum class AncMode(val value: Int, val label: String) {
         QUIET(0, "Quiet"),
         AWARE(1, "Aware"),
-        CUSTOM1(2, "Custom 1"),
-        CUSTOM2(3, "Custom 2");
+        IMMERSION(2, "Immersion"),
+        CINEMA(3, "Cinema"),
+        CUSTOM1(4, "Custom 1"),
+        CUSTOM2(5, "Custom 2");
 
         companion object {
             fun fromInt(v: Int): AncMode = entries.find { it.value == v } ?: QUIET
