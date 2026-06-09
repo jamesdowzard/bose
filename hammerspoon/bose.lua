@@ -5,12 +5,14 @@
 -- poller was the original audio-dropout cause, so this module must never introduce one.
 --
 -- Features:
---   • Opt+B  — toggle audio between Mac and phone (direction from Mac's output device).
---              On the way, reads battery and warns if low (piggybacks the keypress;
---              no separate poll loop).
+--   • Opt+B  — open (launch/focus) the Bose Control app, the windowed control surface.
+--              Switch devices, ANC and EQ from there (its device tiles do the connect).
+--   • Opt+⇧B — no-look toggle of audio between Mac and phone (direction from Mac's
+--              output device). The former Opt+B; kept as a fallback to the app. On the
+--              way, reads battery and warns if low (piggybacks the keypress; no poll).
 --   • Opt+N  — cycle ANC mode quiet → aware → custom1.
 --   • Opt+J  — unconditionally bring the headphones to THIS Mac (connect + route
---              audio here). Unlike Opt+B, never guesses direction from the current
+--              audio here). Unlike Opt+⇧B, never guesses direction from the current
 --              output device — it always connects the Mac.
 --   • App hook — when a call app LAUNCHES (Teams/Zoom/Meet), switch ANC to aware so
 --                you can hear yourself. Fires once on launch, not on every focus.
@@ -25,7 +27,15 @@ local M = {}
 local CTL          = os.getenv("HOME") .. "/bin/bose-ctl"
 local BOSE_NAME    = "verBosita"             -- macOS output-device name when on the Mac
 local MAC_SPEAKERS = "MacBook Pro Speakers"  -- Mac audio falls back here after "→ phone"
-local HOTKEY_MODS  = { "alt" }
+
+-- Open the windowed app (Opt+B): the primary control surface now that its device
+-- tiles do live connect/switch with a pending → connected state.
+local OPEN_MODS    = { "alt" }
+local OPEN_KEY     = "b"
+local APP_NAME     = "Bose Control"
+
+-- No-look Mac↔phone toggle, moved to Opt+⇧B (was Opt+B). Kept as a fallback to the app.
+local HOTKEY_MODS  = { "alt", "shift" }
 local HOTKEY_KEY   = "b"
 local TO_MAC       = "mac"                    -- the two favourites the toggle flips between
 local TO_PHONE     = "phone"
@@ -85,6 +95,12 @@ local function warnIfLowBattery()
       hs.alert.show("🪫  Bose battery " .. pct .. "%")
     end
   end)
+end
+
+-- Open / focus the windowed control app. launchOrFocus brings it forward if it's
+-- already running, else launches it from /Applications.
+local function openApp()
+  hs.application.launchOrFocus(APP_NAME)
 end
 
 local function toggle()
@@ -147,6 +163,7 @@ local function onAppEvent(name, event)
 end
 
 function M.start()
+  M.openHotkey = hs.hotkey.bind(OPEN_MODS, OPEN_KEY, openApp)
   M.hotkey = hs.hotkey.bind(HOTKEY_MODS, HOTKEY_KEY, toggle)
   M.ancHotkey = hs.hotkey.bind(ANC_MODS, ANC_KEY, cycleAnc)
   M.connectHotkey = hs.hotkey.bind(CONNECT_MODS, CONNECT_KEY, connectHere)
@@ -156,6 +173,7 @@ function M.start()
 end
 
 function M.stop()
+  if M.openHotkey then M.openHotkey:delete(); M.openHotkey = nil end
   if M.hotkey then M.hotkey:delete(); M.hotkey = nil end
   if M.ancHotkey then M.ancHotkey:delete(); M.ancHotkey = nil end
   if M.connectHotkey then M.connectHotkey:delete(); M.connectHotkey = nil end

@@ -1,10 +1,10 @@
-# Agent Progress - widget-paper-theme
+# Agent Progress - fix-device-tile-feedback
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-06-09T07:14:40Z
+# Created: 2026-06-09T20:26:57Z
 
-feature=widget-paper-theme
-name=Re-theme Android widget to warm-paper palette
+feature=fix-device-tile-feedback
+name=fix device tiles no click feedback + add connecting state
 status=pending
 step=0
 step_name=Not started
-created=2026-06-09T07:14:40Z
+created=2026-06-09T20:26:57Z
