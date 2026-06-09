@@ -351,7 +351,7 @@ fun BoseApp(vm: BoseViewModel = viewModel()) {
                         state = state,
                         onSetName = { vm.setDeviceName(it) },
                         onSetMultipoint = { vm.setMultipoint(it) },
-                        onSetCncLevel = { vm.setCncLevel(it) },
+                        onSetNoiseLevel = { vm.setNoiseLevel(it) },
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
@@ -811,7 +811,7 @@ fun SettingsSection(
     state: BoseViewModel.UiState,
     onSetName: (String) -> Unit,
     onSetMultipoint: (Boolean) -> Unit,
-    onSetCncLevel: (Int) -> Unit = {},
+    onSetNoiseLevel: (Int) -> Unit = {},
 ) {
     // Device name
     var editingName by remember { mutableStateOf(false) }
@@ -873,29 +873,43 @@ fun SettingsSection(
 
     Spacer(modifier = Modifier.height(12.dp))
 
-    // CNC Level (custom ANC depth)
-    var cncValue by remember(state.cncLevel) { mutableStateOf(state.cncLevel.toFloat()) }
-    SettingRow("ANC Depth") {
+    // Noise level (1F,06) — adjustable ONLY on custom modes (firmware cncMutable);
+    // greys out on Quiet/Aware/Immersion/Cinema. Drives anc-level, NEVER the 1F,0A depth
+    // (that disables ANC, #83). 0 = max cancellation … 10 = transparency.
+    var noiseValue by remember(state.noiseLevel) { mutableStateOf(state.noiseLevel.toFloat()) }
+    SettingRow("Noise Level") {
         Slider(
-            value = cncValue,
-            onValueChange = { cncValue = it },
-            onValueChangeFinished = { onSetCncLevel(cncValue.toInt()) },
+            value = noiseValue,
+            onValueChange = { noiseValue = it },
+            onValueChangeFinished = { onSetNoiseLevel(noiseValue.toInt()) },
             valueRange = 0f..10f,
             steps = 9,
+            enabled = state.noiseAdjustable,
             modifier = Modifier.weight(1f),
             colors = SliderDefaults.colors(
                 thumbColor = BoseGreen,
                 activeTrackColor = BoseGreen,
                 inactiveTrackColor = Color(0xFF333333),
+                disabledThumbColor = BoseDim,
+                disabledActiveTrackColor = Color(0xFF333333),
+                disabledInactiveTrackColor = Color(0xFF333333),
             ),
         )
         Text(
-            "${cncValue.toInt()}",
+            if (state.noiseAdjustable) "${noiseValue.toInt()}" else "—",
             fontSize = 14.sp,
-            color = BoseGreen,
+            color = if (state.noiseAdjustable) BoseGreen else BoseDim,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.width(28.dp),
             textAlign = TextAlign.End,
+        )
+    }
+    if (!state.noiseAdjustable) {
+        Text(
+            text = "${state.modeName.ifEmpty { "This mode" }}'s level is fixed — pick a custom mode",
+            fontSize = 11.sp,
+            color = BoseDim,
+            modifier = Modifier.padding(top = 2.dp),
         )
     }
 

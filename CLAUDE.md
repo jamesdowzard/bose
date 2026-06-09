@@ -287,7 +287,7 @@ surface. Keep this in sync when adding a verb or control.
 | Capability | Block,Func | `bose-ctl` | Raycast | Hammerspoon | Android |
 |------------|-----------|-----------|---------|-------------|---------|
 | ANC mode | 1F,03 | ✅ `anc` | 👁 (in status) | ✅ Opt+N cycle + call-app hook | ✅ mode selector |
-| Noise level (CNC) | **1F,06** | ✅ `anc-level` (custom modes) | ✅ `bose-anc-level` | — | ⚠️ slider still on 1F,0A — FIX PENDING |
+| Noise level (CNC) | **1F,06** | ✅ `anc-level` (custom modes) | ✅ `bose-anc-level` | — | ✅ slider (1F,06 RMW, custom modes only) |
 | Device name | 01,02 | ✅ `name` | — | — | ✅ rename |
 | EQ band | 01,07 | ✅ `eq` | 👁 (in status) | — | ✅ 3-band |
 | Multipoint | 01,0A | ✅ `multipoint` | — | — | ✅ toggle |

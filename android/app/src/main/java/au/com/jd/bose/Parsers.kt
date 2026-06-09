@@ -32,21 +32,38 @@ object Parsers {
         var deviceName: String = "",
         var multipointEnabled: Boolean = false,
         var autoOffTimer: IntArray = IntArray(0),
-        var cncLevel: Int = 0,
         var onHead: Boolean = false,
         var eqBass: Int = 0,
         var eqMid: Int = 0,
         var eqTreble: Int = 0,
     )
 
-    /** The 5-byte AudioModes SettingsConfig tuple (1F,0A RESP): payload from byte 4. */
-    data class CncConfig(
-        val level: Int, // 0-10
+    /**
+     * One AudioModes mode slot, from the 1F,06 (AudioModesModeConfig) RESPONSE — the
+     * CORRECT noise-level axis. Changing `cncLevel` via a 1F,06 read-modify-write keeps
+     * ANC anchored to the mode (unlike the 1F,0A global write that detaches it → 255/off,
+     * #83). Level semantics (fw 8.2.20): 0 = max cancellation (Quiet), 10 = full
+     * transparency (Aware). Mirrors macOS `ModeConfig` byte-for-byte.
+     */
+    data class ModeConfig(
+        val index: Int,
+        val promptB1: Int,
+        val promptB2: Int,
+        val userConfigurable: Boolean,
+        val name: IntArray, // 32 bytes, null-padded UTF-8
+        val cncMutable: Boolean, // response[41] bit 0 — is the CNC level editable?
+        val cncLevel: Int,
         val autoCNC: Int,
         val spatial: Int,
         val windBlock: Int,
         val ancToggle: Int,
-    )
+    ) {
+        val displayName: String
+            get() {
+                val end = name.indexOfFirst { it == 0 }.let { if (it < 0) name.size else it }
+                return String(ByteArray(end) { name[it].toByte() }, Charsets.UTF_8)
+            }
+    }
 
     /**
      * Parse the connected-devices RESPONSE (05,01). Layout:
@@ -68,23 +85,39 @@ object Parsers {
     }
 
     /**
-     * Parse the CNC/ANC-depth RESPONSE (1F,0A). Needs the full 5-byte payload
-     * (bytes 4..8). Returns null on a short/non-RESP frame.
+     * Parse a 1F,06 AudioModesModeConfig RESPONSE. Payload (resp[4..]) offsets, confirmed
+     * live + against the decompiled AudioModesModeConfigResponse: [0]=index, [1..2]=prompt,
+     * [3]=userConfigurable, [6..37]=32-byte name, [41]=mutability bitfield (bit0=cncMutable),
+     * [42]=cncLevel, [43]=autoCNC, [44]=spatial, [46]=windBlock, [47]=ancToggle. (The
+     * RESPONSE layout differs from the SET payload — see buildModeConfigSet.)
      */
-    fun parseCncLevel(resp: IntArray): CncConfig? {
-        if (resp.size < 9 || resp[2] != OP_RESP) return null
-        return CncConfig(resp[4], resp[5], resp[6], resp[7], resp[8])
+    fun parseModeConfig(resp: IntArray): ModeConfig? {
+        if (resp.size < 4 + 48 || resp[0] != 0x1F || resp[1] != 0x06 || resp[2] != OP_RESP) return null
+        val p = resp.copyOfRange(4, resp.size)
+        return ModeConfig(
+            index = p[0], promptB1 = p[1], promptB2 = p[2],
+            userConfigurable = p[3] == 1,
+            name = p.copyOfRange(6, 38), // [6..37] inclusive = 32 bytes
+            cncMutable = (p[41] and 0x01) == 1,
+            cncLevel = p[42], autoCNC = p[43], spatial = p[44],
+            windBlock = p[46], ancToggle = p[47],
+        )
     }
 
     /**
-     * Build the CNC SET_GET frame that changes `level` and preserves the rest.
-     * `1F,0A,02,05,{level},{autoCNC},{spatial},{windBlock},{ancToggle}`.
+     * Build a 1F,06 AudioModesModeConfig SET_GET frame, changing ONLY `cncLevel` and
+     * forcing `ancToggle = 1` (so a level change can't disable ANC). SET payload layout
+     * (distinct from the response): [0]=index, [1..2]=prompt, [3..34]=32-byte name,
+     * [35]=cncLevel, [36]=autoCNC, [37]=spatial, [38]=windBlock, [39]=ancToggle. Pass
+     * newLevel=null for an unchanged round-trip.
      */
-    fun buildCncSet(level: Int, cfg: CncConfig): IntArray =
-        intArrayOf(
-            0x1F, 0x0A, 0x02, 0x05, level.coerceIn(0, 10),
-            cfg.autoCNC, cfg.spatial, cfg.windBlock, cfg.ancToggle,
-        )
+    fun buildModeConfigSet(cfg: ModeConfig, newLevel: Int?): IntArray {
+        val level = (newLevel ?: cfg.cncLevel).coerceIn(0, 10)
+        val name = IntArray(32) { if (it < cfg.name.size) cfg.name[it] else 0 }
+        val payload = intArrayOf(cfg.index, cfg.promptB1, cfg.promptB2) + name +
+            intArrayOf(level, cfg.autoCNC, cfg.spatial, cfg.windBlock, 0x01) // ancToggle forced on
+        return intArrayOf(0x1F, 0x06, 0x02, payload.size) + payload
+    }
 
     /** Decode a UTF-8 string field response from a given payload offset. */
     fun parseString(resp: IntArray, from: Int = 4): String {
@@ -122,7 +155,6 @@ object Parsers {
         resp(0x05, 0x05)?.let { if (it.size >= 6) { s.volumeMax = it[4]; s.volume = it[5] } }
 
         provide.response(0x05, 0x01)?.let { s.connectedDevices = parseConnectedDevices(it) }
-        provide.response(0x1F, 0x0A)?.let { r -> parseCncLevel(r)?.let { s.cncLevel = it.level } }
 
         resp(0x00, 0x05)?.let { s.firmware = parseString(it) }
         resp(0x00, 0x07)?.let { s.serialNumber = parseString(it) }
