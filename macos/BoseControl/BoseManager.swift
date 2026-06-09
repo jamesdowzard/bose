@@ -18,7 +18,7 @@ final class BoseManager: ObservableObject {
     @Published var isConnected: Bool = false
     @Published var batteryLevel: Int = 0
     @Published var batteryCharging: Bool = false
-    @Published var ancMode: Int = 0          // 0=quiet 1=aware 2=custom1 3=custom2
+    @Published var ancMode: Int = 0          // hardware slot: 0=quiet 1=aware 2=immersion 3=cinema 4=custom1 5=custom2
     @Published var volume: Int = 0
     @Published var volumeMax: Int = 31
     @Published var deviceName: String = "verBosita"
@@ -27,6 +27,14 @@ final class BoseManager: ObservableObject {
     @Published var onHead: Bool = false
     @Published var eq: (bass: Int, mid: Int, treble: Int) = (0, 0, 0)
     @Published var isRefreshing: Bool = false
+
+    // Active mode's noise level (1F,06): 0 = max cancellation … 10 = transparency.
+    // `noiseAdjustable` (the firmware cncMutable bit) gates the slider — only custom
+    // modes are tunable; Quiet/Aware/spatial modes are fixed. Writing is via the CLI
+    // `anc-level`, which refuses on fixed modes, so the slider can't disable ANC (#83).
+    @Published var noiseLevel: Int = 0
+    @Published var noiseAdjustable: Bool = false
+    @Published var modeName: String = ""
 
     // Device routing states: "active" / "connected" / "offline"
     @Published var deviceStates: [String: String] = [
@@ -128,15 +136,21 @@ final class BoseManager: ObservableObject {
         if let d = s["devices"] as? [String: String] {
             for (name, state) in d { deviceStates[name] = state }
         }
+        noiseLevel = (s["noiseLevel"] as? Int) ?? noiseLevel
+        noiseAdjustable = (s["noiseAdjustable"] as? Bool) ?? false
+        modeName = (s["modeName"] as? String) ?? modeName
     }
 
     // MARK: - Write (each: run verb, optimistic local update, then re-read)
 
+    /// Activate an ANC mode by hardware slot index (0-5): 0 quiet, 1 aware,
+    /// 2 immersion, 3 cinema (fixed), 4/5 custom (adjustable). Passes the bare
+    /// slot to `bose-ctl anc <n>` so app and CLI share one numbering; `ancMode`
+    /// (read back from `info`) is the same slot index, so button highlighting matches.
     func setAncMode(_ mode: Int) {
-        let names = ["quiet", "aware", "custom1", "custom2"]
-        guard names.indices.contains(mode) else { return }
+        guard (0...5).contains(mode) else { return }
         ancMode = mode
-        write(["anc", names[mode]])
+        write(["anc", String(mode)])
     }
 
     func setVolume(_ level: Int) {
@@ -153,6 +167,16 @@ final class BoseManager: ObservableObject {
     func setMultipoint(_ enabled: Bool) {
         multipointEnabled = enabled
         write(["multipoint", enabled ? "on" : "off"])
+    }
+
+    /// Set the active mode's noise level (0 = max cancel … 10 = transparency) via the
+    /// CLI `anc-level` (the 1F,06 RMW). No-op unless the active mode is adjustable —
+    /// the CLI refuses on fixed modes anyway, so ANC can never be disabled here.
+    func setNoiseLevel(_ level: Int) {
+        guard noiseAdjustable else { return }
+        let clamped = max(0, min(10, level))
+        noiseLevel = clamped
+        write(["anc-level", String(clamped)])
     }
 
     func connectDevice(_ name: String) {
@@ -176,7 +200,7 @@ final class BoseManager: ObservableObject {
     // MARK: - Computed
 
     var ancModeName: String {
-        ["Quiet", "Aware", "Custom 1", "Custom 2"][safe: ancMode] ?? "Unknown"
+        ["Quiet", "Aware", "Immersion", "Cinema", "Custom 1", "Custom 2"][safe: ancMode] ?? "Unknown"
     }
 }
 

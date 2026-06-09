@@ -52,6 +52,7 @@ struct ContentView: View {
     @ObservedObject var manager: BoseManager
 
     @State private var volumeSlider: Double = 0
+    @State private var noiseSlider: Double = 0
     @State private var eqBass: Double = 0
     @State private var eqMid: Double = 0
     @State private var eqTreble: Double = 0
@@ -78,13 +79,14 @@ struct ContentView: View {
 
     private func syncSliders() {
         volumeSlider = Double(manager.volume)
+        noiseSlider = Double(manager.noiseLevel)
         eqBass = Double(manager.eq.bass)
         eqMid = Double(manager.eq.mid)
         eqTreble = Double(manager.eq.treble)
     }
 
     /// In-window keyboard shortcuts (only while the app is focused — global hotkeys
-    /// stay in Hammerspoon). ⌘1/2/3/4 ANC modes, ⌘↑/⌘↓ volume, ⌘R refresh, ⌘M Mac.
+    /// stay in Hammerspoon). ⌘1-6 ANC modes (slots 0-5), ⌘↑/⌘↓ volume, ⌘R refresh, ⌘M Mac.
     private func installShortcuts() {
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             guard event.modifierFlags.contains(.command) else { return event }
@@ -93,6 +95,8 @@ struct ContentView: View {
             case "2": manager.setAncMode(1); return nil
             case "3": manager.setAncMode(2); return nil
             case "4": manager.setAncMode(3); return nil
+            case "5": manager.setAncMode(4); return nil
+            case "6": manager.setAncMode(5); return nil
             case "r": manager.refreshState(); return nil
             case "m": manager.connectDevice("mac"); return nil
             default: break
@@ -156,14 +160,49 @@ struct ContentView: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundColor(secondaryColor)
                     .tracking(1)
-                // No depth slider: ANC on this firmware is mode-based (Quiet/Aware/
-                // Custom). Writing a raw CNC depth knocks ANC to off (#83), so the
-                // window exposes modes only — depth is not a safe standalone control.
-                HStack(spacing: 4) {
-                    ancButton("Quiet", 0)
-                    ancButton("Aware", 1)
-                    ancButton("C1", 2)
-                    ancButton("C2", 3)
+                // Hardware slots 0-5: Quiet/Aware/Immersion/Cinema are fixed-level;
+                // C1/C2 (slots 4/5) are the adjustable custom modes the Level slider drives.
+                VStack(spacing: 4) {
+                    HStack(spacing: 4) {
+                        ancButton("Quiet", 0)
+                        ancButton("Aware", 1)
+                        ancButton("Immersion", 2)
+                    }
+                    HStack(spacing: 4) {
+                        ancButton("Cinema", 3)
+                        ancButton("C1", 4)
+                        ancButton("C2", 5)
+                    }
+                }
+                // Noise level (1F,06): 0 = max cancellation … 10 = transparency.
+                // Adjustable ONLY on custom modes (firmware cncMutable bit) — disabled
+                // on Quiet/Aware/spatial modes. The CLI `anc-level` refuses on fixed
+                // modes, so dragging this can never disable ANC (#83).
+                HStack(spacing: 8) {
+                    Text("Level")
+                        .font(.system(size: 10))
+                        .foregroundColor(manager.noiseAdjustable ? secondaryColor : offlineColor)
+                        .frame(width: 38, alignment: .leading)
+                    Slider(
+                        value: $noiseSlider,
+                        in: 0...10,
+                        step: 1,
+                        onEditingChanged: { editing in
+                            if !editing { manager.setNoiseLevel(Int(noiseSlider)) }
+                        }
+                    )
+                    .tint(activeColor)
+                    .disabled(!manager.noiseAdjustable)
+                    Text(manager.noiseAdjustable ? "\(Int(noiseSlider))" : "—")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(manager.noiseAdjustable ? secondaryColor : offlineColor)
+                        .frame(width: 22, alignment: .trailing)
+                }
+                .opacity(manager.noiseAdjustable ? 1.0 : 0.5)
+                if !manager.noiseAdjustable {
+                    Text("\(manager.modeName.isEmpty ? "This mode" : manager.modeName)'s level is fixed — pick a custom mode")
+                        .font(.system(size: 9))
+                        .foregroundColor(offlineColor)
                 }
             }
 
@@ -368,9 +407,12 @@ struct ContentView: View {
         return Button(action: { manager.setAncMode(mode) }) {
             Text(label)
                 .font(.system(size: 10, weight: .semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
                 .foregroundColor(isActive ? .black : secondaryColor)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 5)
+                .padding(.horizontal, 2)
                 .background(isActive ? activeColor : cardColor)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
         }

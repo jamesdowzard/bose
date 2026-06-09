@@ -17,7 +17,7 @@ let OP_RESP_BYTE: UInt8 = 0x03
 struct HeadphoneState {
     var batteryLevel: Int = 0
     var batteryCharging: Bool = false
-    var ancMode: Int = 0           // 0=quiet 1=aware 2=custom1 3=custom2
+    var ancMode: Int = 0           // 0=quiet 1=aware 2=immersion 3=cinema 4=custom1 5=custom2
     var volume: Int = 0
     var volumeMax: Int = 31
     var connectedDevices: [[UInt8]] = []   // audio-active (05,01) — ground truth
