@@ -75,7 +75,7 @@ func cmdStatus() {
 
 /// info — the COMPLETE HeadphoneState from getAllState (one RFCOMM session).
 /// `status` is the quick subset; `info` dumps everything the bulk read returns
-/// (identity, power/wear, full audio config, and the audio-active device list).
+/// (identity, power, full audio config, and the audio-active device list).
 /// No new protocol work — pure formatting over the existing composite.
 func cmdInfo() {
     guard let s = transport.getAllState() else { fail("headphones not reachable") }
@@ -93,9 +93,8 @@ func cmdInfo() {
     if !s.platform.isEmpty     { row("Platform:", s.platform) }
     if !s.codename.isEmpty     { row("Codename:", s.codename) }
 
-    // Power / wear
+    // Power
     row("Battery:", "\(s.batteryLevel)%\(s.batteryCharging ? " ⚡" : "")")
-    row("On head:", s.onHead.map { $0 ? "yes" : "no" } ?? "unknown")
     if !s.autoOffTimer.isEmpty {
         // Encoding unverified over RFCOMM (read-only field) — show raw bytes.
         row("Auto-off:", s.autoOffTimer.map { String(format: "%02X", $0) }.joined(separator: " "))
@@ -175,7 +174,6 @@ func cmdInfoJSON() {
         "volumeMax": s.volumeMax,
         "eq": ["bass": s.eq.bass, "mid": s.eq.mid, "treble": s.eq.treble],
         "multipoint": s.multipointEnabled,
-        "onHead": s.onHead.map { $0 as Any } ?? NSNull(),
         "devices": deviceStates,
     ]
     out.merge(mode) { _, new in new }

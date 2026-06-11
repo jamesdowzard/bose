@@ -235,22 +235,6 @@ struct ContentView: View {
             .toggleStyle(.switch)
             .tint(boseAccent)
 
-            // Wear detection
-            VStack(alignment: .leading, spacing: 4) {
-                Text("STATUS")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(secondaryColor)
-                    .tracking(1)
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(manager.onHead ? boseAccent : offlineColor)
-                        .frame(width: 6, height: 6)
-                    Text(manager.onHead ? "On head" : "Off head")
-                        .font(.system(size: 12))
-                        .foregroundColor(inkColor)
-                }
-            }
-
             Spacer()
         }
         .padding(16)

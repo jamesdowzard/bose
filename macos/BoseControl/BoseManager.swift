@@ -24,7 +24,6 @@ final class BoseManager: ObservableObject {
     @Published var deviceName: String = "verBosita"
     @Published var firmware: String = ""
     @Published var multipointEnabled: Bool = false
-    @Published var onHead: Bool = false
     @Published var eq: (bass: Int, mid: Int, treble: Int) = (0, 0, 0)
     @Published var isRefreshing: Bool = false
 
@@ -156,7 +155,6 @@ final class BoseManager: ObservableObject {
         volume = (s["volume"] as? Int) ?? volume
         volumeMax = (s["volumeMax"] as? Int) ?? volumeMax
         multipointEnabled = (s["multipoint"] as? Bool) ?? false
-        onHead = (s["onHead"] as? Bool) ?? false
         if let name = s["deviceName"] as? String, !name.isEmpty { deviceName = name }
         if let fw = s["firmware"] as? String { firmware = fw }
         if let e = s["eq"] as? [String: Any] {

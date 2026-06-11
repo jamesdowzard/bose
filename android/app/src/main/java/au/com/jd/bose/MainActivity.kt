@@ -953,17 +953,6 @@ fun SettingsSection(
             color = BoseText,
         )
     }
-
-    Spacer(modifier = Modifier.height(12.dp))
-
-    // Wear detection
-    SettingRow("Wear Detection") {
-        Text(
-            text = if (state.wearDetected) "On Head" else "Off Head",
-            fontSize = 14.sp,
-            color = if (state.wearDetected) BoseAccent else BoseDim,
-        )
-    }
 }
 
 @Composable

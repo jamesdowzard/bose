@@ -1,10 +1,10 @@
-# Agent Progress - rm-call-aware-watcher
+# Agent Progress - fix-wear-detection-decode
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-06-11T20:58:15Z
+# Created: 2026-06-11T20:17:34Z
 
-feature=rm-call-aware-watcher
-name=Remove Teams/Zoom/Meet launch → ANC aware watcher from bose.lua
+feature=fix-wear-detection-decode
+name=fix-wear-detection-decode — 08,07 on-head byte mislabels worn as off-head
 status=pending
 step=0
 step_name=Not started
-created=2026-06-11T20:58:15Z
+created=2026-06-11T20:17:34Z
