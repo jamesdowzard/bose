@@ -102,7 +102,6 @@ let responses: [[UInt8]: [UInt8]] = [
     [0x05, 0x01]: twoDevices,                                                // 2 active devices
     [0x1F, 0x0A]: cncResp,                                                   // cnc level 7
     [0x01, 0x0A]: [0x01, 0x0A, 0x03, 0x01, 0x07],                            // multipoint on
-    [0x08, 0x07]: [0x08, 0x07, 0x03, 0x01, 0x04],                            // on head
     [0x00, 0x05]: [0x00, 0x05, 0x03, 0x05] + Array("1.2.3".utf8),            // firmware
     // EQ RESP: parser reads value bytes at absolute indices 6, 10, 14 (v1-proven
     // layout: 3x 4-byte groups, value is the 3rd byte of each group).
@@ -118,7 +117,6 @@ check(state.volume == 20 && state.volumeMax == 31, "allState: volume 20/31")
 check(state.connectedDevices.count == 2, "allState: 2 connected devices")
 check(state.cncLevel == 7, "allState: cnc level 7")
 check(state.multipointEnabled, "allState: multipoint on")
-check(state.onHead == true, "allState: on head (parses when 08,07 responds)")
 check(state.firmware == "1.2.3", "allState: firmware 1.2.3")
 check(state.eq.bass == 3 && state.eq.mid == 0 && state.eq.treble == -3, "allState: EQ +3/0/-3 (signed)")
 

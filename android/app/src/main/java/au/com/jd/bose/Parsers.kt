@@ -32,7 +32,6 @@ object Parsers {
         var deviceName: String = "",
         var multipointEnabled: Boolean = false,
         var autoOffTimer: IntArray = IntArray(0),
-        var onHead: Boolean = false,
         var eqBass: Int = 0,
         var eqMid: Int = 0,
         var eqTreble: Int = 0,
@@ -171,7 +170,8 @@ object Parsers {
 
         resp(0x01, 0x0A)?.let { s.multipointEnabled = it[4] != 0 }
         resp(0x01, 0x0B)?.let { s.autoOffTimer = it.copyOfRange(4, it.size) }
-        resp(0x08, 0x07)?.let { s.onHead = it[4] == 0x04 }
+        // No on-head/wear: StatusInEar (02,09) is an EARBUDS function; the QC Ultra 2
+        // headphones answer FuncNotSupp. Live worn state isn't exposed over BMAP.
 
         provide.response(0x01, 0x07)?.let { r ->
             if (r.size >= 16 && r[2] == OP_RESP) {

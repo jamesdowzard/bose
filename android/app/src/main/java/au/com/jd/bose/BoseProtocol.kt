@@ -210,7 +210,7 @@ object BoseProtocol {
     fun getPlatform() = getStringField(intArrayOf(0x12, 0x0D, 0x01, 0x00))
     fun getCodename() = getStringField(intArrayOf(0x12, 0x0C, 0x01, 0x00))
 
-    // ── Auto-off timer / wear / immersion (read-only diagnostics) ─────────────────
+    // ── Auto-off timer / immersion (read-only diagnostics) ───────────────────────
 
     fun getAutoOffTimer(): IntArray? {
         val resp = Transport.send(intArrayOf(0x01, 0x0B, 0x01, 0x00)) ?: return null
@@ -235,12 +235,6 @@ object BoseProtocol {
         if (resp.size < 5 || resp[2] != OP_RESP) return null
         val end = (4 + resp[3]).coerceAtMost(resp.size)
         return resp.copyOfRange(4, end)
-    }
-
-    fun getWearState(): Boolean? {
-        val resp = Transport.send(intArrayOf(0x08, 0x07, 0x01, 0x00)) ?: return null
-        if (resp.size < 5 || resp[2] != OP_RESP) return null
-        return resp[4] == 0x04
     }
 
     // ── Device info (per-device ACL state) ───────────────────────────────────────

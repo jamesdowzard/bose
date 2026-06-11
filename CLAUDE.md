@@ -28,7 +28,7 @@ is three thin front-ends that shell out to the `cli/` binary (`~/bin/bose-ctl`),
 nothing runs in the background and the Mac only touches the headphones on an
 explicit user action.
 - `macos/BoseControl/` -- **Bose Control.app**: a windowed SwiftUI app (warm-paper light
-  two-panel: battery/ANC mode/volume/multipoint/on-head + device grid + EQ). The light
+  two-panel: battery/ANC mode/volume/multipoint + device grid + EQ). The light
   theme (burnt-orange `#AF3A03` accent on warm paper, from the Midterm `paper-hc` palette)
   is shared with the Android app; macOS colours live in `ContentView.swift`, Android in
   `MainActivity.kt` (`BoseAccent`/`BoseConnected`/…). Six ANC
@@ -319,7 +319,16 @@ surface. Keep this in sync when adding a verb or control.
 | Platform | 12,0D | 👁 `info` | 👁 (full status) | 👁 state |
 | Codename | 12,0C | 👁 `info` | 👁 (full status) | 👁 state |
 | Auto-off timer | 01,0B | 👁 `info` (read-only) | 👁 (full status) | 👁 state |
-| On-head / wear | 08,07 | 👁 `info` (yes/no; `unknown` if no RESP) | 👁 (full status) | 👁 state |
+
+> **No on-head / live wear state — not exposed on the QC Ultra 2 (verified, do not re-add).**
+> The real wear function is **`StatusInEar` = block `0x02` / func `0x09`** (a plain GET;
+> response decodes `payload[0]` bit0 = left bud, bit1 = right bud). It's an **earbuds**
+> feature — the over-ear headphones answer **`FuncNotSupp`** (error op `0x04`, code `4`)
+> to `02,09`. Auto-pause is handled on-device (sensor → AVRCP pause to the active sink),
+> never published over BMAP. The old `08,07 == 0x04` "on-head" read was a synthetic-fixture
+> guess — `08,07` isn't the wear function and its byte is noise (flips 0x03/0x04 off-head).
+> Confirmed by decompiling the Bose Music app (v13.0.7, `com.bose.bmap.messages…StatusInEar`)
+> + the device's own `FuncNotSupp` reply. Removed from app/CLI/Android (#104-era cleanup).
 
 **Profiles** compose several of these capabilities at once — a `bose-ctl profile`
 applies {ANC mode, noise level, EQ, multipoint, volume} in one session (CLI +

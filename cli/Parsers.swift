@@ -31,8 +31,6 @@ struct HeadphoneState {
     var multipointEnabled: Bool = false
     var autoOffTimer: [UInt8] = []
     var cncLevel: Int = 0
-    var onHead: Bool? = nil         // Optional: nil renders "unknown" when 08,07 yields no
-                                    // matching response; set true/false when it does.
     var eq: (bass: Int, mid: Int, treble: Int) = (0, 0, 0)
 }
 
@@ -174,8 +172,7 @@ func parseAllState(_ provide: ResponseProvider) -> HeadphoneState {
     func resp(_ b: UInt8, _ f: UInt8) -> [UInt8]? {
         // Require the frame to be the RESPONSE to THIS command: BMAP echoes the
         // queried block/func at r[0],r[1]. Without this, a leftover/late frame from a
-        // prior command in the bulk session gets misread as the current field — that
-        // misalignment was making on-head (08,07) report a bogus value on-device.
+        // prior command in the bulk session gets misread as the current field.
         // Matching block/func keeps every field bound to its own response.
         guard let r = provide(b, f), r.count >= 5, r[0] == b, r[1] == f, r[2] == OP_RESP_BYTE else { return nil }
         return r
@@ -207,10 +204,11 @@ func parseAllState(_ provide: ResponseProvider) -> HeadphoneState {
 
     if let r = resp(0x01, 0x0A) { s.multipointEnabled = parseMultipointEnabled(r[4]) }
     if let r = resp(0x01, 0x0B) { s.autoOffTimer = Array(r[4...]) }
-    // 08,07 answers within the warm bulk session (it's silent on a cold standalone
-    // channel, e.g. `raw 08 07`). With resp() now matching block/func, this binds to
-    // the right frame and on-head reads correctly; nil only if no 08,07 RESP arrives.
-    if let r = resp(0x08, 0x07) { s.onHead = r[4] == 0x04 }
+    // No on-head/wear field: the QC Ultra 2 headphones don't expose live worn state.
+    // The real wear function is StatusInEar (02,09) — but it's an EARBUDS feature
+    // (payload bit0/bit1 = left/right bud) and the headphones answer FuncNotSupp
+    // (error 0x04). On-head is handled on-device (sensor → AVRCP pause), never
+    // published over BMAP. (The old 08,07 read was a synthetic guess, not the wear fn.)
 
     if let r = provide(0x01, 0x07), r.count >= 16, r[2] == OP_RESP_BYTE {
         s.eq = (bass: Int(Int8(bitPattern: r[6])),

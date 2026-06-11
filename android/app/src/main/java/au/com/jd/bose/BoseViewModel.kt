@@ -42,7 +42,6 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
         val modeName: String = "",
         val autoOffTimer: String = "",
         val immersionLevel: IntArray? = null,
-        val wearDetected: Boolean = false,
 
         // Info
         val serialNumber: String = "",
@@ -103,7 +102,6 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
                         s = s.copy(noiseLevel = it.cncLevel, noiseAdjustable = it.cncMutable, modeName = it.displayName)
                     }
                     BoseProtocol.getAutoOffTimer()?.let { s = s.copy(autoOffTimer = BoseProtocol.autoOffTimerDescription(it)) }
-                    BoseProtocol.getWearState()?.let { s = s.copy(wearDetected = it) }
                     BoseProtocol.getSerialNumber()?.let { s = s.copy(serialNumber = it) }
                     BoseProtocol.getPlatform()?.let { s = s.copy(platform = it) }
                     BoseProtocol.getCodename()?.let { s = s.copy(codename = it) }
