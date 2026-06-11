@@ -14,8 +14,6 @@
 --   • Opt+J  — unconditionally bring the headphones to THIS Mac (connect + route
 --              audio here). Unlike Opt+⇧B, never guesses direction from the current
 --              output device — it always connects the Mac.
---   • App hook — when a call app LAUNCHES (Teams/Zoom/Meet), switch ANC to aware so
---                you can hear yourself. Fires once on launch, not on every focus.
 --
 -- Wiring (init.lua dofiles this from the repo path; reload Hammerspoon to apply edits):
 --     BoseCtl = dofile(os.getenv("HOME").."/code/personal/bose/hammerspoon/bose.lua")
@@ -58,15 +56,6 @@ local CONNECT_TARGET = "mac"
 
 -- Low-battery warning threshold (%), checked on each toggle (no separate poll).
 local LOW_BATTERY  = 20
-
--- Apps whose LAUNCH should switch ANC to aware (so you hear your own voice on calls).
--- Keys are hs.application names; adjust to taste.
-local AWARE_ON_LAUNCH = {
-  ["Microsoft Teams"]      = true,
-  ["Microsoft Teams (work or school)"] = true,
-  ["zoom.us"]              = true,
-  ["Google Meet"]          = true,
-}
 -------------------------------------------------------------------------------
 
 local function boseIsMacOutput()
@@ -162,22 +151,11 @@ local function cycleAnc()
   end)
 end
 
--- App-launch watcher: switch ANC to aware when a call app starts.
-local function onAppEvent(name, event)
-  if event == hs.application.watcher.launched and name and AWARE_ON_LAUNCH[name] then
-    ctl({ "anc", "aware" }, function(ok)
-      if ok then hs.alert.show("🎧  " .. name .. " → ANC aware") end
-    end)
-  end
-end
-
 function M.start()
   M.openHotkey = hs.hotkey.bind(OPEN_MODS, OPEN_KEY, toggleApp)
   M.hotkey = hs.hotkey.bind(HOTKEY_MODS, HOTKEY_KEY, toggle)
   M.ancHotkey = hs.hotkey.bind(ANC_MODS, ANC_KEY, cycleAnc)
   M.connectHotkey = hs.hotkey.bind(CONNECT_MODS, CONNECT_KEY, connectHere)
-  M.appWatcher = hs.application.watcher.new(onAppEvent)
-  M.appWatcher:start()
   return M
 end
 
@@ -186,7 +164,6 @@ function M.stop()
   if M.hotkey then M.hotkey:delete(); M.hotkey = nil end
   if M.ancHotkey then M.ancHotkey:delete(); M.ancHotkey = nil end
   if M.connectHotkey then M.connectHotkey:delete(); M.connectHotkey = nil end
-  if M.appWatcher then M.appWatcher:stop(); M.appWatcher = nil end
 end
 
 return M
