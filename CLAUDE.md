@@ -49,7 +49,7 @@ explicit user action.
 - `raycast/bose-status.sh` / `bose-full-status.sh` -- `bose-ctl status` / `bose-ctl info`
 - `raycast/bose-anc-level.sh` / `bose-profile.sh` -- `bose-ctl anc-level [0-10]` (active mode's noise level, custom modes only) / `bose-ctl profile [name]` (text arg)
 - `profiles.json` (repo root) -- settings presets ({ANC mode, noise level, EQ, multipoint, volume}) applied by `bose-ctl profile`; versioned + hand-editable, ships flight/office/music. A profile's `noiseLevel` is applied via the `anc-level` (1F,06) RMW and ONLY takes effect on the adjustable custom modes (4/5, `cncMutable`) — named modes set the mode only (a level over quiet/aware/spatial is a no-op; the old 1F,0A depth write disabled ANC, #83). flight = {quiet, multipoint off}. Runtime JSON (not codegen'd TOML) because `profile save` writes it; loader resolves `$BOSE_PROFILES` → repo path → `~/.config/bose/`. Pure logic in `cli/Profiles.swift`, live apply in `cli/Composites.swift` (`applyProfile`).
-- `hammerspoon/bose.lua` -- Hammerspoon module, all **event-driven** (no timers): **Opt+B shows/hides the Bose Control app** (the windowed control surface — press once to open/focus, again to hide; switch devices/ANC/EQ from its tiles), **Opt+⇧B toggles Mac ↔ phone** (the former Opt+B; + one-shot low-battery warn piggybacked on the press), **Opt+N cycles ANC** (quiet→aware→immersion), **Opt+J connects the headphones to this Mac** (unconditional, no toggle direction-guessing; `CONNECT_TARGET` retargets it), and a call-app **launch** watcher (Teams/Zoom/Meet → ANC aware). Returns a table with `.start()`/`.stop()`. Wired in `init.lua` via `BoseCtl = dofile(os.getenv("HOME").."/code/personal/bose/hammerspoon/bose.lua"); BoseCtl.start()`. Edits apply on Hammerspoon reload.
+- `hammerspoon/bose.lua` -- Hammerspoon module, all **event-driven** (no timers): **Opt+B shows/hides the Bose Control app** (the windowed control surface — press once to open/focus, again to hide; switch devices/ANC/EQ from its tiles), **Opt+⇧B toggles Mac ↔ phone** (the former Opt+B; + one-shot low-battery warn piggybacked on the press), **Opt+N cycles ANC** (quiet→aware→immersion), **Opt+J connects the headphones to this Mac** (unconditional, no toggle direction-guessing; `CONNECT_TARGET` retargets it). Returns a table with `.start()`/`.stop()`. Wired in `init.lua` via `BoseCtl = dofile(os.getenv("HOME").."/code/personal/bose/hammerspoon/bose.lua"); BoseCtl.start()`. Edits apply on Hammerspoon reload.
 - The Swift core that does the actual RFCOMM work lives in `cli/` (see below). The macOS app target (`macos/BoseControl/`) is pure SwiftUI/Foundation and does NO RFCOMM — it shells `bose-ctl`, so the two never drift and the app can't reintroduce a transport/poll bug.
 
 ### Android (`android/`) — regenerated protocol on the kept architecture
@@ -295,7 +295,7 @@ surface. Keep this in sync when adding a verb or control.
 
 | Capability | Block,Func | `bose-ctl` | Raycast | Hammerspoon | Android |
 |------------|-----------|-----------|---------|-------------|---------|
-| ANC mode | 1F,03 | ✅ `anc` | 👁 (in status) | ✅ Opt+N cycle + call-app hook | ✅ mode selector |
+| ANC mode | 1F,03 | ✅ `anc` | 👁 (in status) | ✅ Opt+N cycle | ✅ mode selector |
 | Noise level (CNC) | **1F,06** | ✅ `anc-level` (custom modes) | ✅ `bose-anc-level` | — | ✅ slider (1F,06 RMW, custom modes only) |
 | Device name | 01,02 | ✅ `name` | — | — | ✅ rename |
 | EQ band | 01,07 | ✅ `eq` | 👁 (in status) | — | ✅ 3-band |
@@ -326,7 +326,7 @@ applies {ANC mode, noise level, EQ, multipoint, volume} in one session (CLI +
 `bose-profile.sh` Raycast; drivable from macOS Focus via a Shortcut, see README).
 
 **Notable gaps (intentional):** Hammerspoon now does Opt+B (open app), Opt+⇧B (toggle),
-Opt+N (ANC cycle), Opt+J (connect → Mac), and a call-app launch hook — still all event-driven, no timers. Raycast
+Opt+N (ANC cycle), Opt+J (connect → Mac) — still all event-driven, no timers. Raycast
 covers the common dropdowns plus full-status / anc-level / profile; deeper config
 (EQ/name/multipoint) is CLI- or Android-only by design. The macOS surface has
 **no resident process** — every reading is on-demand, never polled.

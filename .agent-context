@@ -2,8 +2,8 @@
 # Max 20 lines. Updated by agent on Stop hook.
 
 ## Feature
-match Bose app by bundleID so Opt+B hides it
-match Bose app by bundleID so Opt+B hides it
+Remove Teams/Zoom/Meet launch → ANC aware watcher from bose.lua
+Remove Teams/Zoom/Meet launch → ANC aware watcher from bose.lua
 
 ## Current State
 Not started. No work has been done yet.

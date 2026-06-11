@@ -1,10 +1,10 @@
-# Agent Progress - fix-optb-bundleid
+# Agent Progress - rm-call-aware-watcher
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-06-09T22:01:34Z
+# Created: 2026-06-11T20:58:15Z
 
-feature=fix-optb-bundleid
-name=match Bose app by bundleID so Opt+B hides it
+feature=rm-call-aware-watcher
+name=Remove Teams/Zoom/Meet launch → ANC aware watcher from bose.lua
 status=pending
 step=0
 step_name=Not started
-created=2026-06-09T22:01:34Z
+created=2026-06-11T20:58:15Z
