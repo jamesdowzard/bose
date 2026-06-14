@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build "Bose.app" — the windowed macOS controller.
+# Build "bose.app" — the windowed macOS controller.
 #
 # The app is a THIN FRONT-END over `bose`: it shells the CLI for every read
 # (`info --json`) and write (anc/volume/eq/multipoint/anc-depth/connect/profile).
@@ -15,7 +15,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$SCRIPT_DIR/build"
-APP_NAME="Bose"
+APP_NAME="bose"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 MACOS_DIR="$APP_BUNDLE/Contents/MacOS"
 RESOURCES_DIR="$APP_BUNDLE/Contents/Resources"
