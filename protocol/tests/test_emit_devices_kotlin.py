@@ -29,7 +29,18 @@ def test_emits_device_map_with_mac_bytes():
 
 def test_emits_cycle_order():
     src = emit_devices_kotlin(SPEC)
-    assert 'val CYCLE_ORDER = listOf("mac", "quest", "ipad", "iphone", "tv", "phone")' in src
+    assert (
+        'val CYCLE_ORDER = listOf("mac", "quest", "ipad", "iphone", "tv", "appletv", "phone")'
+        in src
+    )
+
+
+def test_emits_optional_label_field():
+    src = emit_devices_kotlin(SPEC)
+    # BoseDevice carries an optional friendly label (null -> fall back to name).
+    assert "val label: String? = null" in src
+    assert 'label = "Katrina\'s Apple TV"' in src
+    assert "label = null" in src
 
 
 def test_emits_widget_set_excludes_tv():

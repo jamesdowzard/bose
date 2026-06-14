@@ -186,9 +186,12 @@ payload = ["00", "mac:mac"]
 [commands.connect_device.verified_bytes]
 # `04,01,05,07,00,{MAC}` — mac device from device map (BC:D0:74:11:DB:27)
 connect_mac = "04 01 05 07 00 BC D0 74 11 DB 27"
+# appletv (Katrina's Apple TV) — 48:E1:5C:5D:33:B6
+connect_appletv = "04 01 05 07 00 48 E1 5C 5D 33 B6"
 
 [commands.connect_device.test_args]
 connect_mac = { mac = "BC:D0:74:11:DB:27" }
+connect_appletv = { mac = "48:E1:5C:5D:33:B6" }
 
 [commands.disconnect_device]
 block = 0x04

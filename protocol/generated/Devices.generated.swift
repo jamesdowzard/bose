@@ -16,6 +16,7 @@ struct BoseDevice: Identifiable {
     let name: String
     let mac: [UInt8]
     let widget: Bool
+    let label: String?  // friendly display name; nil -> fall back to name
     var id: String { name }
     var macString: String {
         mac.map { String(format: "%02X", $0) }.joined(separator: ":")
@@ -24,15 +25,16 @@ struct BoseDevice: Identifiable {
 
 enum BoseDeviceMap {
     static let knownDevices: [BoseDevice] = [
-        BoseDevice(name: "mac", mac: [0xBC, 0xD0, 0x74, 0x11, 0xDB, 0x27], widget: true),
-        BoseDevice(name: "quest", mac: [0x78, 0xC4, 0xFA, 0xC8, 0x5C, 0x3D], widget: true),
-        BoseDevice(name: "ipad", mac: [0xF4, 0x81, 0xC4, 0xB5, 0xFA, 0xAB], widget: true),
-        BoseDevice(name: "iphone", mac: [0xF8, 0x4D, 0x89, 0xC4, 0xB6, 0xED], widget: true),
-        BoseDevice(name: "tv", mac: [0x14, 0xC1, 0x4E, 0xB7, 0xCB, 0x68], widget: false),
-        BoseDevice(name: "phone", mac: [0xA8, 0x76, 0x50, 0xD3, 0xB1, 0x1B], widget: true),
+        BoseDevice(name: "mac", mac: [0xBC, 0xD0, 0x74, 0x11, 0xDB, 0x27], widget: true, label: nil),
+        BoseDevice(name: "quest", mac: [0x78, 0xC4, 0xFA, 0xC8, 0x5C, 0x3D], widget: true, label: nil),
+        BoseDevice(name: "ipad", mac: [0xF4, 0x81, 0xC4, 0xB5, 0xFA, 0xAB], widget: true, label: nil),
+        BoseDevice(name: "iphone", mac: [0xF8, 0x4D, 0x89, 0xC4, 0xB6, 0xED], widget: true, label: nil),
+        BoseDevice(name: "tv", mac: [0x14, 0xC1, 0x4E, 0xB7, 0xCB, 0x68], widget: false, label: nil),
+        BoseDevice(name: "appletv", mac: [0x48, 0xE1, 0x5C, 0x5D, 0x33, 0xB6], widget: false, label: "Katrina's Apple TV"),
+        BoseDevice(name: "phone", mac: [0xA8, 0x76, 0x50, 0xD3, 0xB1, 0x1B], widget: true, label: nil),
     ]
 
-    static let cycleOrder = ["mac", "quest", "ipad", "iphone", "tv", "phone"]
+    static let cycleOrder = ["mac", "quest", "ipad", "iphone", "tv", "appletv", "phone"]
 
     static func device(_ name: String) -> BoseDevice? {
         knownDevices.first { $0.name == name.lowercased() }
