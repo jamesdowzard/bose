@@ -2,8 +2,8 @@
 # Max 20 lines. Updated by agent on Stop hook.
 
 ## Feature
-fix-wear-detection-decode — 08,07 on-head byte mislabels worn as off-head
-fix-wear-detection-decode — 08,07 on-head byte mislabels worn as off-head
+Rename bose-ctl to bose and Bose Control.app to Bose.app
+Rename bose-ctl to bose and Bose Control.app to Bose.app
 
 ## Current State
 Not started. No work has been done yet.

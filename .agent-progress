@@ -1,10 +1,10 @@
-# Agent Progress - fix-wear-detection-decode
+# Agent Progress - rename-to-bose
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-06-11T20:17:34Z
+# Created: 2026-06-14T01:33:12Z
 
-feature=fix-wear-detection-decode
-name=fix-wear-detection-decode — 08,07 on-head byte mislabels worn as off-head
+feature=rename-to-bose
+name=Rename bose-ctl to bose and Bose Control.app to Bose.app
 status=pending
 step=0
 step_name=Not started
-created=2026-06-11T20:17:34Z
+created=2026-06-14T01:33:12Z

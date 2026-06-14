@@ -5,7 +5,7 @@
 -- poller was the original audio-dropout cause, so this module must never introduce one.
 --
 -- Features:
---   • Opt+B  — show/hide the Bose Control app, the windowed control surface (press once
+--   • Opt+B  — show/hide the Bose app, the windowed control surface (press once
 --              to open/focus, again to hide). Switch devices/ANC/EQ from its tiles.
 --   • Opt+⇧B — no-look toggle of audio between Mac and phone (direction from Mac's
 --              output device). The former Opt+B; kept as a fallback to the app. On the

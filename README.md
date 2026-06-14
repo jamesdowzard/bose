@@ -79,7 +79,7 @@ The cardinal rule is **no background polling of the headphones**. These hooks fi
 keypress or an OS event, then make one on-demand `bose` call.
 
 **Hammerspoon** (`hammerspoon/bose.lua`, reload Hammerspoon after editing):
-- `Opt+B` — show/hide the Bose Control app (press once to open/focus, again to hide) — switch devices/ANC/EQ from its tiles.
+- `Opt+B` — show/hide the Bose app (press once to open/focus, again to hide) — switch devices/ANC/EQ from its tiles.
 - `Opt+⇧B` — toggle audio Mac ↔ phone (also warns if battery ≤ 20%, piggybacking the press).
 - `Opt+N` — cycle ANC quiet → aware → immersion.
 - `Opt+J` — bring the headphones to this Mac (always connects the Mac, no direction-guessing).

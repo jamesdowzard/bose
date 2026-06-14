@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build "Bose Control.app" — the windowed macOS controller.
+# Build "Bose.app" — the windowed macOS controller.
 #
 # The app is a THIN FRONT-END over `bose`: it shells the CLI for every read
 # (`info --json`) and write (anc/volume/eq/multipoint/anc-depth/connect/profile).
