@@ -197,9 +197,12 @@ own MAC. Use `getConnectedDevices` (05,01) for audio-active devices and
 | ipad | F4:81:C4:B5:FA:AB | yes | |
 | iphone | F8:4D:89:C4:B6:ED | yes | |
 | tv | 14:C1:4E:B7:CB:68 | macOS only | Chromecast |
+| appletv | 48:E1:5C:5D:33:B6 | macOS + S21 in-app | Katrina's Apple TV 4K (label "Katrina's Apple TV"; `widget=false` → no home-screen widget) |
 | quest | 78:C4:FA:C8:5C:3D | yes | Meta Quest 3 |
 
-**Cycle order** (bose): `mac → quest → ipad → iphone → tv → phone`
+A device's optional `label` (devices.toml) is the friendly display name shared by the Mac app + S21 in-app tile; absent → fall back to the key.
+
+**Cycle order** (bose): `mac → quest → ipad → iphone → tv → appletv → phone`
 
 ## BMAP Function IDs (Block 0x04 — DeviceManagement)
 
