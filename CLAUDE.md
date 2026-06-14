@@ -202,6 +202,17 @@ own MAC. Use `getConnectedDevices` (05,01) for audio-active devices and
 
 A device's optional `label` (devices.toml) is the friendly display name shared by the Mac app + S21 in-app tile; absent → fall back to the key.
 
+**Connection priority** (`priority` in devices.toml; 1 = highest):
+`1 mac → 2 phone → 3 appletv → 4 ipad → 5 quest → 6 tv → 7 iphone`.
+The headset holds 2 devices (multipoint) and the firmware only evicts by its own LRU
+(`ConnectionPriority 0x10` is FuncNotSupp — see `docs/reverse-engineering.md`). So the
+CLI's `connect`/`swap` enforce the hierarchy in software: when both slots are full and
+the target isn't already connected, it **disconnects the lowest-priority of the two held
+devices first**, then pages the target — and **restores the evicted device if the target
+fails to connect** (`evictLowestPriorityIfFull` / `restoreEvicted` in `cli/main.swift`).
+Mac app / Raycast / Hammerspoon inherit this (they shell `bose`). **Android does NOT yet
+replicate it** (TODO — parity).
+
 **Cycle order** (bose): `mac → quest → ipad → iphone → tv → appletv → phone`
 
 ## BMAP Function IDs (Block 0x04 — DeviceManagement)

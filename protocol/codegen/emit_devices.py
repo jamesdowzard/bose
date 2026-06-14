@@ -65,6 +65,7 @@ def emit_devices_swift(spec: dict) -> str:
     lines.append("    let mac: [UInt8]")
     lines.append("    let widget: Bool")
     lines.append("    let label: String?  // friendly display name; nil -> fall back to name")
+    lines.append("    let priority: Int   // 1 = highest; lowest-priority held device is evicted on a full-multipoint connect")
     lines.append("    var id: String { name }")
     lines.append("    var macString: String {")
     lines.append('        mac.map { String(format: "%02X", $0) }.joined(separator: ":")')
@@ -79,9 +80,10 @@ def emit_devices_swift(spec: dict) -> str:
         widget = "true" if d.get("widget", False) else "false"
         label = d.get("label")
         label_lit = f'"{label}"' if label else "nil"
+        prio = d.get("priority", 999)
         lines.append(
             f'        BoseDevice(name: "{name}", mac: [{_mac_bytes_literal(d["mac"])}], '
-            f"widget: {widget}, label: {label_lit}),"
+            f"widget: {widget}, label: {label_lit}, priority: {prio}),"
         )
     lines.append("    ]")
     lines.append("")
@@ -123,6 +125,7 @@ def emit_devices_kotlin(spec: dict) -> str:
     lines.append("    val mac: ByteArray,")
     lines.append("    val widget: Boolean,")
     lines.append("    val label: String? = null,  // friendly display name; null -> fall back to name")
+    lines.append("    val priority: Int = 999,  // 1 = highest; lowest-priority held device is evicted on a full-multipoint connect")
     lines.append(") {")
     lines.append('    val macString: String get() = mac.joinToString(":") { "%02X".format(it) }')
     lines.append("")
@@ -131,12 +134,12 @@ def emit_devices_kotlin(spec: dict) -> str:
     lines.append("        if (this === other) return true")
     lines.append("        if (other !is BoseDevice) return false")
     lines.append("        return name == other.name && mac.contentEquals(other.mac) &&")
-    lines.append("            widget == other.widget && label == other.label")
+    lines.append("            widget == other.widget && label == other.label && priority == other.priority")
     lines.append("    }")
     lines.append("")
     lines.append("    override fun hashCode(): Int =")
-    lines.append("        ((name.hashCode() * 31 + mac.contentHashCode()) * 31 + widget.hashCode()) * 31 +")
-    lines.append("            (label?.hashCode() ?: 0)")
+    lines.append("        (((name.hashCode() * 31 + mac.contentHashCode()) * 31 + widget.hashCode()) * 31 +")
+    lines.append("            (label?.hashCode() ?: 0)) * 31 + priority")
     lines.append("}")
     lines.append("")
     lines.append("/** Single source of truth for the paired device map (from devices.toml). */")
@@ -148,9 +151,10 @@ def emit_devices_kotlin(spec: dict) -> str:
         widget = "true" if d.get("widget", False) else "false"
         label = d.get("label")
         label_lit = f'"{label}"' if label else "null"
+        prio = d.get("priority", 999)
         lines.append(
             f'        BoseDevice("{name}", byteArrayOf({_kt_mac_bytes_literal(d["mac"])}), '
-            f"widget = {widget}, label = {label_lit}),"
+            f"widget = {widget}, label = {label_lit}, priority = {prio}),"
         )
     lines.append("    )")
     lines.append("")

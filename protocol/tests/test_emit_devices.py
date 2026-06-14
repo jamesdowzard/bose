@@ -42,3 +42,10 @@ def test_emits_optional_label_field():
     # appletv has a friendly label; devices without one emit nil.
     assert 'label: "Katrina\'s Apple TV"' in src
     assert "label: nil" in src
+
+
+def test_emits_priority_field():
+    src = emit_devices_swift(SPEC)
+    assert "let priority: Int" in src
+    assert "priority: 1)" in src  # mac — highest priority
+    assert "priority: 2)" in src  # phone
