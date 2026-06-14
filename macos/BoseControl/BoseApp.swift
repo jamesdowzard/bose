@@ -18,7 +18,7 @@ struct BoseControlApp: App {
                     manager.refreshState()
                 }
         }
-        .defaultSize(width: 640, height: 360)
+        .defaultSize(width: 640, height: 420)
         .windowResizability(.contentSize)
         .windowStyle(.hiddenTitleBar)  // no title bar chrome — paper runs edge-to-edge
     }
