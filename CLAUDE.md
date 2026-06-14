@@ -218,6 +218,12 @@ A device's optional `label` (devices.toml) is the friendly display name shared b
 
 ## Transport & Operators (verified 2026-04-05, corrected via APK decompilation)
 
+> **Decompile archive + findings:** `docs/reverse-engineering.md` — the Bose Music
+> v13.0.7 APK + full jadx source are archived on S3; that doc holds the BMAP frame
+> format, the DeviceManagement (0x04) function-ID table, and proven/dead-end notes
+> (e.g. `ConnectionPriority 0x10` is FuncNotSupp on the QC Ultra 2 — no firmware
+> device-priority hierarchy). Grep it before re-decompiling.
+
 > **Source of truth:** the tables below are the human-readable mirror of
 > `protocol/spec/bmap.toml`. To change a command/operator/enum, edit `bmap.toml`
 > (with `verified_bytes` for any concrete capture), run `cd protocol && make gen`,
