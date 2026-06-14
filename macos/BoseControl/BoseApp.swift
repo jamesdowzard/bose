@@ -20,5 +20,6 @@ struct BoseControlApp: App {
         }
         .defaultSize(width: 640, height: 360)
         .windowResizability(.contentSize)
+        .windowStyle(.hiddenTitleBar)  // no title bar chrome — paper runs edge-to-edge
     }
 }
