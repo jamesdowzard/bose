@@ -1,7 +1,7 @@
 -- bose.lua — Hammerspoon control for the Bose QC Ultra (on-demand, never polled).
 --
 -- Everything here is EVENT-DRIVEN: a keypress or an OS event triggers one async
--- `bose-ctl` call (the on-demand RFCOMM CLI). Nothing runs on a timer — a resident
+-- `bose` call (the on-demand RFCOMM CLI). Nothing runs on a timer — a resident
 -- poller was the original audio-dropout cause, so this module must never introduce one.
 --
 -- Features:
@@ -22,7 +22,7 @@
 local M = {}
 
 -- Config ---------------------------------------------------------------------
-local CTL          = os.getenv("HOME") .. "/bin/bose-ctl"
+local CTL          = os.getenv("HOME") .. "/bin/bose"
 local BOSE_NAME    = "verBosita"             -- macOS output-device name when on the Mac
 local MAC_SPEAKERS = "MacBook Pro Speakers"  -- Mac audio falls back here after "→ phone"
 
@@ -68,12 +68,12 @@ local function setMacOutput(name)
   if dev then dev:setDefaultOutputDevice() end
 end
 
--- Fire-and-forget bose-ctl (exit code only).
+-- Fire-and-forget bose (exit code only).
 local function ctl(args, done)
   hs.task.new(CTL, function(code) if done then done(code == 0) end end, args):start()
 end
 
--- bose-ctl with stdout captured (for reads like battery / anc).
+-- bose with stdout captured (for reads like battery / anc).
 local function ctlRead(args, done)
   hs.task.new(CTL, function(code, stdout) done(code == 0, stdout or "") end, args):start()
 end

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build bose-ctl (CLI) on the generated protocol + transport layer.
+# Build bose (CLI) on the generated protocol + transport layer.
 #
 # Compiles the generated BMAP/Devices Swift (from protocol/spec/bmap.toml) plus the
 # Swift core (Transport/Parsers/Composites, here in cli/) and main.swift. The Swift
@@ -8,8 +8,8 @@
 # Hammerspoon hotkey (see raycast/ and hammerspoon/) that shell out to this binary —
 # there is no resident menu-bar app.
 #
-# Output: cli/build/bose-ctl in the worktree. This script does NOT install over
-# ~/bin/bose-ctl — install that yourself (see CLAUDE.md) once hardware-tested.
+# Output: cli/build/bose in the worktree. This script does NOT install over
+# ~/bin/bose — install that yourself (see CLAUDE.md) once hardware-tested.
 #
 # Requires: Xcode command line tools (xcode-select --install).
 set -euo pipefail
@@ -18,9 +18,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 GEN_DIR="$REPO_ROOT/protocol/generated"
 BUILD_DIR="$SCRIPT_DIR/build"
-BIN="$BUILD_DIR/bose-ctl"
+BIN="$BUILD_DIR/bose"
 
-echo "Building bose-ctl (CLI)..."
+echo "Building bose (CLI)..."
 
 # Regenerate the protocol layer so a stale generated file can't ship. Skippable
 # with NO_REGEN=1 if uv isn't available on the build host.

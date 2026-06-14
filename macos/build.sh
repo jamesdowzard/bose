@@ -1,7 +1,7 @@
 #!/bin/bash
 # Build "Bose Control.app" — the windowed macOS controller.
 #
-# The app is a THIN FRONT-END over `bose-ctl`: it shells the CLI for every read
+# The app is a THIN FRONT-END over `bose`: it shells the CLI for every read
 # (`info --json`) and write (anc/volume/eq/multipoint/anc-depth/connect/profile).
 # It holds NO RFCOMM channel and links NO IOBluetooth — so it can't reintroduce the
 # polling/transport bugs, and it inherits every CLI fix for free. That's why this
@@ -29,7 +29,7 @@ mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 cp "$SRC/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
 
 # Pure SwiftUI/Foundation — no IOBluetooth, no protocol sources. The app shells
-# `bose-ctl`, which owns all RFCOMM.
+# `bose`, which owns all RFCOMM.
 swiftc -O \
     -target arm64-apple-macos13.0 \
     -sdk "$(xcrun --show-sdk-path)" \

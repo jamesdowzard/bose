@@ -9,4 +9,4 @@
 # @raycast.icon 🎧
 # @raycast.packageName Bose
 
-"$HOME/bin/bose-ctl" info
+"$HOME/bin/bose" info

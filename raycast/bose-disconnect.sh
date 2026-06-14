@@ -8,4 +8,4 @@
 # @raycast.packageName Bose
 # @raycast.argument1 { "type": "dropdown", "placeholder": "Device", "data": [{"title":"Mac","value":"mac"},{"title":"Phone","value":"phone"},{"title":"iPad","value":"ipad"},{"title":"iPhone","value":"iphone"},{"title":"Quest","value":"quest"},{"title":"TV","value":"tv"}] }
 
-"$HOME/bin/bose-ctl" disconnect "$1"
+"$HOME/bin/bose" disconnect "$1"

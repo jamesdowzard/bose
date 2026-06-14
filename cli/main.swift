@@ -1,4 +1,4 @@
-/// bose-ctl: CLI for the Bose QC Ultra 2, rebuilt on the shared generated layer.
+/// bose: CLI for the Bose QC Ultra 2, rebuilt on the shared generated layer.
 ///
 /// v2 rewrite (Phase 4): every command routes through the GENERATED builders
 /// (`BMAP.*` from bmap.toml) + the SAME hand-written `Transport`/`Composites`/
@@ -38,7 +38,7 @@ func displayName(forMac mac: [UInt8]) -> String {
     BoseDeviceMap.name(forMac: mac) ?? macString(mac)
 }
 
-/// Display name for an audio-ACTIVE (05,01) device. `bose-ctl` only ever runs on
+/// Display name for an audio-ACTIVE (05,01) device. `bose` only ever runs on
 /// the Mac, and the Bose firmware reports the Mac's own audio link under a
 /// non-resolvable private address (e.g. 0C:96:E6:05:3E:F2) that does NOT match the
 /// static [devices.mac] controller address — while every OTHER device reports its
@@ -121,7 +121,7 @@ func cmdInfo() {
 
 /// info --json — the same getAllState snapshot as `info`, plus the per-device 3-state
 /// (active/connected/offline) from getDeviceStates, emitted as one JSON object. This
-/// is the read seam the windowed macOS app consumes — the app shells `bose-ctl` and
+/// is the read seam the windowed macOS app consumes — the app shells `bose` and
 /// never touches RFCOMM itself, so it can't reintroduce the polling/transport bugs.
 /// Pure formatting over existing composites — no protocol/spec change.
 func cmdInfoJSON() {
@@ -280,7 +280,7 @@ func cmdProfile(_ a: [String]) {
 
     if a.isEmpty {
         if store.profiles.isEmpty {
-            print("No profiles. Save one: bose-ctl profile save <name>")
+            print("No profiles. Save one: bose profile save <name>")
         } else {
             print("Profiles (\(path)):")
             for p in store.profiles { print("  \(p.name)\(p.summary)") }
@@ -290,7 +290,7 @@ func cmdProfile(_ a: [String]) {
 
     switch a[0].lowercased() {
     case "save":
-        guard a.count >= 2 else { fail("usage: bose-ctl profile save <name>") }
+        guard a.count >= 2 else { fail("usage: bose profile save <name>") }
         let name = a[1...].joined(separator: " ")
         guard let s = transport.getAllState() else { fail("headphones not reachable") }
         store.upsert(Profile(capturing: s, name: name))
@@ -298,7 +298,7 @@ func cmdProfile(_ a: [String]) {
         print("Saved profile '\(name)'\(Profile(capturing: s, name: name).summary)")
 
     case "rm", "remove", "delete":
-        guard a.count >= 2 else { fail("usage: bose-ctl profile rm <name>") }
+        guard a.count >= 2 else { fail("usage: bose profile rm <name>") }
         let name = a[1...].joined(separator: " ")
         guard store.profile(named: name) != nil else { fail("unknown profile: \(name)") }
         store.profiles.removeAll { $0.name.lowercased() == name.lowercased() }
@@ -308,7 +308,7 @@ func cmdProfile(_ a: [String]) {
     default:
         let name = a.joined(separator: " ")
         guard let p = store.profile(named: name) else {
-            fail("unknown profile: \(name) (list: bose-ctl profile)")
+            fail("unknown profile: \(name) (list: bose profile)")
         }
         guard transport.applyProfile(p) else { fail("failed to apply '\(name)'") }
         print("Applied '\(name)'\(p.summary)")
@@ -477,7 +477,7 @@ func cmdEq(_ eqArgs: [String]) {
         guard eqArgs.count == 3,
               let bass = Int(eqArgs[0]), let mid = Int(eqArgs[1]), let treble = Int(eqArgs[2]),
               (-10...10).contains(bass), (-10...10).contains(mid), (-10...10).contains(treble) else {
-            fail("usage: bose-ctl eq <bass> <mid> <treble> (each -10 to +10)")
+            fail("usage: bose eq <bass> <mid> <treble> (each -10 to +10)")
         }
         // Send all three bands in ONE session (the applyProfile pattern). Three
         // separate oneShots would open a fresh channel per band and intermittently
@@ -527,25 +527,25 @@ func cmdRaw(_ hex: String) {
 
 func usage() {
     print("""
-    bose-ctl — Bose QC Ultra 2 control (direct RFCOMM, generated BMAP layer)
+    bose — Bose QC Ultra 2 control (direct RFCOMM, generated BMAP layer)
 
     Usage:
-      bose-ctl status               Connection, battery, ANC, volume, EQ (one session)
-      bose-ctl info [--json]        Full state: identity, power, all audio config, devices (--json for the app)
-      bose-ctl battery              Battery level
-      bose-ctl devices              Known devices: ● active / ○ connected / · offline
-      bose-ctl connect <device>     Route audio to device (poll-confirmed)
-      bose-ctl disconnect <device>  Disconnect a device
-      bose-ctl swap <device>        Route audio to device (multipoint; keeps others)
-      bose-ctl anc [mode]           Get/set ANC (quiet/aware/immersion/cinema/custom1/custom2, or slot 0-5)
-      bose-ctl anc-level [0-10]     Get/set active mode's noise level (0=max cancel … 10=transparent; custom modes only)
-      bose-ctl name [new name]      Get/set headphone name (max 30 UTF-8 bytes)
-      bose-ctl volume [0-31]        Get/set volume
-      bose-ctl multipoint [on|off]  Get/set multipoint
-      bose-ctl play|pause|next|prev Media transport
-      bose-ctl eq [bass mid treble] Get/set EQ (each -10 to +10)
-      bose-ctl profile [name]       Apply a preset (bare = list); save <name> / rm <name>
-      bose-ctl raw <hex>            Send raw BMAP bytes
+      bose status               Connection, battery, ANC, volume, EQ (one session)
+      bose info [--json]        Full state: identity, power, all audio config, devices (--json for the app)
+      bose battery              Battery level
+      bose devices              Known devices: ● active / ○ connected / · offline
+      bose connect <device>     Route audio to device (poll-confirmed)
+      bose disconnect <device>  Disconnect a device
+      bose swap <device>        Route audio to device (multipoint; keeps others)
+      bose anc [mode]           Get/set ANC (quiet/aware/immersion/cinema/custom1/custom2, or slot 0-5)
+      bose anc-level [0-10]     Get/set active mode's noise level (0=max cancel … 10=transparent; custom modes only)
+      bose name [new name]      Get/set headphone name (max 30 UTF-8 bytes)
+      bose volume [0-31]        Get/set volume
+      bose multipoint [on|off]  Get/set multipoint
+      bose play|pause|next|prev Media transport
+      bose eq [bass mid treble] Get/set EQ (each -10 to +10)
+      bose profile [name]       Apply a preset (bare = list); save <name> / rm <name>
+      bose raw <hex>            Send raw BMAP bytes
 
     Devices: \(BoseDeviceMap.knownDevices.map { $0.name }.joined(separator: ", "))
     """)
@@ -555,7 +555,7 @@ let args = CommandLine.arguments
 guard args.count >= 2 else { usage(); exit(0) }
 
 func requireArg(_ name: String) -> String {
-    guard args.count >= 3 else { fail("Usage: bose-ctl \(args[1].lowercased()) <\(name)>") }
+    guard args.count >= 3 else { fail("Usage: bose \(args[1].lowercased()) <\(name)>") }
     return args[2].lowercased()
 }
 

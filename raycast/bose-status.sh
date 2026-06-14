@@ -8,4 +8,4 @@
 # @raycast.icon 🎧
 # @raycast.packageName Bose
 
-"$HOME/bin/bose-ctl" status
+"$HOME/bin/bose" status
