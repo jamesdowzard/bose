@@ -337,9 +337,42 @@ func cmdDevices() {
     }
 }
 
+/// Deterministic multipoint eviction. The headset holds at most 2 devices and the
+/// firmware only evicts by its own LRU. When both slots are full and `target` isn't
+/// already one of them, drop the LOWEST-priority (highest `priority` number) of the
+/// two held devices first, so the caller's connect lands the new device against the
+/// hierarchy in devices.toml instead of whatever the firmware would have dropped.
+/// Returns the device it evicted (so the caller can restore it if the connect that
+/// follows fails to land — never leave a multipoint slot empty for nothing).
+@discardableResult
+func evictLowestPriorityIfFull(target: [UInt8]) -> BoseDevice? {
+    guard let st = transport.getDeviceStates(query: BoseDeviceMap.knownDevices.map { $0.mac })
+    else { return nil }
+    let targetKey = macString(target)
+    var heldKeys = Set<String>()
+    for m in st.active + st.connected { heldKeys.insert(macString(m)) }
+    if heldKeys.contains(targetKey) { return nil }   // already connected — nothing to evict
+    if heldKeys.count < 2 { return nil }             // a slot is free — no eviction needed
+    let held = BoseDeviceMap.knownDevices.filter { heldKeys.contains(macString($0.mac)) }
+    guard let victim = held.max(by: { $0.priority < $1.priority }) else { return nil }
+    _ = transport.oneShot(BMAP.disconnectDevice(mac: victim.mac))
+    if isMacDevice(victim.mac) { runBlueutil(["--disconnect", Headphone.mac]) }
+    print("Evicted \(victim.name) (priority \(victim.priority)) to free a multipoint slot")
+    Thread.sleep(forTimeInterval: 0.8)           // let the slot clear before paging the target
+    return victim
+}
+
+/// Re-page a device we evicted, after the target connect failed — restores the prior pair.
+func restoreEvicted(_ victim: BoseDevice, failedTarget: String) {
+    _ = transport.oneShot(BMAP.connectDevice(mac: victim.mac))
+    if isMacDevice(victim.mac) { runBlueutil(["--connect", Headphone.mac]) }
+    print("Restored \(victim.name) (target \(failedTarget) was unreachable)")
+}
+
 /// connect / c <device> — poll-confirm via getConnectedDevices (ACK is NOT success).
 func cmdConnect(_ deviceName: String) {
     let mac = macForName(deviceName)
+    let evicted = evictLowestPriorityIfFull(target: mac)
 
     // For the Mac itself, ensure A2DP first (macOS link), like v1/the app.
     if isMacDevice(mac) {
@@ -352,7 +385,9 @@ func cmdConnect(_ deviceName: String) {
     switch confirmConnect(mac) {
     case .active: print("Connected \(deviceName)")
     case .idle:   print("Connected \(deviceName) (idle — audio stayed on the active device; multipoint)")
-    case .none:   fail("connect \(deviceName) not confirmed within timeout")
+    case .none:
+        if let evicted = evicted { restoreEvicted(evicted, failedTarget: deviceName) }
+        fail("connect \(deviceName) not confirmed within timeout")
     }
 }
 
@@ -361,6 +396,7 @@ func cmdConnect(_ deviceName: String) {
 /// "Disconnect others" — it never disconnected anything; corrected here + in usage.)
 func cmdSwap(_ targetName: String) {
     let mac = macForName(targetName)
+    let evicted = evictLowestPriorityIfFull(target: mac)
 
     if isMacDevice(mac) {
         runBlueutil(["--connect", Headphone.mac])
@@ -372,7 +408,9 @@ func cmdSwap(_ targetName: String) {
     switch confirmConnect(mac) {
     case .active: print("Swapped to \(targetName)")
     case .idle:   print("Connected \(targetName) (idle — audio stayed on the active device; multipoint)")
-    case .none:   fail("swap to \(targetName) not confirmed within timeout")
+    case .none:
+        if let evicted = evicted { restoreEvicted(evicted, failedTarget: targetName) }
+        fail("swap to \(targetName) not confirmed within timeout")
     }
 }
 

@@ -11,36 +11,43 @@ cycle_order = ["mac", "quest", "ipad", "iphone", "tv", "appletv", "phone"]
 
 [devices.phone]
 mac = "A8:76:50:D3:B1:1B"
+priority = 2
 widget = true
 notes = "Samsung S21 (local device)"
 
 [devices.mac]
 mac = "BC:D0:74:11:DB:27"
+priority = 1
 widget = true
 notes = "MacBook"
 
 [devices.ipad]
 mac = "F4:81:C4:B5:FA:AB"
+priority = 4
 widget = true
 notes = ""
 
 [devices.iphone]
 mac = "F8:4D:89:C4:B6:ED"
+priority = 7
 widget = true
 notes = ""
 
 [devices.tv]
 mac = "14:C1:4E:B7:CB:68"
+priority = 6
 widget = false          # CLAUDE.md: "macOS only" — no Android widget button
 notes = "Chromecast (macOS only)"
 
 [devices.quest]
 mac = "78:C4:FA:C8:5C:3D"
+priority = 5
 widget = true
 notes = "Meta Quest 3"
 
 [devices.appletv]
 mac = "48:E1:5C:5D:33:B6"          # captured live from connected_devices (05,01); 48:E1:5C = Apple OUI
+priority = 3
 label = "Katrina's Apple TV"
 widget = false          # macOS app + S21 in-app tile only — no Android home-screen widget
 notes = "Lounge Room Apple TV 4K (gen 3)"
