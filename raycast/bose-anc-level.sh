@@ -11,4 +11,4 @@
 # @raycast.packageName Bose
 # @raycast.argument1 { "type": "text", "placeholder": "0-10 (0=max cancel, blank=read)", "optional": true }
 
-"$HOME/bin/bose-ctl" anc-level "$1"
+"$HOME/bin/bose" anc-level "$1"

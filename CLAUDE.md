@@ -10,8 +10,8 @@ Both Mac and phone control headphones independently via on-demand RFCOMM.
 No persistent connections. No coordination. No Tailscale dependency.
 
 ```
-Mac:   bose-ctl (CLI)                     → IOBluetooth RFCOMM → Headphones
-Mac:   Raycast / Hammerspoon / Bose Control.app  ─shell→ bose-ctl → Headphones
+Mac:   bose (CLI)                     → IOBluetooth RFCOMM → Headphones
+Mac:   Raycast / Hammerspoon / Bose.app  ─shell→ bose → Headphones
 Phone: BoseControl (Android/Compose)      → Android RFCOMM     → Headphones
 ```
 
@@ -21,13 +21,13 @@ simultaneously one waits, but in practice commands are too brief to collide.
 
 ## Components
 
-### macOS — no resident poller; on-demand surfaces over `bose-ctl`
+### macOS — no resident poller; on-demand surfaces over `bose`
 There is intentionally **no LaunchAgent and nothing that polls** (a resident 10 s
 poll timer was the original audio-dropout cause — #69-era). The Mac control surface
-is three thin front-ends that shell out to the `cli/` binary (`~/bin/bose-ctl`), so
+is three thin front-ends that shell out to the `cli/` binary (`~/bin/bose`), so
 nothing runs in the background and the Mac only touches the headphones on an
 explicit user action.
-- `macos/BoseControl/` -- **Bose Control.app**: a windowed SwiftUI app (warm-paper light
+- `macos/BoseControl/` -- **Bose.app**: a windowed SwiftUI app (warm-paper light
   two-panel: battery/ANC mode/volume/multipoint + device grid + EQ). The light
   theme (burnt-orange `#AF3A03` accent on warm paper, from the Midterm `paper-hc` palette)
   is shared with the Android app; macOS colours live in `ContentView.swift`, Android in
@@ -36,8 +36,8 @@ explicit user action.
   slider** driven by `anc-level` (1F,06) — NOT a raw depth (1F,0A disables ANC, #83).
   The slider is enabled only on the adjustable custom slots (4/5, firmware `cncMutable`)
   and greys out with a "level is fixed" hint on Quiet/Aware/Immersion/Cinema.
-  It is a **thin front-end that shells `bose-ctl`** — NO RFCOMM, NO IOBluetooth, NO
-  protocol code — reading via `bose-ctl info --json` and writing via the verbs. It is
+  It is a **thin front-end that shells `bose`** — NO RFCOMM, NO IOBluetooth, NO
+  protocol code — reading via `bose info --json` and writing via the verbs. It is
   **user-launched and event-driven**: reads on window-open, on app-focus, after each
   write, and on ⌘R — never on a timer. Build `bash macos/build.sh [--install]`
   (Developer-ID signed → `/Applications`; no LaunchAgent). In-window keys: ⌘1-6
@@ -45,12 +45,12 @@ explicit user action.
   Hammerspoon. The `--json` read seam lives in `cli/main.swift` (`cmdInfoJSON`, pure
   formatting over `getAllState` + `getDeviceStates`). It surfaces — but does not fix —
   the #83 flight/ancDepth behaviour; that fix lands in the CLI and the app inherits it.
-- `raycast/bose-connect.sh` / `bose-disconnect.sh` -- Raycast script commands with a device dropdown → `bose-ctl connect|disconnect <device>`
-- `raycast/bose-status.sh` / `bose-full-status.sh` -- `bose-ctl status` / `bose-ctl info`
-- `raycast/bose-anc-level.sh` / `bose-profile.sh` -- `bose-ctl anc-level [0-10]` (active mode's noise level, custom modes only) / `bose-ctl profile [name]` (text arg)
-- `profiles.json` (repo root) -- settings presets ({ANC mode, noise level, EQ, multipoint, volume}) applied by `bose-ctl profile`; versioned + hand-editable, ships flight/office/music. A profile's `noiseLevel` is applied via the `anc-level` (1F,06) RMW and ONLY takes effect on the adjustable custom modes (4/5, `cncMutable`) — named modes set the mode only (a level over quiet/aware/spatial is a no-op; the old 1F,0A depth write disabled ANC, #83). flight = {quiet, multipoint off}. Runtime JSON (not codegen'd TOML) because `profile save` writes it; loader resolves `$BOSE_PROFILES` → repo path → `~/.config/bose/`. Pure logic in `cli/Profiles.swift`, live apply in `cli/Composites.swift` (`applyProfile`).
-- `hammerspoon/bose.lua` -- Hammerspoon module, all **event-driven** (no timers): **Opt+B shows/hides the Bose Control app** (the windowed control surface — press once to open/focus, again to hide; switch devices/ANC/EQ from its tiles), **Opt+⇧B toggles Mac ↔ phone** (the former Opt+B; + one-shot low-battery warn piggybacked on the press), **Opt+N cycles ANC** (quiet→aware→immersion), **Opt+J connects the headphones to this Mac** (unconditional, no toggle direction-guessing; `CONNECT_TARGET` retargets it). Returns a table with `.start()`/`.stop()`. Wired in `init.lua` via `BoseCtl = dofile(os.getenv("HOME").."/code/personal/bose/hammerspoon/bose.lua"); BoseCtl.start()`. Edits apply on Hammerspoon reload.
-- The Swift core that does the actual RFCOMM work lives in `cli/` (see below). The macOS app target (`macos/BoseControl/`) is pure SwiftUI/Foundation and does NO RFCOMM — it shells `bose-ctl`, so the two never drift and the app can't reintroduce a transport/poll bug.
+- `raycast/bose-connect.sh` / `bose-disconnect.sh` -- Raycast script commands with a device dropdown → `bose connect|disconnect <device>`
+- `raycast/bose-status.sh` / `bose-full-status.sh` -- `bose status` / `bose info`
+- `raycast/bose-anc-level.sh` / `bose-profile.sh` -- `bose anc-level [0-10]` (active mode's noise level, custom modes only) / `bose profile [name]` (text arg)
+- `profiles.json` (repo root) -- settings presets ({ANC mode, noise level, EQ, multipoint, volume}) applied by `bose profile`; versioned + hand-editable, ships flight/office/music. A profile's `noiseLevel` is applied via the `anc-level` (1F,06) RMW and ONLY takes effect on the adjustable custom modes (4/5, `cncMutable`) — named modes set the mode only (a level over quiet/aware/spatial is a no-op; the old 1F,0A depth write disabled ANC, #83). flight = {quiet, multipoint off}. Runtime JSON (not codegen'd TOML) because `profile save` writes it; loader resolves `$BOSE_PROFILES` → repo path → `~/.config/bose/`. Pure logic in `cli/Profiles.swift`, live apply in `cli/Composites.swift` (`applyProfile`).
+- `hammerspoon/bose.lua` -- Hammerspoon module, all **event-driven** (no timers): **Opt+B shows/hides the Bose app** (the windowed control surface — press once to open/focus, again to hide; switch devices/ANC/EQ from its tiles), **Opt+⇧B toggles Mac ↔ phone** (the former Opt+B; + one-shot low-battery warn piggybacked on the press), **Opt+N cycles ANC** (quiet→aware→immersion), **Opt+J connects the headphones to this Mac** (unconditional, no toggle direction-guessing; `CONNECT_TARGET` retargets it). Returns a table with `.start()`/`.stop()`. Wired in `init.lua` via `BoseCtl = dofile(os.getenv("HOME").."/code/personal/bose/hammerspoon/bose.lua"); BoseCtl.start()`. Edits apply on Hammerspoon reload.
+- The Swift core that does the actual RFCOMM work lives in `cli/` (see below). The macOS app target (`macos/BoseControl/`) is pure SwiftUI/Foundation and does NO RFCOMM — it shells `bose`, so the two never drift and the app can't reintroduce a transport/poll bug.
 
 ### Android (`android/`) — regenerated protocol on the kept architecture
 - `android/` -- Jetpack Compose app (package: `au.com.jd.bose`)
@@ -68,11 +68,11 @@ explicit user action.
 - Companion device registered for background FGS privileges
 
 ### CLI (`cli/`) — regenerated on the shared layer
-- `cli/main.swift` -- `bose-ctl` command surface (status/battery/anc/devices/connect/disconnect/swap/volume/multipoint/play-pause-next-prev/eq/raw). **No inline byte parsing** — every command routes through the generated `BMAP.*` builders. `connect`/`swap` poll-confirm via `getConnectedDevices` (ACK is never success); volume uses the generated SET_GET builder.
+- `cli/main.swift` -- `bose` command surface (status/battery/anc/devices/connect/disconnect/swap/volume/multipoint/play-pause-next-prev/eq/raw). **No inline byte parsing** — every command routes through the generated `BMAP.*` builders. `connect`/`swap` poll-confirm via `getConnectedDevices` (ACK is never success); volume uses the generated SET_GET builder.
 - `cli/Transport.swift` -- IOBluetooth RFCOMM transport (per-command open/drain-300ms/close, cold-start warm-up, serial queue).
 - `cli/Composites.swift` -- live-channel composites (cncLevel RMW, connectedDevices list, getAllState single-session).
 - `cli/Parsers.swift` -- pure, hardware-free response parsers; `cli/Tests/main.swift` + `cli/run-tests.sh` are the standalone unit tests (same captured-byte corpus as Android `Parsers.kt`).
-- `cli/build.sh` -- compiles the generated Swift + `cli/{Transport,Parsers,Composites}.swift` + `cli/main.swift` → `cli/build/bose-ctl`. Does NOT install over `~/bin/bose-ctl`.
+- `cli/build.sh` -- compiles the generated Swift + `cli/{Transport,Parsers,Composites}.swift` + `cli/main.swift` → `cli/build/bose`. Does NOT install over `~/bin/bose`.
 - The Swift core here and the Kotlin app share one protocol source (`protocol/spec/` → `generated/`), so they can't drift on wire encoding.
 
 ### Protocol (`protocol/`) — the single source of truth
@@ -86,14 +86,14 @@ explicit user action.
 # Protocol layer (regenerate Swift + Kotlin from the spec; run golden tests)
 cd protocol && make gen      # or `make check` to also verify no drift + run tests
 
-# bose-ctl (CLI) → cli/build/bose-ctl, then install + the macOS front-ends
+# bose (CLI) → cli/build/bose, then install + the macOS front-ends
 bash cli/build.sh
-cp cli/build/bose-ctl ~/bin/bose-ctl                       # the engine
+cp cli/build/bose ~/bin/bose                       # the engine
 cp raycast/*.sh ~/.config/raycast/script-commands/         # Raycast commands
 # hammerspoon/bose.lua is dofile'd from this repo path by init.lua — no copy needed
 
-# Bose Control.app (windowed) → Developer-ID signed, installed to /Applications
-bash macos/build.sh --install                              # needs ~/bin/bose-ctl present
+# Bose.app (windowed) → Developer-ID signed, installed to /Applications
+bash macos/build.sh --install                              # needs ~/bin/bose present
 
 # Android app (deploy to S21 via ADB)
 cd android && ./gradlew assembleDebug
@@ -199,7 +199,7 @@ own MAC. Use `getConnectedDevices` (05,01) for audio-active devices and
 | tv | 14:C1:4E:B7:CB:68 | macOS only | Chromecast |
 | quest | 78:C4:FA:C8:5C:3D | yes | Meta Quest 3 |
 
-**Cycle order** (bose-ctl): `mac → quest → ipad → iphone → tv → phone`
+**Cycle order** (bose): `mac → quest → ipad → iphone → tv → phone`
 
 ## BMAP Function IDs (Block 0x04 — DeviceManagement)
 
@@ -248,7 +248,7 @@ BMAP operator (SET/0x06 instead of SET_GET/0x02).
 | Disconnect | 04,02 | START | `04,02,05,06,{MAC}` | |
 | Media control | 05,03 | START | `05,03,05,01,{action}` | 01=play 02=pause 03=next 04=prev |
 | **EQ band** | 01,07 | **SET_GET** | `01,07,02,02,{value},{band}` | band: 0=bass 1=mid 2=treble, value: signed -10 to +10 |
-| **Noise level** | **1F,06** | **SET_GET** | per-mode read-modify-write (see below) | 0 = max cancel … 10 = transparency. The CORRECT level command (`bose-ctl anc-level`). Reads a mode's config, changes only the level, forces `ancToggle=1`, writes back — ANC stays anchored to the mode. Only on `cncMutable` modes (custom slots); Quiet/Aware/spatial modes are fixed. |
+| **Noise level** | **1F,06** | **SET_GET** | per-mode read-modify-write (see below) | 0 = max cancel … 10 = transparency. The CORRECT level command (`bose anc-level`). Reads a mode's config, changes only the level, forces `ancToggle=1`, writes back — ANC stays anchored to the mode. Only on `cncMutable` modes (custom slots); Quiet/Aware/spatial modes are fixed. |
 | ~~ANC depth~~ | ~~1F,0A~~ | — | — | **DO NOT USE.** `1F,0A` (AudioModesSettingsConfig) is GLOBAL live-tuning; writing it over an active mode DETACHES the mode → 1F,03 reads 255 = ANC OFF (#83, confirmed audibly). The old `anc-depth` command + Raycast used this — removed. Use `anc-level` (1F,06) instead. |
 
 **Not supported on QC Ultra 2:** StandbyTimer SET (01,04), MotionAutoOff (01,14), OnHeadDetection SET (01,10).
@@ -270,7 +270,7 @@ ancToggle. **Level semantics: 0 = max cancellation (Quiet end), 10 = full transp
 
 - **1F,06 GET** request `1F 06 01 01 {index}`. RESPONSE `1F 06 03 30 {48-byte payload}`; offsets (payload = frame[4:]): `[0]`index, `[1..2]`prompt, `[3]`userConfigurable, `[6..37]`32-byte name, `[41]`mutability bitfield (**bit0 = cncMutable** = level editable; bit4 = ancToggleMutable), `[42]`cncLevel, `[43]`autoCNC, `[44]`spatial, `[46]`windBlock, `[47]`ancToggle.
 - **1F,06 SET_GET** (DIFFERENT layout) `1F 06 02 28 {payload}`: `[0]`index, `[1..2]`prompt, `[3..34]`32-byte name, `[35]`cncLevel, `[36]`autoCNC, `[37]`spatial, `[38]`windBlock, `[39]`ancToggle.
-- `bose-ctl anc-level [0-10]` does the GET→change-level→SET_GET RMW on the **active** mode, forcing `ancToggle=1`, and refuses if the mode's `cncMutable` is false (so it can never disable ANC). Pure parse/build = `parseModeConfig`/`buildModeConfigSet` (Parsers); session RMW = `setActiveModeLevel` (Composites).
+- `bose anc-level [0-10]` does the GET→change-level→SET_GET RMW on the **active** mode, forcing `ancToggle=1`, and refuses if the mode's `cncMutable` is false (so it can never disable ANC). Pure parse/build = `parseModeConfig`/`buildModeConfigSet` (Parsers); session RMW = `setActiveModeLevel` (Composites).
 - Implementation derived from decompiling `com.bose.bosemusic` (`AudioModesModeConfigResponse`, `FBlockAudioModesKt`); see `docs/plans/2026-06-08-cnc-mode-config-proper.md`.
 
 ### BMAP Function IDs (Block 0x05 — Audio)
@@ -293,7 +293,7 @@ surface. Keep this in sync when adding a verb or control.
 
 ### `bmap.toml` commands
 
-| Capability | Block,Func | `bose-ctl` | Raycast | Hammerspoon | Android |
+| Capability | Block,Func | `bose` | Raycast | Hammerspoon | Android |
 |------------|-----------|-----------|---------|-------------|---------|
 | ANC mode | 1F,03 | ✅ `anc` | 👁 (in status) | ✅ Opt+N cycle | ✅ mode selector |
 | Noise level (CNC) | **1F,06** | ✅ `anc-level` (custom modes) | ✅ `bose-anc-level` | — | ✅ slider (1F,06 RMW, custom modes only) |
@@ -312,7 +312,7 @@ surface. Keep this in sync when adding a verb or control.
 
 ### Off-spec diagnostic GETs (issued directly in `getAllState`, not in `bmap.toml`)
 
-| Capability | Block,Func | `bose-ctl` | Raycast | Android |
+| Capability | Block,Func | `bose` | Raycast | Android |
 |------------|-----------|-----------|---------|---------|
 | Serial number | 00,07 | 👁 `info` | 👁 (full status) | 👁 state |
 | Product name | 00,0F | 👁 `info` | 👁 (full status) | 👁 state |
@@ -330,7 +330,7 @@ surface. Keep this in sync when adding a verb or control.
 > Confirmed by decompiling the Bose Music app (v13.0.7, `com.bose.bmap.messages…StatusInEar`)
 > + the device's own `FuncNotSupp` reply. Removed from app/CLI/Android (#104-era cleanup).
 
-**Profiles** compose several of these capabilities at once — a `bose-ctl profile`
+**Profiles** compose several of these capabilities at once — a `bose profile`
 applies {ANC mode, noise level, EQ, multipoint, volume} in one session (CLI +
 `bose-profile.sh` Raycast; drivable from macOS Focus via a Shortcut, see README).
 

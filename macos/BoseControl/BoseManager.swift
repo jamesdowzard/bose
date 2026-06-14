@@ -1,8 +1,8 @@
 /// BoseManager: Observable state for the windowed Bose app.
 ///
-/// This is a THIN FRONT-END over `bose-ctl` — exactly like the Raycast commands and
+/// This is a THIN FRONT-END over `bose` — exactly like the Raycast commands and
 /// the Hammerspoon module. It holds NO RFCOMM channel, imports NO IOBluetooth, and
-/// runs NO timer. Every read shells `bose-ctl info --json`; every write shells the
+/// runs NO timer. Every read shells `bose info --json`; every write shells the
 /// matching verb. Reads happen only on explicit events (window open, window focus,
 /// after a write, manual ⌘R) — never on a poll. The v1 BoseManager's 10 s poll
 /// timer was the audio-dropout root cause (#69-era); this design makes that class of
@@ -43,7 +43,7 @@ final class BoseManager: ObservableObject {
 
     // MARK: - Pending-write state (drives the "applying / connecting" UI)
     //
-    // Writes are optimistic AND confirmed. The catch: a `bose-ctl info` read fired on
+    // Writes are optimistic AND confirmed. The catch: a `bose info` read fired on
     // window-open / focus can still be in flight when the user acts, then land a beat
     // later carrying the PRE-change value and revert the optimistic update — the visible
     // flicker (tap Quiet → snaps back to Aware → settles on Quiet). These flags both
@@ -65,11 +65,11 @@ final class BoseManager: ObservableObject {
 
     // MARK: - Private
 
-    /// Serial queue: one `bose-ctl` invocation at a time (RFCOMM is single-session;
+    /// Serial queue: one `bose` invocation at a time (RFCOMM is single-session;
     /// serialising here mirrors the CLI's own serial channel discipline).
     private let queue = DispatchQueue(label: "com.jamesdowzard.bose-control.cli")
 
-    /// Resolve the engine: $BOSE_CTL → ~/bin/bose-ctl → repo cli/build/bose-ctl.
+    /// Resolve the engine: $BOSE_CTL → ~/bin/bose → repo cli/build/bose.
     private static func resolveBinary() -> String {
         let fm = FileManager.default
         if let env = ProcessInfo.processInfo.environment["BOSE_CTL"], fm.isExecutableFile(atPath: env) {
@@ -77,17 +77,17 @@ final class BoseManager: ObservableObject {
         }
         let home = fm.homeDirectoryForCurrentUser.path
         let candidates = [
-            "\(home)/bin/bose-ctl",
-            "\(home)/code/personal/bose/cli/build/bose-ctl",
+            "\(home)/bin/bose",
+            "\(home)/code/personal/bose/cli/build/bose",
         ]
-        return candidates.first { fm.isExecutableFile(atPath: $0) } ?? "\(home)/bin/bose-ctl"
+        return candidates.first { fm.isExecutableFile(atPath: $0) } ?? "\(home)/bin/bose"
     }
 
     private lazy var binary: String = Self.resolveBinary()
 
     // MARK: - Process runner
 
-    /// Run `bose-ctl <args>` synchronously (caller is already off the main thread).
+    /// Run `bose <args>` synchronously (caller is already off the main thread).
     /// Returns (exitCode, stdout). A spawn failure returns (-1, "").
     @discardableResult
     private func run(_ args: [String]) -> (code: Int32, out: String) {
@@ -185,7 +185,7 @@ final class BoseManager: ObservableObject {
 
     /// Activate an ANC mode by hardware slot index (0-5): 0 quiet, 1 aware,
     /// 2 immersion, 3 cinema (fixed), 4/5 custom (adjustable). Passes the bare
-    /// slot to `bose-ctl anc <n>` so app and CLI share one numbering; `ancMode`
+    /// slot to `bose anc <n>` so app and CLI share one numbering; `ancMode`
     /// (read back from `info`) is the same slot index, so button highlighting matches.
     func setAncMode(_ mode: Int) {
         guard (0...5).contains(mode) else { return }
@@ -227,7 +227,7 @@ final class BoseManager: ObservableObject {
     }
 
     /// Tell the headphones to make `name` the active sink. The tile shows a spinner
-    /// ("Connecting…") for the duration — `bose-ctl connect` poll-confirms internally
+    /// ("Connecting…") for the duration — `bose connect` poll-confirms internally
     /// (ACK is never success) and can take up to ~15 s paging a sleeping device — then
     /// settles to active/connected from the CLI's result, which we trust over the flaky
     /// off-head routing probe (see `assertedActiveDevice`).

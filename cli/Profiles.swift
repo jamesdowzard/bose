@@ -151,7 +151,7 @@ func profileFrames(_ p: Profile, currentCnc: CncConfig?) -> [[UInt8]] {
         frames.append(BMAP.setEqBand(value: clamp(e.treble), band: EqBand.treble.rawValue))
     }
     // NB: profiles do NOT set a CNC noise level. The level is a per-mode property set
-    // via the 1F,06 AudioModesModeConfig RMW (`bose-ctl anc-level`), only on adjustable
+    // via the 1F,06 AudioModesModeConfig RMW (`bose anc-level`), only on adjustable
     // custom modes. The old 1F,0A `ancDepth` write disabled ANC entirely (#83) and is
     // gone. `Profile.ancDepth`/`currentCnc` are retained only so old profiles.json
     // files still decode; the level is never applied here.

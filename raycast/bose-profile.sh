@@ -10,4 +10,4 @@
 # @raycast.packageName Bose
 # @raycast.argument1 { "type": "text", "placeholder": "profile name (blank = list)", "optional": true }
 
-"$HOME/bin/bose-ctl" profile "$1"
+"$HOME/bin/bose" profile "$1"
