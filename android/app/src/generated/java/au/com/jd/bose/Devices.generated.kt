@@ -15,6 +15,7 @@ data class BoseDevice(
     val name: String,
     val mac: ByteArray,
     val widget: Boolean,
+    val label: String? = null,  // friendly display name; null -> fall back to name
 ) {
     val macString: String get() = mac.joinToString(":") { "%02X".format(it) }
 
@@ -22,30 +23,33 @@ data class BoseDevice(
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is BoseDevice) return false
-        return name == other.name && mac.contentEquals(other.mac) && widget == other.widget
+        return name == other.name && mac.contentEquals(other.mac) &&
+            widget == other.widget && label == other.label
     }
 
     override fun hashCode(): Int =
-        (name.hashCode() * 31 + mac.contentHashCode()) * 31 + widget.hashCode()
+        ((name.hashCode() * 31 + mac.contentHashCode()) * 31 + widget.hashCode()) * 31 +
+            (label?.hashCode() ?: 0)
 }
 
 /** Single source of truth for the paired device map (from devices.toml). */
 object BoseDeviceMap {
     /** All known devices, in cycle order. */
     val knownDevices: List<BoseDevice> = listOf(
-        BoseDevice("mac", byteArrayOf(0xBC.toByte(), 0xD0.toByte(), 0x74, 0x11, 0xDB.toByte(), 0x27), widget = true),
-        BoseDevice("quest", byteArrayOf(0x78, 0xC4.toByte(), 0xFA.toByte(), 0xC8.toByte(), 0x5C, 0x3D), widget = true),
-        BoseDevice("ipad", byteArrayOf(0xF4.toByte(), 0x81.toByte(), 0xC4.toByte(), 0xB5.toByte(), 0xFA.toByte(), 0xAB.toByte()), widget = true),
-        BoseDevice("iphone", byteArrayOf(0xF8.toByte(), 0x4D, 0x89.toByte(), 0xC4.toByte(), 0xB6.toByte(), 0xED.toByte()), widget = true),
-        BoseDevice("tv", byteArrayOf(0x14, 0xC1.toByte(), 0x4E, 0xB7.toByte(), 0xCB.toByte(), 0x68), widget = false),
-        BoseDevice("phone", byteArrayOf(0xA8.toByte(), 0x76, 0x50, 0xD3.toByte(), 0xB1.toByte(), 0x1B), widget = true),
+        BoseDevice("mac", byteArrayOf(0xBC.toByte(), 0xD0.toByte(), 0x74, 0x11, 0xDB.toByte(), 0x27), widget = true, label = null),
+        BoseDevice("quest", byteArrayOf(0x78, 0xC4.toByte(), 0xFA.toByte(), 0xC8.toByte(), 0x5C, 0x3D), widget = true, label = null),
+        BoseDevice("ipad", byteArrayOf(0xF4.toByte(), 0x81.toByte(), 0xC4.toByte(), 0xB5.toByte(), 0xFA.toByte(), 0xAB.toByte()), widget = true, label = null),
+        BoseDevice("iphone", byteArrayOf(0xF8.toByte(), 0x4D, 0x89.toByte(), 0xC4.toByte(), 0xB6.toByte(), 0xED.toByte()), widget = true, label = null),
+        BoseDevice("tv", byteArrayOf(0x14, 0xC1.toByte(), 0x4E, 0xB7.toByte(), 0xCB.toByte(), 0x68), widget = false, label = null),
+        BoseDevice("appletv", byteArrayOf(0x48, 0xE1.toByte(), 0x5C, 0x5D, 0x33, 0xB6.toByte()), widget = false, label = "Katrina's Apple TV"),
+        BoseDevice("phone", byteArrayOf(0xA8.toByte(), 0x76, 0x50, 0xD3.toByte(), 0xB1.toByte(), 0x1B), widget = true, label = null),
     )
 
     /** name -> device, insertion-ordered to match cycle order. */
     val byName: Map<String, BoseDevice> =
         knownDevices.associateByTo(LinkedHashMap()) { it.name }
 
-    val CYCLE_ORDER = listOf("mac", "quest", "ipad", "iphone", "tv", "phone")
+    val CYCLE_ORDER = listOf("mac", "quest", "ipad", "iphone", "tv", "appletv", "phone")
 
     /** Devices that get a home-screen widget button (excludes macOS-only ones). */
     val widgetDevices: List<BoseDevice> = knownDevices.filter { it.widget }
