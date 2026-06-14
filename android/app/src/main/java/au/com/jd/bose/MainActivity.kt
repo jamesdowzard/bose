@@ -525,49 +525,61 @@ fun DevicesSection(
     state: BoseViewModel.UiState,
     onSwitch: (String) -> Unit,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        for ((name, deviceState) in state.deviceStates) {
-            val (bgColor, textColor, borderColor) = when (deviceState) {
-                BoseViewModel.DeviceState.ACTIVE ->
-                    Triple(BoseActiveBg, BoseAccent, BoseAccent)
-                BoseViewModel.DeviceState.CONNECTED ->
-                    Triple(Color(0xFFE9EFF6), BoseConnected, BoseConnected)
-                BoseViewModel.DeviceState.OFFLINE ->
-                    Triple(BoseCardBg, BoseDim, BoseHair)
-            }
-
-            Surface(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(56.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .border(1.dp, borderColor, RoundedCornerShape(12.dp))
-                    .clickable { onSwitch(name) },
-                color = bgColor,
-                shape = RoundedCornerShape(12.dp),
+    // Wrap into rows of 4 so 7 devices don't get cramped on the S21. The last
+    // row is padded with invisible weight spacers to keep tile widths uniform.
+    val perRow = 4
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        for (rowItems in state.deviceStates.toList().chunked(perRow)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = name,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = textColor,
-                            textAlign = TextAlign.Center,
-                        )
-                        // State dot
-                        Box(
-                            modifier = Modifier
-                                .padding(top = 4.dp)
-                                .size(6.dp)
-                                .clip(CircleShape)
-                                .background(borderColor),
-                        )
+                for ((name, deviceState) in rowItems) {
+                    val (bgColor, textColor, borderColor) = when (deviceState) {
+                        BoseViewModel.DeviceState.ACTIVE ->
+                            Triple(BoseActiveBg, BoseAccent, BoseAccent)
+                        BoseViewModel.DeviceState.CONNECTED ->
+                            Triple(Color(0xFFE9EFF6), BoseConnected, BoseConnected)
+                        BoseViewModel.DeviceState.OFFLINE ->
+                            Triple(BoseCardBg, BoseDim, BoseHair)
+                    }
+
+                    Surface(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(56.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .border(1.dp, borderColor, RoundedCornerShape(12.dp))
+                            .clickable { onSwitch(name) },
+                        color = bgColor,
+                        shape = RoundedCornerShape(12.dp),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    // friendly label from the device map; fall back to the key
+                                    text = BoseDeviceMap.byName[name]?.label ?: name,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = textColor,
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 2,
+                                    lineHeight = 13.sp,
+                                )
+                                // State dot
+                                Box(
+                                    modifier = Modifier
+                                        .padding(top = 4.dp)
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(borderColor),
+                                )
+                            }
+                        }
                     }
                 }
+                // Pad the short final row so tiles keep a consistent width.
+                repeat(perRow - rowItems.size) { Spacer(modifier = Modifier.weight(1f)) }
             }
         }
     }

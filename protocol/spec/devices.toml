@@ -5,9 +5,9 @@
 headphone_mac = "E4:58:BC:C0:2F:72"
 headphone_name = "verBosita"
 
-# Cycle order for the bose-ctl / hotkey device switch (CLAUDE.md):
-# mac -> quest -> ipad -> iphone -> tv -> phone
-cycle_order = ["mac", "quest", "ipad", "iphone", "tv", "phone"]
+# Cycle order for the bose / hotkey device switch (CLAUDE.md):
+# mac -> quest -> ipad -> iphone -> tv -> appletv -> phone
+cycle_order = ["mac", "quest", "ipad", "iphone", "tv", "appletv", "phone"]
 
 [devices.phone]
 mac = "A8:76:50:D3:B1:1B"
@@ -38,3 +38,9 @@ notes = "Chromecast (macOS only)"
 mac = "78:C4:FA:C8:5C:3D"
 widget = true
 notes = "Meta Quest 3"
+
+[devices.appletv]
+mac = "48:E1:5C:5D:33:B6"          # captured live from connected_devices (05,01); 48:E1:5C = Apple OUI
+label = "Katrina's Apple TV"
+widget = false          # macOS app + S21 in-app tile only — no Android home-screen widget
+notes = "Lounge Room Apple TV 4K (gen 3)"

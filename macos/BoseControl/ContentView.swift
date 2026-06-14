@@ -34,6 +34,7 @@ private let deviceButtons: [DeviceButton] = [
     DeviceButton(id: "ipad", label: "iPad", symbol: "ipad"),
     DeviceButton(id: "iphone", label: "iPhone", symbol: "iphone"),
     DeviceButton(id: "tv", label: "TV", symbol: "tv"),
+    DeviceButton(id: "appletv", label: "Katrina's Apple TV", symbol: "appletv"),
     DeviceButton(id: "quest", label: "Quest", symbol: "visionpro"),
 ]
 
@@ -56,7 +57,7 @@ struct ContentView: View {
                 disconnectedView
             }
         }
-        .frame(width: 640, height: 360)
+        .frame(width: 640, height: 420)  // 420 fits a 3rd device-grid row (7 devices)
         .background(paperColor)
         .preferredColorScheme(.light)
         .onAppear {
@@ -300,8 +301,9 @@ struct ContentView: View {
                 Text(isConnecting ? "Connecting…" : button.label)
                     .font(.system(size: 10, weight: .medium))
                     .foregroundColor(textColor)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .minimumScaleFactor(0.7)
             }
             .frame(maxWidth: .infinity)
             .frame(height: 52)

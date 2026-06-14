@@ -28,5 +28,17 @@ def test_emits_device_list_with_mac_bytes():
 
 def test_emits_cycle_order():
     src = emit_devices_swift(SPEC)
-    # mac -> quest -> ipad -> iphone -> tv -> phone
-    assert 'static let cycleOrder = ["mac", "quest", "ipad", "iphone", "tv", "phone"]' in src
+    # mac -> quest -> ipad -> iphone -> tv -> appletv -> phone
+    assert (
+        'static let cycleOrder = ["mac", "quest", "ipad", "iphone", "tv", "appletv", "phone"]'
+        in src
+    )
+
+
+def test_emits_optional_label_field():
+    src = emit_devices_swift(SPEC)
+    # BoseDevice carries an optional friendly label.
+    assert "let label: String?" in src
+    # appletv has a friendly label; devices without one emit nil.
+    assert 'label: "Katrina\'s Apple TV"' in src
+    assert "label: nil" in src

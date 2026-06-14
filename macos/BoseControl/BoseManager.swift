@@ -38,7 +38,7 @@ final class BoseManager: ObservableObject {
     // Device routing states: "active" / "connected" / "offline"
     @Published var deviceStates: [String: String] = [
         "mac": "offline", "phone": "offline", "ipad": "offline",
-        "iphone": "offline", "tv": "offline", "quest": "offline",
+        "iphone": "offline", "tv": "offline", "appletv": "offline", "quest": "offline",
     ]
 
     // MARK: - Pending-write state (drives the "applying / connecting" UI)
