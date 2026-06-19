@@ -100,6 +100,40 @@ summary = "ANC/CNC depth level 0-10 (read-modify-write, preserve other fields)."
 # CUSTOM mode (custom1/custom2). Never write depth alongside quiet/aware — profiles
 # and the macOS app enforce this (named mode → mode only).
 
+[commands.favorites]
+block = 0x1F
+function = 0x08
+summary = "Which AudioModes slots are marked favourite (count + reversed-order bitmask)."
+# GET-verified live on verBosita (fw 8.2.20): `1F 08 01 00` → STATUS
+# `1f 08 03 03 0b 00 07` = count 0x0b (11 slots) + 2-byte bitmask `00 07`, where the
+# LOW modes land in the LAST byte (reversed byte order): 0x07 = bits 0,1,2 = modes
+# 0/1/2 (Quiet/Aware/Immersion) favourited.
+#
+# Modelled like `device_info` (NOT composite): the GET request is a clean generated
+# builder (`BMAP.favoritesGet()`), and only the SET_GET payload build + the response
+# decode are hand-written per-platform — because the SET_GET payload is COMPUTED
+# (count + reversed bitmask), which the fixed-token encoder DSL can't express. Those
+# live as pure functions in Parsers (`buildFavoritesSetGet` / `parseFavorites`,
+# Swift + Kotlin) tested against the live capture below.
+#
+# SET_GET frame (from the app's `AudioModesFavoritesSetGetPacket(count, modes[])`,
+# jadx): payload[0] = count; payload length = ceil(count/8)+1; for each favourite
+# mode d set bit (d % 8) in byte `(len - floor(d/8) - 1)`. The no-op restore that
+# re-creates the live state is `1F 08 02 03 0b 00 07` (count 11, modes {0,1,2}) —
+# captured live (STATUS echo unchanged).
+
+[commands.favorites.get]
+operator = "GET"
+payload = []
+
+[commands.favorites.verified_bytes]
+# Only the GET request is a generated golden; the SET_GET bitmask is covered by the
+# Parsers byte tests (cli/Tests + Android test corpus), not here.
+get = "1F 08 01 00"
+
+[commands.favorites.test_args]
+get = {}
+
 
 # ── Block 0x01 — Settings / Device ─────────────────────────────────────────────
 
@@ -168,6 +202,66 @@ get = "01 0A 01 00"
 [commands.multipoint.test_args]
 set_on = { state = 7 }
 set_off = { state = 0 }
+get = {}
+
+[commands.auto_play_pause]
+block = 0x01
+function = 0x18
+# Pause playback when the headphones are removed / resume when re-donned. This is the
+# on-device *setting toggle* (01,18) — distinct from the live wear STATE (02,09,
+# StatusInEar) which is FuncNotSupp on the over-ears. GET-verified live on verBosita
+# (fw 8.2.20). SET_GET is a single bool byte, confirmed two ways: the Bose Music app's
+# `SettingsAutoPlayPauseSetGetPacket(bool)` builder (jadx) emits `new byte[]{0|1}`, and
+# a live no-op SET_GET (re-sending the current ON value) echoed STATUS unchanged.
+summary = "Toggle auto-pause when headphones are removed (SET_GET 00=off/01=on)."
+
+[commands.auto_play_pause.set]
+operator = "SET_GET"        # app builder uses SetGet (0x02); plain SET is auth-gated
+payload = ["enabled:u8"]    # 0x00 = off, 0x01 = on
+
+[commands.auto_play_pause.get]
+operator = "GET"
+payload = []
+
+[commands.auto_play_pause.verified_bytes]
+# `01,18,02,01,{00/01}` — set_on captured live (no-op re-send, STATUS echo 01 18 03 01 01);
+# set_off matches the app builder (not toggled on-device to avoid changing state).
+set_on = "01 18 02 01 01"
+set_off = "01 18 02 01 00"
+get = "01 18 01 00"
+
+[commands.auto_play_pause.test_args]
+set_on = { enabled = 1 }
+set_off = { enabled = 0 }
+get = {}
+
+[commands.auto_answer]
+block = 0x01
+function = 0x1B
+# Auto-answer an incoming call when the headphones are donned. GET-verified live on
+# verBosita (fw 8.2.20). SET_GET single bool byte — confirmed via the app's
+# `SettingsAutoAnswerSetGetPacket(bool)` builder (`new byte[]{0|1}`) and a live no-op
+# SET_GET that echoed STATUS unchanged.
+summary = "Toggle auto-answer when headphones are donned (SET_GET 00=off/01=on)."
+
+[commands.auto_answer.set]
+operator = "SET_GET"
+payload = ["enabled:u8"]    # 0x00 = off, 0x01 = on
+
+[commands.auto_answer.get]
+operator = "GET"
+payload = []
+
+[commands.auto_answer.verified_bytes]
+# `01,1B,02,01,{00/01}` — set_on captured live (no-op re-send, STATUS echo 01 1b 03 01 01);
+# set_off matches the app builder.
+set_on = "01 1B 02 01 01"
+set_off = "01 1B 02 01 00"
+get = "01 1B 01 00"
+
+[commands.auto_answer.test_args]
+set_on = { enabled = 1 }
+set_off = { enabled = 0 }
 get = {}
 
 

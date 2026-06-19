@@ -46,6 +46,10 @@ enum BMAP {
         return [0x1F, 0x03, 0x01, 0x00]
     }
 
+    static func getFavorites() -> [UInt8] {
+        return [0x1F, 0x08, 0x01, 0x00]
+    }
+
     static func setDeviceName() -> [UInt8] {
         return [0x01, 0x02, 0x06, 0x00]
     }
@@ -64,6 +68,22 @@ enum BMAP {
 
     static func getMultipoint() -> [UInt8] {
         return [0x01, 0x0A, 0x01, 0x00]
+    }
+
+    static func setAutoPlayPause(enabled: UInt8) -> [UInt8] {
+        return [0x01, 0x18, 0x02, 0x01, enabled]
+    }
+
+    static func getAutoPlayPause() -> [UInt8] {
+        return [0x01, 0x18, 0x01, 0x00]
+    }
+
+    static func setAutoAnswer(enabled: UInt8) -> [UInt8] {
+        return [0x01, 0x1B, 0x02, 0x01, enabled]
+    }
+
+    static func getAutoAnswer() -> [UInt8] {
+        return [0x01, 0x1B, 0x01, 0x00]
     }
 
     static func connectDevice(mac: [UInt8]) -> [UInt8] {

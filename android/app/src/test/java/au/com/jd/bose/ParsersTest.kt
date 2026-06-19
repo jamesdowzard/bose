@@ -102,6 +102,49 @@ class ParsersTest {
         assertEquals(10, Parsers.buildModeConfigSet(cfg, 99).copyOfRange(4, 4 + 40)[35]) // clamps to 10
     }
 
+    // ── Favorites (1F,08) ──────────────────────────────────────────────────────
+    // Live capture on verBosita (fw 8.2.20): GET 1F 08 01 00 -> STATUS 1f 08 03 03 0b 00 07.
+    // count 0x0b (11 slots) + reversed-order bitmask 00 07 = modes 0,1,2 favourited.
+    // Mirrors macOS `cli/Tests/main.swift`.
+
+    @Test
+    fun favorites_decodesCapturedBitmask() {
+        val resp = intArrayOf(0x1F, 0x08, 0x03, 0x03, 0x0B, 0x00, 0x07)
+        assertEquals(listOf(0, 1, 2), Parsers.parseFavorites(resp))
+    }
+
+    @Test
+    fun favorites_buildsLiveNoOpSetGet() {
+        assertArrayEquals(
+            intArrayOf(0x1F, 0x08, 0x02, 0x03, 0x0B, 0x00, 0x07),
+            Parsers.buildFavoritesSetGet(listOf(0, 1, 2), 11),
+        )
+    }
+
+    @Test
+    fun favorites_highModeLandsInFirstMaskByte() {
+        // Reversed byte order: mode 8 -> first mask byte, low modes -> last.
+        assertArrayEquals(
+            intArrayOf(0x1F, 0x08, 0x02, 0x03, 0x0B, 0x01, 0x00),
+            Parsers.buildFavoritesSetGet(listOf(8), 11),
+        )
+        assertEquals(listOf(8), Parsers.parseFavorites(intArrayOf(0x1F, 0x08, 0x03, 0x03, 0x0B, 0x01, 0x00)))
+    }
+
+    @Test
+    fun favorites_buildParseRoundTrips() {
+        val mixed = listOf(0, 2, 9)
+        val frame = Parsers.buildFavoritesSetGet(mixed, 11)
+        val asResp = intArrayOf(0x1F, 0x08, 0x03) + frame.copyOfRange(3, frame.size)
+        assertEquals(mixed, Parsers.parseFavorites(asResp))
+    }
+
+    @Test
+    fun favorites_shortOrWrongHeaderIsNull() {
+        assertNull(Parsers.parseFavorites(intArrayOf(0x1F, 0x08, 0x01, 0x00))) // non-RESP (GET echo)
+        assertNull(Parsers.parseFavorites(intArrayOf(0x1F, 0x06, 0x03, 0x03, 0x0B, 0x00, 0x07))) // wrong func
+    }
+
     // ── parseAllState (bulk session) ──────────────────────────────────────────
 
     @Test

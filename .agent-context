@@ -2,8 +2,8 @@
 # Max 20 lines. Updated by agent on Stop hook.
 
 ## Feature
-auto-route: drop unreliable restore (terminated event doesn't fire); keep verified launch-flip + during-call guard
-auto-route: drop unreliable restore (terminated event doesn't fire); keep verified launch-flip + during-call guard
+Add verified 01,18 AutoPlayPause / 01,1B AutoAnswer / 1F,08 Favorites commands to bmap.toml. Closes #119
+Add verified 01,18 AutoPlayPause / 01,1B AutoAnswer / 1F,08 Favorites commands to bmap.toml. Closes #119
 
 ## Current State
 Not started. No work has been done yet.

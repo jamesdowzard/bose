@@ -68,7 +68,7 @@ explicit user action.
 - Companion device registered for background FGS privileges
 
 ### CLI (`cli/`) — regenerated on the shared layer
-- `cli/main.swift` -- `bose` command surface (status/battery/anc/devices/connect/disconnect/swap/volume/multipoint/play-pause-next-prev/eq/raw). **No inline byte parsing** — every command routes through the generated `BMAP.*` builders. `connect`/`swap` poll-confirm via `getConnectedDevices` (ACK is never success); volume uses the generated SET_GET builder.
+- `cli/main.swift` -- `bose` command surface (status/battery/anc/devices/connect/disconnect/swap/volume/multipoint/auto-pause/auto-answer/favorites/play-pause-next-prev/eq/raw). **No inline byte parsing** — every command routes through the generated `BMAP.*` builders. `connect`/`swap` poll-confirm via `getConnectedDevices` (ACK is never success); volume uses the generated SET_GET builder.
 - `cli/Transport.swift` -- IOBluetooth RFCOMM transport (per-command open/drain-300ms/close, cold-start warm-up, serial queue).
 - `cli/Composites.swift` -- live-channel composites (cncLevel RMW, connectedDevices list, getAllState single-session).
 - `cli/Parsers.swift` -- pure, hardware-free response parsers; `cli/Tests/main.swift` + `cli/run-tests.sh` are the standalone unit tests (same captured-byte corpus as Android `Parsers.kt`).
@@ -264,6 +264,9 @@ BMAP operator (SET/0x06 instead of SET_GET/0x02).
 | Volume | 05,05 | SET_GET | `05,05,02,01,{level}` | 0-31 |
 | Device name | 01,02 | SET | `01,02,06,{len},00,{utf8}` | max 30 UTF-8 bytes |
 | Multipoint | 01,0A | SET_GET | `01,0A,02,01,{07/00}` | SET 07=on/00=off. RESPONSE is a bitfield — bit 0 = enable; fw 8.2.20: on→0x07, off→0x06 (slot bits persist). Parse `& 0x01`, NOT `!= 0` (that misread 0x06 as on, #83). |
+| **Auto-pause** | **01,18** | **SET_GET** | `01,18,02,01,{00/01}` | Pause when headphones are removed. Single bool byte; RESP echoes STATUS (`& 0x01`). Verified live (no-op SET_GET) + app builder. The *setting toggle* — distinct from the live wear STATE (02,09, FuncNotSupp on over-ears). |
+| **Auto-answer** | **01,1B** | **SET_GET** | `01,1B,02,01,{00/01}` | Answer a call when headphones are donned. Single bool byte; RESP echoes STATUS. Verified live + app builder. |
+| **Favorites** | **1F,08** | **SET_GET** | `1F,08,02,{len},{count},{reversed bitmask…}` | Which mode slots are favourited. Payload = count byte + `ceil(count/8)`-byte REVERSED-order bitmask (low modes in the LAST byte). Live: `1F 08 02 03 0b 00 07` = count 11, modes 0/1/2. GET is a generated builder; the SET_GET bitmask + decode are hand-written (`buildFavoritesSetGet`/`parseFavorites`, Swift+Kotlin). |
 | Connect device | 04,01 | START | `04,01,05,07,00,{MAC}` | Also routes audio |
 | Disconnect | 04,02 | START | `04,02,05,06,{MAC}` | |
 | Media control | 05,03 | START | `05,03,05,01,{action}` | 01=play 02=pause 03=next 04=prev |
@@ -320,6 +323,9 @@ surface. Keep this in sync when adding a verb or control.
 | Device name | 01,02 | ✅ `name` | — | — | ✅ rename |
 | EQ band | 01,07 | ✅ `eq` | 👁 (in status) | — | ✅ 3-band |
 | Multipoint | 01,0A | ✅ `multipoint` | — | — | ✅ toggle |
+| Auto-pause | **01,18** | ✅ `auto-pause` | — | — | — (parser only, no UI) |
+| Auto-answer | **01,1B** | ✅ `auto-answer` | — | — | — |
+| Favorites | **1F,08** | ✅ `favorites` | — | — | — (parser only, no UI) |
 | Connect device | 04,01 | ✅ `connect`/`swap` | ✅ `bose-connect` | ✅ Opt+⇧B toggle · Opt+J → Mac (Opt+B opens app) | ✅ widget/tile/picker |
 | Disconnect device | 04,02 | ✅ `disconnect` | ✅ `bose-disconnect` | 👁 (toggle path) | — |
 | Device info (ACL) | 04,05 | 👁 `devices` (○ state) | — | — | 👁 widget colour |
@@ -344,8 +350,11 @@ surface. Keep this in sync when adding a verb or control.
 > The real wear function is **`StatusInEar` = block `0x02` / func `0x09`** (a plain GET;
 > response decodes `payload[0]` bit0 = left bud, bit1 = right bud). It's an **earbuds**
 > feature — the over-ear headphones answer **`FuncNotSupp`** (error op `0x04`, code `4`)
-> to `02,09`. Auto-pause is handled on-device (sensor → AVRCP pause to the active sink),
-> never published over BMAP. The old `08,07 == 0x04` "on-head" read was a synthetic-fixture
+> to `02,09`. The live wear STATE (which bud is in the ear) is never published over BMAP
+> on the over-ears — auto-pause is handled on-device (sensor → AVRCP pause to the active
+> sink). The on/off *setting* for that feature IS published, though: it's `01,18`
+> AutoPlayPause (mapped above), distinct from the unpublished wear state. The old
+> `08,07 == 0x04` "on-head" read was a synthetic-fixture
 > guess — `08,07` isn't the wear function and its byte is noise (flips 0x03/0x04 off-head).
 > Confirmed by decompiling the Bose Music app (v13.0.7, `com.bose.bmap.messages…StatusInEar`)
 > + the device's own `FuncNotSupp` reply. Removed from app/CLI/Android (#104-era cleanup).

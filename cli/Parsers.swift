@@ -132,6 +132,45 @@ func buildModeConfigSet(_ cfg: ModeConfig, newLevel: Int?) -> [UInt8] {
     return [0x1F, 0x06, 0x02, UInt8(payload.count)] + payload
 }
 
+/// Parse a 1F,08 AudioModes Favorites RESPONSE into the sorted set of favourited mode
+/// slots. Wire format (verified live on verBosita fw 8.2.20 + the decompiled app's
+/// AudioModesFavorites packets): payload[0] = slot count, followed by a REVERSED-order
+/// bitmask of `ceil(count/8)` bytes — the LOW modes live in the LAST byte. For each
+/// favourite mode `d`, bit `(d % 8)` is set in byte index `(maskLen - floor(d/8) - 1)`.
+/// Live capture `1f 08 03 03 0b 00 07` -> count 11, modes {0,1,2} (Quiet/Aware/Immersion).
+/// Returns nil on a short/non-RESP/wrong-header frame.
+func parseFavorites(_ resp: [UInt8]) -> [Int]? {
+    guard resp.count >= 5, resp[0] == 0x1F, resp[1] == 0x08, resp[2] == OP_RESP_BYTE else { return nil }
+    let payload = Array(resp[4...])
+    let count = Int(payload[0])
+    let mask = Array(payload.dropFirst())          // ceil(count/8) bytes, reversed order
+    var modes: [Int] = []
+    for (k, byte) in mask.enumerated() {
+        let group = mask.count - 1 - k             // last byte = group 0 (modes 0..7)
+        for bit in 0..<8 where (byte >> bit) & 1 == 1 {
+            let mode = group * 8 + bit
+            if mode < count { modes.append(mode) }
+        }
+    }
+    return modes.sorted()
+}
+
+/// Build a 1F,08 Favorites SET_GET frame from the desired favourite mode slots + total
+/// slot count. Inverse of parseFavorites; mirrors the app's AudioModesFavoritesSetGetPacket:
+/// payload length = ceil(count/8)+1, payload[0] = count, bit (d % 8) of byte
+/// (len - floor(d/8) - 1) set per favourite mode d. e.g. modes {0,1,2}, count 11 ->
+/// `1F 08 02 03 0b 00 07` (the live no-op-restore frame).
+func buildFavoritesSetGet(modes: [Int], slotCount: Int) -> [UInt8] {
+    let maskLen = (slotCount + 7) / 8              // ceil(count/8)
+    let len = maskLen + 1
+    var payload = [UInt8](repeating: 0, count: len)
+    payload[0] = UInt8(slotCount & 0xFF)
+    for d in modes where d >= 0 && d < slotCount {
+        payload[len - (d / 8) - 1] |= UInt8(1 << (d % 8))
+    }
+    return [0x1F, 0x08, 0x02, UInt8(payload.count)] + payload
+}
+
 /// Decoded per-device info (04,05 RESP). `connected` is ACL presence (status
 /// bit 0) — reliable for "is this device linked at all", NOT for audio routing
 /// (use parseConnectedDevices / 05,01 for the active sink). Mirrors the Android

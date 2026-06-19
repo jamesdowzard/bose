@@ -92,6 +92,27 @@ check(sp[39] == 1, "modeConfigSet: ancToggle forced ON @39 (level change can't d
 check(buildModeConfigSet(custom, newLevel: nil)[4 + 35] == 7, "modeConfigSet: nil keeps current level")
 check(buildModeConfigSet(custom, newLevel: 99)[4 + 35] == 10, "modeConfigSet: clamps to 10")
 
+// ── Favorites (1F,08) ───────────────────────────────────────────────────────────
+// Live capture on verBosita (fw 8.2.20): GET 1F 08 01 00 -> STATUS 1f 08 03 03 0b 00 07.
+// count 0x0b (11 slots) + reversed-order bitmask 00 07 = modes 0,1,2 favourited.
+let favResp: [UInt8] = [0x1F, 0x08, 0x03, 0x03, 0x0B, 0x00, 0x07]
+check(parseFavorites(favResp) ?? [] == [0, 1, 2], "favorites: decodes captured 0b 00 07 -> {0,1,2}")
+// Round-trip: building the SET_GET from {0,1,2}/count 11 reproduces the live no-op frame.
+check(buildFavoritesSetGet(modes: [0, 1, 2], slotCount: 11) == [0x1F, 0x08, 0x02, 0x03, 0x0B, 0x00, 0x07],
+      "favorites: builds the live no-op SET_GET 1F 08 02 03 0b 00 07")
+// A high mode (slot 8) lands in the FIRST mask byte (reversed order), low modes in the last.
+let fav8 = buildFavoritesSetGet(modes: [8], slotCount: 11)
+check(fav8 == [0x1F, 0x08, 0x02, 0x03, 0x0B, 0x01, 0x00], "favorites: mode 8 -> first mask byte (reversed)")
+check(parseFavorites([0x1F, 0x08, 0x03, 0x03, 0x0B, 0x01, 0x00]) ?? [] == [8], "favorites: decodes mode 8 from first byte")
+// Build/parse are inverses across a mixed set.
+let mixed = [0, 2, 9]
+let rt = parseFavorites([0x1F, 0x08, 0x03] + [UInt8(buildFavoritesSetGet(modes: mixed, slotCount: 11).count - 4)]
+                        + Array(buildFavoritesSetGet(modes: mixed, slotCount: 11).dropFirst(4)))
+check(rt ?? [] == mixed, "favorites: build->parse round-trips {0,2,9}")
+// Guards: short / non-RESP / wrong header -> nil.
+check(parseFavorites([0x1F, 0x08, 0x01, 0x00]) == nil, "favorites: non-RESP (GET echo) -> nil")
+check(parseFavorites([0x1F, 0x06, 0x03, 0x03, 0x0B, 0x00, 0x07]) == nil, "favorites: wrong func -> nil")
+
 // ── parseAllState (bulk session) ─────────────────────────────────────────────────
 
 // Stub provider: returns a representative RESP per (block,func) GET.
