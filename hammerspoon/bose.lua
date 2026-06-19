@@ -19,11 +19,12 @@
 --              An event-driven replacement for the power-on announcement Bose removed
 --              in fw 8.2.20. Driven by hs.audiodevice change events — no poller.
 --              Set ANNOUNCE_BATTERY=false to disable.
---   • Auto-route on call — while a call app (Teams/Zoom/FaceTime/Slack/Webex) runs,
---              force the Mac's INPUT to the MacBook mic (never the Bose, whose over-ear
---              mics make callers hear the room); restore the prior input when calls end.
---              Output (the Bose) is untouched. Event-driven (hs.application.watcher +
---              the audiodevice watcher), no poll. Set AUTO_ROUTE_ON_CALL=false to disable.
+--   • Auto-route on call — a call app (Teams/Zoom/FaceTime/Slack/Webex) launching routes
+--              the Mac's INPUT to the MacBook mic, and the audiodevice guard never lets the
+--              Bose be the system input (its over-ear mics make callers hear the room).
+--              Input stays on the MacBook mic after calls (no restore — the MacBook mic is
+--              the right default, and `terminated` events aren't reliably delivered).
+--              Output (the Bose) is untouched. Event-driven, no poll; AUTO_ROUTE_ON_CALL.
 --
 -- Wiring (init.lua dofiles this from the repo path; reload Hammerspoon to apply edits):
 --     BoseCtl = dofile(os.getenv("HOME").."/code/personal/bose/hammerspoon/bose.lua")
@@ -144,7 +145,6 @@ end
 -- through the current default output, which is the Bose we just detected.
 local lastBoseOut    = false
 local lastAnnounce   = -math.huge
-local savedInputName = nil   -- input device to restore when the last call app closes
 
 local function announceBattery()
   ctlRead({ "battery" }, function(ok, out)
@@ -168,9 +168,10 @@ local function onAudioChange()
     end
   end
   lastBoseOut = nowOut
-  -- Auto-route guard: while a call app is active (savedInputName set), never let the
-  -- Bose be the system input — macOS can flip it on a mid-call reconnect.
-  if AUTO_ROUTE_ON_CALL and savedInputName ~= nil and defaultInputIsBose() then
+  -- Auto-route guard (MicLock): never let the Bose be the Mac's system INPUT — its
+  -- over-ear mics make callers hear the room, and on a Mac the call mic should always be
+  -- the MacBook array. Catches macOS auto-selecting the Bose input on a connect.
+  if AUTO_ROUTE_ON_CALL and defaultInputIsBose() then
     setMacInput(MAC_MIC)
   end
 end
@@ -183,32 +184,16 @@ local function anyCallAppRunning()
   return false
 end
 
--- hs.application.watcher callback. `launched` is reliable for bundleID → arm the route
--- (remember the prior input, switch to the Mac mic). `terminated` can't be trusted for
--- bundleID, so re-scan all call apps and restore only when none remain.
+-- hs.application.watcher callback. On a call app launching, route the Mac's input to the
+-- MacBook mic so the call never uses the Bose. NO restore on quit: hs.application.watcher
+-- does NOT reliably deliver `terminated` (verified 2026-06-20 — LAUNCH fired, TERM never),
+-- and the MacBook mic is the right default anyway; the onAudioChange guard keeps the Bose
+-- off the input regardless.
 local function onAppEvent(_, eventType, app)
   if not AUTO_ROUTE_ON_CALL then return end
   if eventType == hs.application.watcher.launched then
     local bid = app and app:bundleID()
-    if bid and CALL_APPS[bid] then
-      if savedInputName == nil then
-        local cur = hs.audiodevice.defaultInputDevice()
-        savedInputName = (cur and cur:name()) or MAC_MIC
-      end
-      setMacInput(MAC_MIC)
-    end
-  elseif eventType == hs.application.watcher.terminated then
-    -- Defer the re-scan: at `terminated` time the quitting app can still appear in
-    -- hs.application.get, racing anyCallAppRunning() → the restore is skipped and never
-    -- retried (verified 2026-06-20). 0.5s later the process is gone, so the scan is true.
-    if savedInputName ~= nil then
-      hs.timer.doAfter(0.5, function()
-        if savedInputName ~= nil and not anyCallAppRunning() then
-          setMacInput(savedInputName)
-          savedInputName = nil
-        end
-      end)
-    end
+    if bid and CALL_APPS[bid] then setMacInput(MAC_MIC) end
   end
 end
 
@@ -288,8 +273,6 @@ function M.start()
     M.appWatcher = hs.application.watcher.new(onAppEvent)
     M.appWatcher:start()
     if anyCallAppRunning() then   -- a call app already open at start → route now
-      local cur = hs.audiodevice.defaultInputDevice()
-      savedInputName = (cur and cur:name()) or MAC_MIC
       setMacInput(MAC_MIC)
     end
   end
