@@ -108,6 +108,25 @@ Plus **bootstrap reads** we should ensure we issue: BMAP version `00,01`, produc
 
 Where peers and our captures agree (framing, operators, `SETGET`-is-the-write-path, EQ `01,07`, multipoint `01,0A`, battery `02,02`, mode switch `1F,03` START, the inverted CNC scale, `1F,06` mode-config offsets), that's strong cross-validation. Where they disagree with a `verified_bytes`/#-issue finding of ours, **ours wins** until a fresh on-device capture says otherwise.
 
+### ✅ On-device verification (verBosita, fw 8.2.20, 2026-06-20)
+
+The gap leads above were probed **read-only** against the actual headset (`bose raw … GET`). Ground truth, not peer-claim (op `03` = supported/STATUS, op `04` = FuncNotSupp):
+
+| Command | GET → response | Verdict |
+|---|---|---|
+| `01,18` **AutoPlayPause** (pause when removed) | `01180100` → `01 18 03 01 01` (on) | ✅ **supported & readable** — new vs `bmap.toml`. This is the *setting toggle*, distinct from the live wear STATE `02,09` (which is FuncNotSupp on over-ears, per the wear-state note above). |
+| `01,1B` **AutoAnswer** (answer when donned) | `011B0100` → `01 1b 03 01 01` (on) | ✅ **supported & readable** — new vs `bmap.toml`. |
+| `1F,08` **Favorites** | `1F080100` → `1f 08 03 03 0b 00 07` (modes 0/1/2 favorited) | ✅ **supported & readable** — new. |
+| `05,01` source/connected | `05010100` → `05 01 03 09 00 0f 01 bc d0 74 11 db 27` (active = Mac MAC) | ✅ confirms existing `connected_devices`. |
+| `05,0F` spatial standalone | `050F0100` → `05 0f 04 01 04` | ❌ **absent (FuncNotSupp)** — spatial only via `1F,06` mode config. *(verified 2026-06-20)* |
+| `01,04` standby-timer | `01040100` → `01 04 04 01 04` | ❌ **absent (FuncNotSupp)** — even GET errors; confirms "StandbyTimer not supported". *(verified 2026-06-20)* |
+| `1F,05` remember-last-mode | `1F050100` → `1f 05 04 01 04` | ❌ **absent (FuncNotSupp)**. *(verified 2026-06-20)* |
+| `01,0B` (peers: "sidetone") | `010B0100` → `01 0b 03 03 01 02 0f` | ⚠️ **conflict resolved:** `01,0B` is our **auto-off readout** (matches `bose info`), NOT sidetone. bosectl/docentYT mislabel it; our label wins. |
+| `01,09` button → BatteryLevel (`0x03`) | write ignored; supported mask = {VPA, Disabled, Spotify, SpatialAudio} | ❌ **not assignable** on the over-ear button (earbuds-only action). *(verified 2026-06-20)* |
+| `01,03` voice-prompts | `01030100` → `01 03 03 07 41 00 00 81 02 00 00` | ⚠️ 7-byte payload, richer than bosectl's single-byte model; battery-on-power bit not safely decodable — left read-only. |
+
+**Net:** three genuinely-new *readable* commands on wolverine — `01,18` AutoPlayPause, `01,1B` AutoAnswer, `1F,08` Favorites — are candidates to add to `bmap.toml` once SET bytes are captured (GET-verified here; SET left unprobed because each would toggle a feature in active use). Three peer-claimed commands are confirmed **absent** (`05,0F`, `01,04`, `1F,05`), and the `01,0B`-sidetone claim is disproven. The "verify before adding" caveat on those rows is now discharged.
+
 ---
 
 ## ⭐ Leads on the lost power-on battery announcement
