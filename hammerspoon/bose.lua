@@ -19,6 +19,11 @@
 --              An event-driven replacement for the power-on announcement Bose removed
 --              in fw 8.2.20. Driven by hs.audiodevice change events — no poller.
 --              Set ANNOUNCE_BATTERY=false to disable.
+--   • Auto-route on call — while a call app (Teams/Zoom/FaceTime/Slack/Webex) runs,
+--              force the Mac's INPUT to the MacBook mic (never the Bose, whose over-ear
+--              mics make callers hear the room); restore the prior input when calls end.
+--              Output (the Bose) is untouched. Event-driven (hs.application.watcher +
+--              the audiodevice watcher), no poll. Set AUTO_ROUTE_ON_CALL=false to disable.
 --
 -- Wiring (init.lua dofiles this from the repo path; reload Hammerspoon to apply edits):
 --     BoseCtl = dofile(os.getenv("HOME").."/code/personal/bose/hammerspoon/bose.lua")
@@ -73,6 +78,23 @@ local LOW_BATTERY  = 20
 local ANNOUNCE_BATTERY   = true
 local ANNOUNCE_DELAY     = 1.8   -- s: let the A2DP route + RFCOMM settle before read/speak
 local ANNOUNCE_COOLDOWN  = 10    -- s: ignore output flaps within this window
+
+-- Auto-route on call: while a call app is running, keep the Mac's INPUT off the Bose
+-- (the over-ear mics force HFP + favour the room — see the bluetooth-audio dossier).
+-- Sets input → MacBook mic when a call app opens, guards it if macOS flips input to the
+-- Bose mid-call, and restores the prior input when the last call app closes. The Bose
+-- OUTPUT is never touched. NB apps with their own device setting (Teams) may still
+-- override this — set Teams' in-app Microphone to the MacBook mic once; this is the
+-- system-level backstop for apps that follow the default (Zoom/FaceTime/Meet).
+local AUTO_ROUTE_ON_CALL = true
+local MAC_MIC            = "MacBook Pro Microphone"
+local CALL_APPS = {   -- bundle IDs of apps that take the mic for calls (editable)
+  ["com.microsoft.teams2"]      = true,
+  ["us.zoom.xos"]               = true,
+  ["com.apple.FaceTime"]        = true,
+  ["com.tinyspeck.slackmacgap"] = true,   -- Slack huddles
+  ["com.cisco.webexmeetings"]   = true,
+}
 -------------------------------------------------------------------------------
 
 local function boseIsMacOutput()
@@ -83,6 +105,17 @@ end
 local function setMacOutput(name)
   local dev = hs.audiodevice.findOutputByName(name)
   if dev then dev:setDefaultOutputDevice() end
+end
+
+-- Input-side helpers (mirror the output helpers above). Used by auto-route-on-call.
+local function setMacInput(name)
+  local dev = hs.audiodevice.findInputByName(name)
+  if dev then dev:setDefaultInputDevice() end
+end
+
+local function defaultInputIsBose()
+  local inp = hs.audiodevice.defaultInputDevice()
+  return inp ~= nil and inp:name():find(BOSE_NAME, 1, true) ~= nil
 end
 
 -- Fire-and-forget bose (exit code only).
@@ -109,8 +142,9 @@ end
 -- Speak battery when the Bose become the Mac's output (rising edge), via the
 -- hs.audiodevice change watcher — event-driven, no timer/poll. The `say` plays
 -- through the current default output, which is the Bose we just detected.
-local lastBoseOut  = false
-local lastAnnounce = -math.huge
+local lastBoseOut    = false
+local lastAnnounce   = -math.huge
+local savedInputName = nil   -- input device to restore when the last call app closes
 
 local function announceBattery()
   ctlRead({ "battery" }, function(ok, out)
@@ -134,6 +168,41 @@ local function onAudioChange()
     end
   end
   lastBoseOut = nowOut
+  -- Auto-route guard: while a call app is active (savedInputName set), never let the
+  -- Bose be the system input — macOS can flip it on a mid-call reconnect.
+  if AUTO_ROUTE_ON_CALL and savedInputName ~= nil and defaultInputIsBose() then
+    setMacInput(MAC_MIC)
+  end
+end
+
+-- True if any configured call app is currently running (by bundle ID).
+local function anyCallAppRunning()
+  for bid, _ in pairs(CALL_APPS) do
+    if hs.application.get(bid) then return true end
+  end
+  return false
+end
+
+-- hs.application.watcher callback. `launched` is reliable for bundleID → arm the route
+-- (remember the prior input, switch to the Mac mic). `terminated` can't be trusted for
+-- bundleID, so re-scan all call apps and restore only when none remain.
+local function onAppEvent(_, eventType, app)
+  if not AUTO_ROUTE_ON_CALL then return end
+  if eventType == hs.application.watcher.launched then
+    local bid = app and app:bundleID()
+    if bid and CALL_APPS[bid] then
+      if savedInputName == nil then
+        local cur = hs.audiodevice.defaultInputDevice()
+        savedInputName = (cur and cur:name()) or MAC_MIC
+      end
+      setMacInput(MAC_MIC)
+    end
+  elseif eventType == hs.application.watcher.terminated then
+    if savedInputName ~= nil and not anyCallAppRunning() then
+      setMacInput(savedInputName)
+      savedInputName = nil
+    end
+  end
 end
 
 -- Show/hide toggle for the windowed control app: press once to open/focus it, press
@@ -208,6 +277,15 @@ function M.start()
     hs.audiodevice.watcher.setCallback(onAudioChange)
     hs.audiodevice.watcher.start()
   end
+  if AUTO_ROUTE_ON_CALL then
+    M.appWatcher = hs.application.watcher.new(onAppEvent)
+    M.appWatcher:start()
+    if anyCallAppRunning() then   -- a call app already open at start → route now
+      local cur = hs.audiodevice.defaultInputDevice()
+      savedInputName = (cur and cur:name()) or MAC_MIC
+      setMacInput(MAC_MIC)
+    end
+  end
   return M
 end
 
@@ -217,6 +295,7 @@ function M.stop()
   if M.ancHotkey then M.ancHotkey:delete(); M.ancHotkey = nil end
   if M.connectHotkey then M.connectHotkey:delete(); M.connectHotkey = nil end
   if ANNOUNCE_BATTERY then hs.audiodevice.watcher.stop() end
+  if M.appWatcher then M.appWatcher:stop(); M.appWatcher = nil end
 end
 
 return M

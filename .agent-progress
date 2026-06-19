@@ -1,10 +1,10 @@
-# Agent Progress - ondevice-gap-verification
+# Agent Progress - auto-route-on-call
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-06-19T20:36:38Z
+# Created: 2026-06-19T20:44:14Z
 
-feature=ondevice-gap-verification
-name=related-projects: on-device verification of gap-list commands (fw 8.2.20)
+feature=auto-route-on-call
+name=auto-route Mac mic off the Bose during calls (Hammerspoon)
 status=pending
 step=0
 step_name=Not started
-created=2026-06-19T20:36:38Z
+created=2026-06-19T20:44:14Z
