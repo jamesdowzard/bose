@@ -1,10 +1,10 @@
-# Agent Progress - auto-route-on-call
+# Agent Progress - fix-autoroute-restore
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-06-19T20:44:14Z
+# Created: 2026-06-19T20:51:06Z
 
-feature=auto-route-on-call
-name=auto-route Mac mic off the Bose during calls (Hammerspoon)
+feature=fix-autoroute-restore
+name=auto-route: defer terminated re-scan so restore isn't raced by the dying app
 status=pending
 step=0
 step_name=Not started
-created=2026-06-19T20:44:14Z
+created=2026-06-19T20:51:06Z
