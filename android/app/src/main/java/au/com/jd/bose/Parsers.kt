@@ -118,6 +118,50 @@ object Parsers {
         return intArrayOf(0x1F, 0x06, 0x02, payload.size) + payload
     }
 
+    /**
+     * Parse a 1F,08 AudioModes Favorites RESPONSE into the sorted favourited mode slots.
+     * Wire format (verified live on verBosita fw 8.2.20 + the decompiled app's
+     * AudioModesFavorites packets): payload[0] = slot count, then a REVERSED-order bitmask
+     * of ceil(count/8) bytes — the LOW modes live in the LAST byte. For favourite mode d,
+     * bit (d % 8) is set in byte (maskLen - floor(d/8) - 1). Live capture
+     * `1f 08 03 03 0b 00 07` -> count 11, modes {0,1,2} (Quiet/Aware/Immersion).
+     */
+    fun parseFavorites(resp: IntArray): List<Int>? {
+        if (resp.size < 5 || resp[0] != 0x1F || resp[1] != 0x08 || resp[2] != OP_RESP) return null
+        val payload = resp.copyOfRange(4, resp.size)
+        val count = payload[0]
+        val mask = payload.copyOfRange(1, payload.size) // ceil(count/8) bytes, reversed order
+        val modes = mutableListOf<Int>()
+        for (k in mask.indices) {
+            val group = mask.size - 1 - k // last byte = group 0 (modes 0..7)
+            for (bit in 0 until 8) {
+                if ((mask[k] shr bit) and 1 == 1) {
+                    val mode = group * 8 + bit
+                    if (mode < count) modes.add(mode)
+                }
+            }
+        }
+        return modes.sorted()
+    }
+
+    /**
+     * Build a 1F,08 Favorites SET_GET frame from the desired favourite slots + slot count.
+     * Inverse of parseFavorites; mirrors the app's AudioModesFavoritesSetGetPacket:
+     * payload length = ceil(count/8)+1, payload[0] = count, bit (d % 8) of byte
+     * (len - floor(d/8) - 1) set per favourite mode d. modes {0,1,2}, count 11 ->
+     * `1F 08 02 03 0b 00 07` (the live no-op-restore frame).
+     */
+    fun buildFavoritesSetGet(modes: List<Int>, slotCount: Int): IntArray {
+        val maskLen = (slotCount + 7) / 8 // ceil(count/8)
+        val len = maskLen + 1
+        val payload = IntArray(len)
+        payload[0] = slotCount and 0xFF
+        for (d in modes) if (d in 0 until slotCount) {
+            payload[len - (d / 8) - 1] = payload[len - (d / 8) - 1] or (1 shl (d % 8))
+        }
+        return intArrayOf(0x1F, 0x08, 0x02, payload.size) + payload
+    }
+
     /** Decode a UTF-8 string field response from a given payload offset. */
     fun parseString(resp: IntArray, from: Int = 4): String {
         if (resp.size <= from) return ""

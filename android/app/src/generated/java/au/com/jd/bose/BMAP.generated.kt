@@ -19,6 +19,10 @@ object BMAP {
         return intArrayOf(0x1F, 0x03, 0x01, 0x00)
     }
 
+    fun getFavorites(): IntArray {
+        return intArrayOf(0x1F, 0x08, 0x01, 0x00)
+    }
+
     fun setDeviceName(): IntArray {
         return intArrayOf(0x01, 0x02, 0x06, 0x00)
     }
@@ -37,6 +41,22 @@ object BMAP {
 
     fun getMultipoint(): IntArray {
         return intArrayOf(0x01, 0x0A, 0x01, 0x00)
+    }
+
+    fun setAutoPlayPause(enabled: Int): IntArray {
+        return intArrayOf(0x01, 0x18, 0x02, 0x01, (enabled and 0xFF))
+    }
+
+    fun getAutoPlayPause(): IntArray {
+        return intArrayOf(0x01, 0x18, 0x01, 0x00)
+    }
+
+    fun setAutoAnswer(enabled: Int): IntArray {
+        return intArrayOf(0x01, 0x1B, 0x02, 0x01, (enabled and 0xFF))
+    }
+
+    fun getAutoAnswer(): IntArray {
+        return intArrayOf(0x01, 0x1B, 0x01, 0x00)
     }
 
     fun connectDevice(mac: IntArray): IntArray {

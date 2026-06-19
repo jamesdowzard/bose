@@ -1,10 +1,10 @@
-# Agent Progress - autoroute-drop-restore
+# Agent Progress - bmap-autopause-answer-favs
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-06-19T20:55:47Z
+# Created: 2026-06-19T21:18:11Z
 
-feature=autoroute-drop-restore
-name=auto-route: drop unreliable restore (terminated event doesn't fire); keep verified launch-flip + during-call guard
+feature=bmap-autopause-answer-favs
+name=Add verified 01,18 AutoPlayPause / 01,1B AutoAnswer / 1F,08 Favorites commands to bmap.toml. Closes #119
 status=pending
 step=0
 step_name=Not started
-created=2026-06-19T20:55:47Z
+created=2026-06-19T21:18:11Z

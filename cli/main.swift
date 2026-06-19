@@ -495,6 +495,60 @@ func cmdMultipoint(_ arg: String?) {
     print(parseMultipointEnabled(r[4]) ? "on" : "off")
 }
 
+/// auto-pause [on|off] — pause when headphones are removed (01,18). Generated
+/// setAutoPlayPause uses SET_GET; the set's own RESP carries the new state (no verify-GET).
+func cmdAutoPlayPause(_ arg: String?) {
+    if let toggle = arg {
+        let on = ["on", "true", "1"].contains(toggle.lowercased())
+        guard let r = transport.oneShot(BMAP.setAutoPlayPause(enabled: on ? 1 : 0)),
+              r.count >= 5, r[2] == OP_RESP_BYTE else { fail("auto-pause set failed") }
+        print((r[4] & 0x01) != 0 ? "on" : "off")
+        return
+    }
+    guard let r = transport.oneShot(BMAP.getAutoPlayPause()),
+          r.count >= 5, r[2] == OP_RESP_BYTE else { fail("auto-pause query failed") }
+    print((r[4] & 0x01) != 0 ? "on" : "off")
+}
+
+/// auto-answer [on|off] — answer a call when headphones are donned (01,1B). SET_GET.
+func cmdAutoAnswer(_ arg: String?) {
+    if let toggle = arg {
+        let on = ["on", "true", "1"].contains(toggle.lowercased())
+        guard let r = transport.oneShot(BMAP.setAutoAnswer(enabled: on ? 1 : 0)),
+              r.count >= 5, r[2] == OP_RESP_BYTE else { fail("auto-answer set failed") }
+        print((r[4] & 0x01) != 0 ? "on" : "off")
+        return
+    }
+    guard let r = transport.oneShot(BMAP.getAutoAnswer()),
+          r.count >= 5, r[2] == OP_RESP_BYTE else { fail("auto-answer query failed") }
+    print((r[4] & 0x01) != 0 ? "on" : "off")
+}
+
+/// favorites [m1 m2 …] — which AudioModes slots are favourited (1F,08). Bare = list;
+/// with mode indices = set them. GET first to learn the slot count, then build the
+/// SET_GET (count + reversed bitmask) via the hand-written buildFavoritesSetGet — the
+/// payload isn't expressible in the generated builder DSL (getFavorites() is generated).
+func cmdFavorites(_ favArgs: [String]) {
+    guard let g = transport.oneShot(BMAP.getFavorites()), g.count >= 5,
+          let current = parseFavorites(g) else { fail("favorites query failed") }
+    let slotCount = Int(g[4])  // payload[0] = slot count
+    func fmt(_ modes: [Int]) -> String {
+        modes.map { m in (AncMode(rawValue: UInt8(m)).map { "\(m):\($0)" } ?? "\(m)") }.joined(separator: " ")
+    }
+    if favArgs.isEmpty {
+        print(current.isEmpty ? "(none)" : fmt(current))
+        return
+    }
+    let modes = favArgs.flatMap { $0.split(whereSeparator: { $0 == "," || $0 == " " }) }
+        .compactMap { Int($0) }
+    guard !modes.isEmpty, modes.allSatisfy({ $0 >= 0 && $0 < slotCount }) else {
+        fail("usage: bose favorites <mode indices 0-\(slotCount - 1)>")
+    }
+    guard let r = transport.oneShot(buildFavoritesSetGet(modes: modes, slotCount: slotCount)),
+          let updated = parseFavorites(r) else { fail("favorites set failed") }
+    print(updated.isEmpty ? "(none)" : fmt(updated))
+}
+
 /// play / pause / next / prev — generated mediaControl builder.
 func cmdMedia(_ action: MediaAction) {
     _ = transport.oneShot(BMAP.mediaControl(action: action.rawValue))
@@ -580,6 +634,9 @@ func usage() {
       bose name [new name]      Get/set headphone name (max 30 UTF-8 bytes)
       bose volume [0-31]        Get/set volume
       bose multipoint [on|off]  Get/set multipoint
+      bose auto-pause [on|off]  Get/set auto-pause when headphones are removed (01,18)
+      bose auto-answer [on|off] Get/set auto-answer when headphones are donned (01,1B)
+      bose favorites [m …]      List favourite mode slots; pass indices to set them (1F,08)
       bose play|pause|next|prev Media transport
       bose eq [bass mid treble] Get/set EQ (each -10 to +10)
       bose profile [name]       Apply a preset (bare = list); save <name> / rm <name>
@@ -610,6 +667,9 @@ case "disconnect", "d":        cmdDisconnect(requireArg("device"))
 case "swap":                   cmdSwap(requireArg("device"))
 case "volume", "vol", "v":     cmdVolume(args.count >= 3 ? args[2] : nil)
 case "multipoint", "mp":       cmdMultipoint(args.count >= 3 ? args[2] : nil)
+case "auto-pause", "autopause": cmdAutoPlayPause(args.count >= 3 ? args[2] : nil)
+case "auto-answer", "autoanswer": cmdAutoAnswer(args.count >= 3 ? args[2] : nil)
+case "favorites", "favourites", "fav": cmdFavorites(args.count >= 3 ? Array(args[2...]) : [])
 case "play":                   cmdMedia(.play)
 case "pause":                  cmdMedia(.pause)
 case "next":                   cmdMedia(.next)
