@@ -14,6 +14,11 @@
 --   • Opt+J  — unconditionally bring the headphones to THIS Mac (connect + route
 --              audio here). Unlike Opt+⇧B, never guesses direction from the current
 --              output device — it always connects the Mac.
+--   • Battery announce — when the Bose become the Mac's audio output (auto on
+--              power-on, Opt+J, or the toggle), speak the battery level through them.
+--              An event-driven replacement for the power-on announcement Bose removed
+--              in fw 8.2.20. Driven by hs.audiodevice change events — no poller.
+--              Set ANNOUNCE_BATTERY=false to disable.
 --
 -- Wiring (init.lua dofiles this from the repo path; reload Hammerspoon to apply edits):
 --     BoseCtl = dofile(os.getenv("HOME").."/code/personal/bose/hammerspoon/bose.lua")
@@ -56,6 +61,18 @@ local CONNECT_TARGET = "mac"
 
 -- Low-battery warning threshold (%), checked on each toggle (no separate poll).
 local LOW_BATTERY  = 20
+
+-- Speak the battery level when the headphones become this Mac's audio output — an
+-- event-driven stand-in for the power-on battery announcement Bose removed in fw
+-- 8.2.20 (see docs/related-projects.md: the native announcement can't be restored —
+-- firmware-locked; the `01,09` button BatteryLevel action isn't supported on the
+-- over-ears; `01,03` voice-prompts can't be safely toggled). This fires on the rising
+-- edge of "Bose is the default output" (auto on power-on, or via Opt+J / the toggle),
+-- reads battery ONCE, and `say`s it through the headphones. Still no poller — driven
+-- purely by hs.audiodevice change events.
+local ANNOUNCE_BATTERY   = true
+local ANNOUNCE_DELAY     = 1.8   -- s: let the A2DP route + RFCOMM settle before read/speak
+local ANNOUNCE_COOLDOWN  = 10    -- s: ignore output flaps within this window
 -------------------------------------------------------------------------------
 
 local function boseIsMacOutput()
@@ -87,6 +104,36 @@ local function warnIfLowBattery()
       hs.alert.show("🪫  Bose battery " .. pct .. "%")
     end
   end)
+end
+
+-- Speak battery when the Bose become the Mac's output (rising edge), via the
+-- hs.audiodevice change watcher — event-driven, no timer/poll. The `say` plays
+-- through the current default output, which is the Bose we just detected.
+local lastBoseOut  = false
+local lastAnnounce = -math.huge
+
+local function announceBattery()
+  ctlRead({ "battery" }, function(ok, out)
+    local pct = out:match("(%d+)%%") or out:match("(%d+)")
+    if ok and pct then
+      hs.task.new("/usr/bin/say", nil, { "Bose, battery " .. pct .. " percent" }):start()
+    end
+  end)
+end
+
+-- Fired by hs.audiodevice.watcher on any audio-hardware/default-device change. We
+-- re-evaluate "is the Bose the Mac output" and announce only on the false→true edge,
+-- with a cooldown so a flapping route can't double-speak.
+local function onAudioChange()
+  local nowOut = boseIsMacOutput()
+  if nowOut and not lastBoseOut then
+    local t = hs.timer.secondsSinceEpoch()
+    if (t - lastAnnounce) >= ANNOUNCE_COOLDOWN then
+      lastAnnounce = t
+      hs.timer.doAfter(ANNOUNCE_DELAY, announceBattery)
+    end
+  end
+  lastBoseOut = nowOut
 end
 
 -- Show/hide toggle for the windowed control app: press once to open/focus it, press
@@ -156,6 +203,11 @@ function M.start()
   M.hotkey = hs.hotkey.bind(HOTKEY_MODS, HOTKEY_KEY, toggle)
   M.ancHotkey = hs.hotkey.bind(ANC_MODS, ANC_KEY, cycleAnc)
   M.connectHotkey = hs.hotkey.bind(CONNECT_MODS, CONNECT_KEY, connectHere)
+  if ANNOUNCE_BATTERY then
+    lastBoseOut = boseIsMacOutput()   -- seed so (re)starting doesn't announce
+    hs.audiodevice.watcher.setCallback(onAudioChange)
+    hs.audiodevice.watcher.start()
+  end
   return M
 end
 
@@ -164,6 +216,7 @@ function M.stop()
   if M.hotkey then M.hotkey:delete(); M.hotkey = nil end
   if M.ancHotkey then M.ancHotkey:delete(); M.ancHotkey = nil end
   if M.connectHotkey then M.connectHotkey:delete(); M.connectHotkey = nil end
+  if ANNOUNCE_BATTERY then hs.audiodevice.watcher.stop() end
 end
 
 return M
