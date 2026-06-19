@@ -1,10 +1,10 @@
-# Agent Progress - rename-to-bose
+# Agent Progress - firmware-delivery-notes
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-06-14T01:33:12Z
+# Created: 2026-06-19T19:57:12Z
 
-feature=rename-to-bose
-name=Rename bose-ctl to bose and Bose Control.app to Bose.app
+feature=firmware-delivery-notes
+name=firmware delivery chain + dfu format investigation
 status=pending
 step=0
 step_name=Not started
-created=2026-06-14T01:33:12Z
+created=2026-06-19T19:57:12Z
