@@ -1,10 +1,10 @@
-# Agent Progress - firmware-delivery-notes
+# Agent Progress - related-projects-findings
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-06-19T19:57:12Z
+# Created: 2026-06-19T20:13:53Z
 
-feature=firmware-delivery-notes
-name=firmware delivery chain + dfu format investigation
+feature=related-projects-findings
+name=BMAP/firmware related-projects cross-reference + gap analysis
 status=pending
 step=0
 step_name=Not started
-created=2026-06-19T19:57:12Z
+created=2026-06-19T20:13:53Z
