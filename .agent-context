@@ -2,8 +2,8 @@
 # Max 20 lines. Updated by agent on Stop hook.
 
 ## Feature
-auto-route Mac mic off the Bose during calls (Hammerspoon)
-auto-route Mac mic off the Bose during calls (Hammerspoon)
+auto-route: defer terminated re-scan so restore isn't raced by the dying app
+auto-route: defer terminated re-scan so restore isn't raced by the dying app
 
 ## Current State
 Not started. No work has been done yet.

@@ -198,9 +198,16 @@ local function onAppEvent(_, eventType, app)
       setMacInput(MAC_MIC)
     end
   elseif eventType == hs.application.watcher.terminated then
-    if savedInputName ~= nil and not anyCallAppRunning() then
-      setMacInput(savedInputName)
-      savedInputName = nil
+    -- Defer the re-scan: at `terminated` time the quitting app can still appear in
+    -- hs.application.get, racing anyCallAppRunning() → the restore is skipped and never
+    -- retried (verified 2026-06-20). 0.5s later the process is gone, so the scan is true.
+    if savedInputName ~= nil then
+      hs.timer.doAfter(0.5, function()
+        if savedInputName ~= nil and not anyCallAppRunning() then
+          setMacInput(savedInputName)
+          savedInputName = nil
+        end
+      end)
     end
   end
 end
