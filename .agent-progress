@@ -1,10 +1,10 @@
-# Agent Progress - related-projects-findings
+# Agent Progress - battery-announce-on-connect
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-06-19T20:13:53Z
+# Created: 2026-06-19T20:26:47Z
 
-feature=related-projects-findings
-name=BMAP/firmware related-projects cross-reference + gap analysis
+feature=battery-announce-on-connect
+name=speak Bose battery on connect (Hammerspoon, event-driven)
 status=pending
 step=0
 step_name=Not started
-created=2026-06-19T20:13:53Z
+created=2026-06-19T20:26:47Z
