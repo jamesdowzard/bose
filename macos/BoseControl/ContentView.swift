@@ -57,7 +57,12 @@ struct ContentView: View {
                 disconnectedView
             }
         }
-        .frame(width: 640, height: 420)  // 420 fits a 3rd device-grid row (7 devices)
+        // Flexible frame (min/ideal/max) so the window is resizable by dragging — a fixed
+        // width/height + .windowResizability(.contentSize) pinned it to one exact size. The
+        // ideal is the bigger default; maxWidth/Height .infinity let the panels fill when
+        // dragged larger; the min keeps the two-column layout + hints from clipping.
+        .frame(minWidth: 700, idealWidth: 760, maxWidth: .infinity,
+               minHeight: 480, idealHeight: 560, maxHeight: .infinity)
         .background(paperColor)
         .preferredColorScheme(.light)
         .onAppear {
@@ -108,7 +113,7 @@ struct ContentView: View {
         HStack(spacing: 0) {
             // Left panel — status sidebar
             leftPanel
-                .frame(width: 220)
+                .frame(width: 260)  // wide enough for the fixed-mode hints to wrap cleanly
 
             // Divider
             Rectangle()
