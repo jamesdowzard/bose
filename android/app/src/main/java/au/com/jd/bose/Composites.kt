@@ -70,6 +70,22 @@ object Composites {
     }
 
     /**
+     * Stored display names of the two custom slots (4, 5), for labelling the C1/C2 buttons
+     * with their on-device names (set via the CLI `mode-name`). Mirrors macOS `readModeInfo`'s
+     * custom-name leg. Caller must be inside `Transport.withConnection { }`. A slot that's
+     * unset reads "None" (the caller maps that to the C1/C2 fallback); unreadable → omitted.
+     */
+    fun readCustomModeNames(): Map<Int, String> {
+        Transport.send(intArrayOf(0x02, 0x02, 0x01, 0x00)) // prime warm session
+        val names = mutableMapOf<Int, String>()
+        for (idx in intArrayOf(4, 5)) {
+            val r = Transport.send(intArrayOf(0x1F, 0x06, 0x01, 0x01, idx)) ?: continue
+            Parsers.parseModeConfig(r)?.let { names[idx] = it.displayName }
+        }
+        return names
+    }
+
+    /**
      * Set the ACTIVE mode's CNC noise level (0 = max cancellation … 10 = transparency) via
      * the 1F,06 read-modify-write — the correct, ANC-anchored path (#83). Refuses on a mode
      * whose level is fixed (`cncMutable == false`: Quiet/Aware/spatial), so a level write
