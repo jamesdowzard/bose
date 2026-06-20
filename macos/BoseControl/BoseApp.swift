@@ -18,8 +18,8 @@ struct BoseControlApp: App {
                     manager.refreshState()
                 }
         }
-        .defaultSize(width: 640, height: 420)
-        .windowResizability(.contentSize)
+        .defaultSize(width: 760, height: 560)
+        .windowResizability(.contentMinSize)  // user can drag larger; min comes from the frame
         .windowStyle(.hiddenTitleBar)  // no title bar chrome — paper runs edge-to-edge
     }
 }

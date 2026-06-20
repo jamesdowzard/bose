@@ -1,10 +1,10 @@
-# Agent Progress - spatial-frontends
+# Agent Progress - bigger-window
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-06-20T04:08:24Z
+# Created: 2026-06-20T04:22:06Z
 
-feature=spatial-frontends
-name=Raycast bose-spatial command and Hammerspoon spatial hotkey
+feature=bigger-window
+name=Bigger resizable default Bose app window
 status=pending
 step=0
 step_name=Not started
-created=2026-06-20T04:08:24Z
+created=2026-06-20T04:22:06Z
