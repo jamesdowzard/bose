@@ -168,8 +168,10 @@ struct ContentView: View {
                     }
                     HStack(spacing: 4) {
                         ancButton("Cinema", 3)
-                        ancButton("C1", 4)
-                        ancButton("C2", 5)
+                        // Custom slots show their stored on-device name (set via `mode-name`),
+                        // falling back to C1/C2 when unnamed.
+                        ancButton(manager.custom1Name.isEmpty ? "C1" : manager.custom1Name, 4)
+                        ancButton(manager.custom2Name.isEmpty ? "C2" : manager.custom2Name, 5)
                     }
                 }
                 // Noise level (1F,06): 0 = max cancellation … 10 = transparency.

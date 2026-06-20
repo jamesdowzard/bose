@@ -33,7 +33,8 @@ explicit user action.
   theme (burnt-orange `#AF3A03` accent on warm paper, from the Midterm `paper-hc` palette)
   is shared with the Android app; macOS colours live in `ContentView.swift`, Android in
   `MainActivity.kt` (`BoseAccent`/`BoseConnected`/…). Six ANC
-  mode buttons (Quiet/Aware/Immersion/Cinema/C1/C2 = slots 0-5) + a **noise-level
+  mode buttons (Quiet/Aware/Immersion/Cinema/C1/C2 = slots 0-5; the C1/C2 buttons show
+  the custom slots' stored on-device names when set, e.g. "Spatial", via `mode-name`) + a **noise-level
   slider** driven by `anc-level` (1F,06) — NOT a raw depth (1F,0A disables ANC, #83).
   The slider is enabled only on the adjustable custom slots (4/5, firmware `cncMutable`)
   and greys out with a "level is fixed" hint on Quiet/Aware/Immersion/Cinema.
@@ -71,7 +72,7 @@ explicit user action.
 - Companion device registered for background FGS privileges
 
 ### CLI (`cli/`) — regenerated on the shared layer
-- `cli/main.swift` -- `bose` command surface (status/battery/anc/anc-level/spatial/devices/connect/disconnect/swap/volume/multipoint/auto-pause/auto-answer/favorites/play-pause-next-prev/eq/raw). **No inline byte parsing** — every command routes through the generated `BMAP.*` builders. `connect`/`swap` poll-confirm via `getConnectedDevices` (ACK is never success); volume uses the generated SET_GET builder.
+- `cli/main.swift` -- `bose` command surface (status/battery/anc/anc-level/spatial/mode-name/devices/connect/disconnect/swap/volume/multipoint/auto-pause/auto-answer/favorites/play-pause-next-prev/eq/raw). `mode-name [name]` renames the ACTIVE mode via the 1F,06 RMW (name field, SET payload [3..34]) — custom slots only (`userConfigurable`; presets are locked, firmware ignores the write). The name persists on-device and shows in the Bose app too. `info --json` emits `custom1Name`/`custom2Name` (slot 4/5 stored names, read in one warm session via `readModeInfo`); the Mac app labels the C1/C2 buttons with them (falling back to "C1"/"C2" when unset = "None"). **No inline byte parsing** — every command routes through the generated `BMAP.*` builders. `connect`/`swap` poll-confirm via `getConnectedDevices` (ACK is never success); volume uses the generated SET_GET builder.
 - `cli/Transport.swift` -- IOBluetooth RFCOMM transport (per-command open/drain-300ms/close, cold-start warm-up, serial queue).
 - `cli/Composites.swift` -- live-channel composites (cncLevel RMW, connectedDevices list, getAllState single-session).
 - `cli/Parsers.swift` -- pure, hardware-free response parsers; `cli/Tests/main.swift` + `cli/run-tests.sh` are the standalone unit tests (same captured-byte corpus as Android `Parsers.kt`).

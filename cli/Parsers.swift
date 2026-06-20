@@ -127,12 +127,13 @@ func parseModeConfig(_ resp: [UInt8]) -> ModeConfig? {
 /// a level change can't disable ANC). The SET payload layout (from the decompiled app,
 /// distinct from the response): [0]=index, [1..2]=prompt, [3..34]=32-byte name,
 /// [35]=cncLevel, [36]=autoCNC, [37]=spatial, [38]=windBlock, [39]=ancToggle. Pass
-/// `newLevel`/`newSpatial = nil` to leave that field unchanged (a no-op round-trip when
-/// both are nil). `newSpatial`: 0 = off, 1 = Still, 2 = Motion.
-func buildModeConfigSet(_ cfg: ModeConfig, newLevel: Int?, newSpatial: Int? = nil) -> [UInt8] {
+/// `newLevel`/`newSpatial`/`newName = nil` to leave that field unchanged (a no-op
+/// round-trip when all are nil). `newSpatial`: 0 = off, 1 = Still, 2 = Motion. `newName`
+/// is UTF-8, truncated to 32 bytes and null-padded — used to rename a custom mode slot.
+func buildModeConfigSet(_ cfg: ModeConfig, newLevel: Int?, newSpatial: Int? = nil, newName: String? = nil) -> [UInt8] {
     let level = newLevel.map { UInt8(max(0, min(10, $0))) } ?? cfg.cncLevel
     let spatial = newSpatial.map { UInt8(max(0, min(2, $0))) } ?? cfg.spatial
-    var name = Array(cfg.name.prefix(32))
+    var name = newName.map { Array($0.utf8.prefix(32)) } ?? Array(cfg.name.prefix(32))
     while name.count < 32 { name.append(0) }
     var payload: [UInt8] = [cfg.index, cfg.promptB1, cfg.promptB2]
     payload += name
