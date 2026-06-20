@@ -243,6 +243,22 @@ class BoseService : Service() {
                 return
             }
 
+            // Multipoint eviction (parity with the CLI's evictLowestPriorityIfFull): the
+            // headset holds 2 devices and the firmware only evicts by its own LRU. When both
+            // slots are full and the target isn't already held, drop the LOWEST-priority held
+            // device first so the connect lands the target against our hierarchy, not the
+            // firmware's LRU. Restore the victim if the target then fails to connect — never
+            // leave a slot empty for nothing.
+            val (active, connected) = Composites.getDeviceStates(
+                BoseDeviceMap.knownDevices.map { it.mac.toIntArray() }
+            )
+            val victim = evictionVictim(active + connected, mac)
+            if (victim != null) {
+                Log.i(TAG, "Evicting ${victim.name} (priority ${victim.priority}) to free a multipoint slot")
+                Transport.send(BMAP.disconnectDevice(victim.mac.toIntArray()))
+                Thread.sleep(800) // let the slot clear before paging the target
+            }
+
             Log.i(TAG, "Switching to $deviceName")
             val result = Composites.connectDevice(mac)
 
@@ -269,10 +285,12 @@ class BoseService : Service() {
 
                 Composites.SwitchResult.TARGET_OFFLINE -> {
                     Log.w(TAG, "$deviceName is not connected to Bose — can't switch")
+                    restoreEvicted(victim, deviceName)
                     broadcastError("$deviceName is offline — connect it to Bose first")
                 }
 
                 Composites.SwitchResult.FAILED -> {
+                    restoreEvicted(victim, deviceName)
                     broadcastError("Failed to switch to $deviceName")
                 }
             }
@@ -282,6 +300,18 @@ class BoseService : Service() {
         } finally {
             BoseProtocol.disconnect()
         }
+    }
+
+    /**
+     * Re-page a device we evicted, after the target connect failed — restores the prior
+     * pair so we never leave a multipoint slot empty for nothing. No-op when nothing was
+     * evicted. Mirrors the CLI's `restoreEvicted`. (No host-side BT action: unlike the Mac
+     * — which also runs blueutil for its own link — Android just re-sends the BMAP connect.)
+     */
+    private fun restoreEvicted(victim: BoseDevice?, failedTarget: String) {
+        if (victim == null) return
+        Log.i(TAG, "Restoring ${victim.name} (target $failedTarget was unreachable)")
+        Transport.send(BMAP.connectDevice(victim.mac.toIntArray()))
     }
 
     /** Send a media transport command (play/pause/next/prev) to the headphones. */
