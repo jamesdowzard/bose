@@ -107,6 +107,20 @@ check(buildModeConfigSet(parseModeConfig(mcSpatial(2))!, newLevel: nil)[4 + 37] 
 check(buildModeConfigSet(motionMode, newLevel: nil, newSpatial: 9)[4 + 37] == 2, "modeConfigSet: clamps spatial to 2")
 check(buildModeConfigSet(motionMode, newLevel: 4, newSpatial: 1)[4 + 35] == 4, "modeConfigSet: level + spatial together (level @35)")
 
+// ── Custom mode rename (1F,06 name field, SET payload [3..34]) ────────────────────
+// newName writes 32-byte UTF-8 at [3..34], null-padded; nil keeps the existing name.
+let named = buildModeConfigSet(custom, newLevel: nil, newName: "Spatial")
+let np = Array(named[4...])
+check(Array(np[3..<10]) == Array("Spatial".utf8), "modeConfigSet: newName written @3")
+check(np[3 + 7] == 0 && np[3 + 31] == 0, "modeConfigSet: name null-padded to 32")
+let keptName = Array(buildModeConfigSet(custom, newLevel: nil)[4...])  // re-base slice to 0
+check(Array(keptName[3..<7]) == Array("None".utf8), "modeConfigSet: nil newName keeps existing name")
+// Over-long name truncates to 32 bytes (name field stays 32, level still lands at [35]).
+let longName = String(repeating: "x", count: 50)
+let longF = buildModeConfigSet(custom, newLevel: 5, newName: longName)
+check(longF.count == 4 + 40, "modeConfigSet: over-long name truncated (payload stays 40)")
+check(Array(longF[4...])[35] == 5, "modeConfigSet: level still @35 after long name")
+
 // ── Favorites (1F,08) ───────────────────────────────────────────────────────────
 // Live capture on verBosita (fw 8.2.20): GET 1F 08 01 00 -> STATUS 1f 08 03 03 0b 00 07.
 // count 0x0b (11 slots) + reversed-order bitmask 00 07 = modes 0,1,2 favourited.

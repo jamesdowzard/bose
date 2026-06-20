@@ -148,6 +148,49 @@ extension Transport {
             return rmwActiveModeSpatial(spatial) { t.send(ch, $0, timeout: 2.0) }
         } ?? .unreachable
     }
+
+    enum NameResult { case ok(name: String), notCustom, unreachable }
+
+    /// Rename the ACTIVE mode via the 1F,06 RMW (writes the 32-byte name field, preserving
+    /// level/spatial). Only the user-configurable custom slots can be renamed — the named
+    /// presets (Quiet/Aware/Immersion/Cinema) have `userConfigurable == false` and the
+    /// firmware ignores a name write, so refuse there. Returns the device's post-write name.
+    func setActiveModeName(_ name: String) -> NameResult {
+        session { ch, t -> NameResult in
+            _ = t.send(ch, [0x02, 0x02, 0x01, 0x00], timeout: 2.0)  // prime warm
+            func send(_ f: [UInt8]) -> [UInt8]? { t.send(ch, f, timeout: 2.0) }
+            guard let cur = send([0x1F, 0x03, 0x01, 0x00]), cur.count >= 5,
+                  let r1 = send([0x1F, 0x06, 0x01, 0x01, cur[4]]),
+                  let cfg = parseModeConfig(r1) else { return .unreachable }
+            guard cfg.userConfigurable else { return .notCustom }
+            _ = send(buildModeConfigSet(cfg, newLevel: nil, newName: name))
+            let after = send([0x1F, 0x06, 0x01, 0x01, cur[4]]).flatMap(parseModeConfig)
+            return .ok(name: after?.displayName ?? name)
+        } ?? .unreachable
+    }
+
+    /// One warm session: the active mode's full config PLUS the display names of the two
+    /// custom slots (4, 5), so the app can label the C1/C2 buttons with their stored names.
+    /// Folding it into one session (vs a separate read per slot) keeps the app's on-open
+    /// read to a single extra RFCOMM open and avoids the cold-start flakiness of stacked
+    /// sessions. nil → unreachable.
+    func readModeInfo() -> (active: ModeConfig?, customNames: [Int: String])? {
+        session { ch, t -> (ModeConfig?, [Int: String]) in
+            _ = t.send(ch, [0x02, 0x02, 0x01, 0x00], timeout: 2.0)  // prime warm
+            var active: ModeConfig? = nil
+            if let cur = t.send(ch, [0x1F, 0x03, 0x01, 0x00], timeout: 2.0), cur.count >= 5 {
+                active = t.send(ch, [0x1F, 0x06, 0x01, 0x01, cur[4]], timeout: 2.0).flatMap(parseModeConfig)
+            }
+            var names: [Int: String] = [:]
+            for idx in [4, 5] {
+                if let r = t.send(ch, [0x1F, 0x06, 0x01, 0x01, UInt8(idx)], timeout: 2.0),
+                   let cfg = parseModeConfig(r) {
+                    names[idx] = cfg.displayName
+                }
+            }
+            return (active, names)
+        }
+    }
 }
 
 /// Uppercase-hex MAC key for set membership (keeps this file independent of

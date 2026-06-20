@@ -46,6 +46,11 @@ final class BoseManager: ObservableObject {
     @Published var spatial: String = "off"
     @Published var spatialAdjustable: Bool = false
 
+    // Stored names of the two custom slots (1F,06 name field). Empty when unset ("None") —
+    // ContentView falls back to "C1"/"C2". Set via the CLI `mode-name`; persists on-device.
+    @Published var custom1Name: String = ""
+    @Published var custom2Name: String = ""
+
     // Device routing states: "active" / "connected" / "offline"
     @Published var deviceStates: [String: String] = [
         "mac": "offline", "phone": "offline", "ipad": "offline",
@@ -195,6 +200,8 @@ final class BoseManager: ObservableObject {
         modeName = (s["modeName"] as? String) ?? modeName
         spatial = (s["spatial"] as? String) ?? spatial
         spatialAdjustable = (s["spatialAdjustable"] as? Bool) ?? false
+        custom1Name = (s["custom1Name"] as? String) ?? ""
+        custom2Name = (s["custom2Name"] as? String) ?? ""
     }
 
     // MARK: - Write (each: run verb, optimistic local update, then re-read)

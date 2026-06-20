@@ -154,7 +154,8 @@ func cmdInfoJSON() {
     // session (event-driven read, not polled). `noiseAdjustable` (cncMutable) gates the
     // slider so a level write can never disable ANC (#83). nil → slider hidden/disabled.
     var mode: [String: Any] = ["noiseAdjustable": false, "spatialAdjustable": false]
-    if let cfg = transport.readActiveModeConfig() {
+    let modeInfo = transport.readModeInfo()
+    if let cfg = modeInfo?.active {
         mode = [
             "modeName": cfg.displayName,
             "modeIndex": Int(cfg.index),
@@ -163,6 +164,12 @@ func cmdInfoJSON() {
             "spatial": spatialName(Int(cfg.spatial)),
             "spatialAdjustable": cfg.spatialMutable,
         ]
+    }
+    // Stored names of the two custom slots → the app labels the C1/C2 buttons with them
+    // (falling back to "C1"/"C2" when unset, i.e. "None"). Empty string = use the fallback.
+    func customName(_ idx: Int) -> String {
+        let n = modeInfo?.customNames[idx] ?? ""
+        return n == "None" ? "" : n
     }
 
     var out: [String: Any] = [
@@ -180,6 +187,8 @@ func cmdInfoJSON() {
         "autoAnswer": s.autoAnswer,
         "favorites": s.favorites,
         "devices": deviceStates,
+        "custom1Name": customName(4),
+        "custom2Name": customName(5),
     ]
     out.merge(mode) { _, new in new }
     emit(out)
@@ -280,6 +289,22 @@ func cmdSpatial(_ arg: String?) {
     }
     guard let cfg = transport.readActiveModeConfig() else { fail("headphones not reachable") }
     print("\(cfg.displayName): Immersive Audio \(spatialName(Int(cfg.spatial)))\(cfg.spatialMutable ? "" : " (fixed)")")
+}
+
+/// mode-name <name> — rename the ACTIVE mode (1F,06 RMW on the 32-byte name field). Only
+/// the custom slots (4/5, userConfigurable) can be renamed; the named presets are locked.
+/// The name persists on-device and shows on the C1/C2 buttons + in the Bose app.
+func cmdModeName(_ name: String?) {
+    guard let name = name, !name.isEmpty else {
+        guard let cfg = transport.readActiveModeConfig() else { fail("headphones not reachable") }
+        print("\(cfg.displayName)\(cfg.userConfigurable ? "" : " (preset — name locked)")")
+        return
+    }
+    switch transport.setActiveModeName(name) {
+    case .ok(let n):       print("mode renamed: \(n)")
+    case .notCustom:       fail("only the custom modes (C1/C2) can be renamed — switch to one first")
+    case .unreachable:     fail("headphones not reachable")
+    }
 }
 
 /// name [new name] — get/set the headphone name. SET is `01,02,06,{len},00,{utf8}`
@@ -663,6 +688,7 @@ func usage() {
       bose anc [mode]           Get/set ANC (quiet/aware/immersion/cinema/custom1/custom2, or slot 0-5)
       bose anc-level [0-10]     Get/set active mode's noise level (0=max cancel … 10=transparent; custom modes only)
       bose spatial [off|still|motion]  Get/set Immersive Audio on the active mode (custom modes only)
+      bose mode-name [name]     Get/rename the active mode (custom modes only; persists on-device)
       bose name [new name]      Get/set headphone name (max 30 UTF-8 bytes)
       bose volume [0-31]        Get/set volume
       bose multipoint [on|off]  Get/set multipoint
@@ -693,6 +719,7 @@ case "battery", "b":           cmdBattery()
 case "anc":                    cmdAnc(args.count >= 3 ? args[2] : nil)
 case "anc-level":              cmdAncLevel(args.count >= 3 ? args[2] : nil)
 case "spatial", "immersive":   cmdSpatial(args.count >= 3 ? args[2] : nil)
+case "mode-name":              cmdModeName(args.count >= 3 ? args[2...].joined(separator: " ") : nil)
 case "name":                   cmdName(args.count >= 3 ? args[2...].joined(separator: " ") : nil)
 case "devices":                cmdDevices()
 case "connect", "c":           cmdConnect(requireArg("device"))
