@@ -1,10 +1,10 @@
-# Agent Progress - bmap-autopause-answer-favs
+# Agent Progress - android-eviction-parity
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-06-19T21:18:11Z
+# Created: 2026-06-20T01:57:34Z
 
-feature=bmap-autopause-answer-favs
-name=Add verified 01,18 AutoPlayPause / 01,1B AutoAnswer / 1F,08 Favorites commands to bmap.toml. Closes #119
+feature=android-eviction-parity
+name=Android multipoint-eviction parity — replicate CLI evictLowestPriorityIfFull/restoreEvicted in BoseService connect path
 status=pending
 step=0
 step_name=Not started
-created=2026-06-19T21:18:11Z
+created=2026-06-20T01:57:34Z

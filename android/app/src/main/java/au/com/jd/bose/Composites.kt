@@ -29,6 +29,25 @@ object Composites {
         return Parsers.parseConnectedDevices(resp)
     }
 
+    /**
+     * Which of the queried devices the headset currently HOLDS, split into audio-active
+     * (05,01) and ACL-connected-but-idle (04,05). Mirrors macOS `getDeviceStates`: prime a
+     * warm session (05,01 is silent as the first cold frame, #81), read the active sink, then
+     * probe 04,05 per non-active queried device for ACL presence. Caller must hold an open
+     * connection (inside switchDevice's connect/disconnect bracket). Returns (active, connected).
+     */
+    fun getDeviceStates(query: List<IntArray>): Pair<List<IntArray>, List<IntArray>> {
+        Transport.send(intArrayOf(0x02, 0x02, 0x01, 0x00)) // prime warm session (05,01 silent cold)
+        val active = getConnectedDevices()
+        val activeKeys = active.map { it.toList() }.toSet()
+        val connected = mutableListOf<IntArray>()
+        for (mac in query) {
+            if (mac.toList() in activeKeys) continue
+            if (BoseProtocol.getDeviceInfo(mac)?.connected == true) connected.add(mac)
+        }
+        return active to connected
+    }
+
     /** Outcome of a noise-level write — mirrors macOS `AncLevelResult`. */
     sealed class AncLevelResult {
         data class Ok(val name: String, val level: Int) : AncLevelResult()

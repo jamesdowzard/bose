@@ -210,8 +210,11 @@ CLI's `connect`/`swap` enforce the hierarchy in software: when both slots are fu
 the target isn't already connected, it **disconnects the lowest-priority of the two held
 devices first**, then pages the target — and **restores the evicted device if the target
 fails to connect** (`evictLowestPriorityIfFull` / `restoreEvicted` in `cli/main.swift`).
-Mac app / Raycast / Hammerspoon inherit this (they shell `bose`). **Android does NOT yet
-replicate it** (TODO — parity).
+Mac app / Raycast / Hammerspoon inherit this (they shell `bose`). **Android now replicates
+it too**: pure victim selection in `android/.../Eviction.kt` (`evictionVictim`, JVM-unit-
+tested), held-state read via `Composites.getDeviceStates`, wired into `BoseService.switchDevice`
+(evict-then-page, restore on failure). Android can't run the Mac's host-side blueutil step, so
+it only sends the BMAP disconnect/connect — correct from the phone's side.
 
 **Cycle order** (bose): `mac → quest → ipad → iphone → tv → appletv → phone`
 

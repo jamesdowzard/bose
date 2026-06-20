@@ -2,8 +2,8 @@
 # Max 20 lines. Updated by agent on Stop hook.
 
 ## Feature
-Add verified 01,18 AutoPlayPause / 01,1B AutoAnswer / 1F,08 Favorites commands to bmap.toml. Closes #119
-Add verified 01,18 AutoPlayPause / 01,1B AutoAnswer / 1F,08 Favorites commands to bmap.toml. Closes #119
+Android multipoint-eviction parity — replicate CLI evictLowestPriorityIfFull/restoreEvicted in BoseService connect path
+Android multipoint-eviction parity — replicate CLI evictLowestPriorityIfFull/restoreEvicted in BoseService connect path
 
 ## Current State
 Not started. No work has been done yet.
