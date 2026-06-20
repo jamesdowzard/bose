@@ -102,6 +102,39 @@ class ParsersTest {
         assertEquals(10, Parsers.buildModeConfigSet(cfg, 99).copyOfRange(4, 4 + 40)[35]) // clamps to 10
     }
 
+    // ── Immersive Audio / spatial (1F,06 response[41] bit2 + response[44]) ──────
+    // Live verBosita (fw 8.2.20): custom modes p[41]=0x1d → spatialMutable; Immersion
+    // p[44]=2 (Motion), Cinema p[44]=1 (Still). spatial byte: 0 off, 1 Still, 2 Motion.
+    // Mirrors macOS `cli/Tests/main.swift`.
+
+    private fun mcSpatial(value: Int): IntArray {
+        val f = mc(5, "None", 0x1D, 7, 1)
+        f[4 + 44] = value
+        return f
+    }
+
+    @Test
+    fun modeConfig_parsesSpatialMutableAndValue() {
+        val custom = Parsers.parseModeConfig(mc(5, "None", 0x1D, 7, 1))!!
+        assertTrue(custom.spatialMutable) // 0x1D bit2 → spatial editable
+        val fixed = Parsers.parseModeConfig(mc(0, "Quiet", 0x00, 0, 1))!!
+        assertFalse(fixed.spatialMutable)
+        assertEquals(2, Parsers.parseModeConfig(mcSpatial(2))!!.spatial) // Motion
+        assertEquals(1, Parsers.parseModeConfig(mcSpatial(1))!!.spatial) // Still
+    }
+
+    @Test
+    fun buildModeConfigSet_changesSpatial() {
+        val motionMode = Parsers.parseModeConfig(mcSpatial(0))!!
+        // SET layout: spatial @37. newSpatial writes it; null keeps current; clamps to 0..2.
+        assertEquals(2, Parsers.buildModeConfigSet(motionMode, null, 2).copyOfRange(4, 4 + 40)[37])
+        assertEquals(2, Parsers.buildModeConfigSet(Parsers.parseModeConfig(mcSpatial(2))!!, null).copyOfRange(4, 4 + 40)[37]) // null keeps
+        assertEquals(2, Parsers.buildModeConfigSet(motionMode, null, 9).copyOfRange(4, 4 + 40)[37]) // clamps to 2
+        // level + spatial together: level @35, spatial @37
+        val both = Parsers.buildModeConfigSet(motionMode, 4, 1).copyOfRange(4, 4 + 40)
+        assertEquals(4, both[35]); assertEquals(1, both[37])
+    }
+
     // ── Favorites (1F,08) ──────────────────────────────────────────────────────
     // Live capture on verBosita (fw 8.2.20): GET 1F 08 01 00 -> STATUS 1f 08 03 03 0b 00 07.
     // count 0x0b (11 slots) + reversed-order bitmask 00 07 = modes 0,1,2 favourited.

@@ -40,6 +40,11 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
         val noiseLevel: Int = 0,
         val noiseAdjustable: Boolean = false,
         val modeName: String = "",
+        // Immersive Audio (1F,06 spatial byte): 0 = off, 1 = Still, 2 = Motion. Adjustable
+        // only where the firmware spatialMutable bit is set (the custom slots 4/5); named
+        // modes carry it fixed (Immersion = Motion, Cinema = Still).
+        val spatial: Int = 0,
+        val spatialAdjustable: Boolean = false,
         val autoOffTimer: String = "",
         val immersionLevel: IntArray? = null,
 
@@ -99,7 +104,8 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
                     BoseProtocol.getDeviceName()?.let { s = s.copy(deviceName = it) }
                     BoseProtocol.getMultipoint()?.let { s = s.copy(multipointEnabled = it) }
                     Composites.readActiveModeConfig()?.let {
-                        s = s.copy(noiseLevel = it.cncLevel, noiseAdjustable = it.cncMutable, modeName = it.displayName)
+                        s = s.copy(noiseLevel = it.cncLevel, noiseAdjustable = it.cncMutable, modeName = it.displayName,
+                            spatial = it.spatial, spatialAdjustable = it.spatialMutable)
                     }
                     BoseProtocol.getAutoOffTimer()?.let { s = s.copy(autoOffTimer = BoseProtocol.autoOffTimerDescription(it)) }
                     BoseProtocol.getSerialNumber()?.let { s = s.copy(serialNumber = it) }
@@ -186,6 +192,8 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
                         noiseLevel = cfg.cncLevel,
                         noiseAdjustable = cfg.cncMutable,
                         modeName = cfg.displayName,
+                        spatial = cfg.spatial,
+                        spatialAdjustable = cfg.spatialMutable,
                     )
                 } else {
                     _state.value.copy(ancMode = mode)
@@ -226,6 +234,19 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
         command("Failed to set noise level",
             action = { Composites.setActiveModeLevel(level) },
             onSuccess = { _state.value = _state.value.copy(noiseLevel = level) },
+        )
+    }
+
+    /**
+     * Set the active mode's Immersive Audio (spatial) mode via the 1F,06 RMW. No-op on a
+     * fixed mode (the control is disabled there anyway, and `setActiveModeSpatial` refuses).
+     * spatial: 0 = off, 1 = Still, 2 = Motion.
+     */
+    fun setSpatial(spatial: Int) {
+        if (!_state.value.spatialAdjustable) return
+        command("Failed to set Immersive Audio",
+            action = { Composites.setActiveModeSpatial(spatial) },
+            onSuccess = { _state.value = _state.value.copy(spatial = spatial) },
         )
     }
 

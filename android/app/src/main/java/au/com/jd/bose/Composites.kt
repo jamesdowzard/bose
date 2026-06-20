@@ -87,6 +87,34 @@ object Composites {
         return AncLevelResult.Ok(cfg.displayName, after?.cncLevel ?: cfg.cncLevel)
     }
 
+    /** Outcome of an Immersive Audio (spatial) write — mirrors macOS `SpatialResult`. */
+    sealed class SpatialResult {
+        data class Ok(val name: String, val spatial: Int) : SpatialResult()
+        data class Fixed(val name: String) : SpatialResult()
+        object Unreachable : SpatialResult()
+    }
+
+    /**
+     * Set the ACTIVE mode's Immersive Audio (spatial) mode (0 = off, 1 = Still, 2 = Motion)
+     * via the same 1F,06 RMW as the noise level. The spatial byte is per-mode and only
+     * editable where the firmware sets `spatialMutable` (response[41] bit2) — the custom
+     * slots; named modes carry it fixed (Immersion = Motion, Cinema = Still). Refuses on a
+     * fixed mode so the call is a clean no-op. The global AudioManagement function (05,0F) is
+     * FuncNotSupp on this firmware — this per-mode RMW is the only working path. Caller must
+     * be inside `Transport.withConnection { }`.
+     */
+    fun setActiveModeSpatial(spatial: Int): SpatialResult {
+        Transport.send(intArrayOf(0x02, 0x02, 0x01, 0x00)) // prime warm session
+        val cur = Transport.send(intArrayOf(0x1F, 0x03, 0x01, 0x00)) ?: return SpatialResult.Unreachable
+        if (cur.size < 5) return SpatialResult.Unreachable
+        val r1 = Transport.send(intArrayOf(0x1F, 0x06, 0x01, 0x01, cur[4])) ?: return SpatialResult.Unreachable
+        val cfg = Parsers.parseModeConfig(r1) ?: return SpatialResult.Unreachable
+        if (!cfg.spatialMutable) return SpatialResult.Fixed(cfg.displayName)
+        Transport.send(Parsers.buildModeConfigSet(cfg, newLevel = null, newSpatial = spatial))
+        val after = Transport.send(intArrayOf(0x1F, 0x06, 0x01, 0x01, cur[4]))?.let { Parsers.parseModeConfig(it) }
+        return SpatialResult.Ok(cfg.displayName, after?.spatial ?: cfg.spatial)
+    }
+
     /**
      * Connect (switch audio to) a device by MAC. Sends connectDevice (04,01) for the
      * ACK, then polls getConnectedDevices on the SAME channel until the target MAC is

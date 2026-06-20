@@ -51,9 +51,10 @@ object Parsers {
         val userConfigurable: Boolean,
         val name: IntArray, // 32 bytes, null-padded UTF-8
         val cncMutable: Boolean, // response[41] bit 0 — is the CNC level editable?
+        val spatialMutable: Boolean, // response[41] bit 2 — is the spatial (Immersive Audio) mode editable?
         val cncLevel: Int,
         val autoCNC: Int,
-        val spatial: Int,
+        val spatial: Int, // 0 = off, 1 = Still (fixed-to-room), 2 = Motion (head-tracking)
         val windBlock: Int,
         val ancToggle: Int,
     ) {
@@ -98,23 +99,26 @@ object Parsers {
             userConfigurable = p[3] == 1,
             name = p.copyOfRange(6, 38), // [6..37] inclusive = 32 bytes
             cncMutable = (p[41] and 0x01) == 1,
+            spatialMutable = (p[41] and 0x04) != 0,
             cncLevel = p[42], autoCNC = p[43], spatial = p[44],
             windBlock = p[46], ancToggle = p[47],
         )
     }
 
     /**
-     * Build a 1F,06 AudioModesModeConfig SET_GET frame, changing ONLY `cncLevel` and
-     * forcing `ancToggle = 1` (so a level change can't disable ANC). SET payload layout
-     * (distinct from the response): [0]=index, [1..2]=prompt, [3..34]=32-byte name,
-     * [35]=cncLevel, [36]=autoCNC, [37]=spatial, [38]=windBlock, [39]=ancToggle. Pass
-     * newLevel=null for an unchanged round-trip.
+     * Build a 1F,06 AudioModesModeConfig SET_GET frame, changing only `cncLevel` and/or the
+     * spatial (Immersive Audio) mode, and forcing `ancToggle = 1` (so a level change can't
+     * disable ANC). SET payload layout (distinct from the response): [0]=index, [1..2]=prompt,
+     * [3..34]=32-byte name, [35]=cncLevel, [36]=autoCNC, [37]=spatial, [38]=windBlock,
+     * [39]=ancToggle. Pass newLevel/newSpatial=null to leave that field unchanged.
+     * newSpatial: 0 = off, 1 = Still, 2 = Motion.
      */
-    fun buildModeConfigSet(cfg: ModeConfig, newLevel: Int?): IntArray {
+    fun buildModeConfigSet(cfg: ModeConfig, newLevel: Int?, newSpatial: Int? = null): IntArray {
         val level = (newLevel ?: cfg.cncLevel).coerceIn(0, 10)
+        val spatial = (newSpatial ?: cfg.spatial).coerceIn(0, 2)
         val name = IntArray(32) { if (it < cfg.name.size) cfg.name[it] else 0 }
         val payload = intArrayOf(cfg.index, cfg.promptB1, cfg.promptB2) + name +
-            intArrayOf(level, cfg.autoCNC, cfg.spatial, cfg.windBlock, 0x01) // ancToggle forced on
+            intArrayOf(level, cfg.autoCNC, spatial, cfg.windBlock, 0x01) // ancToggle forced on
         return intArrayOf(0x1F, 0x06, 0x02, payload.size) + payload
     }
 
