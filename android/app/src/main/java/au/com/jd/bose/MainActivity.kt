@@ -606,6 +606,13 @@ fun AncSection(
             ) {
                 for (mode in rowModes) {
                     val isActive = state.ancMode == mode
+                    // Custom slots show their stored on-device name when set (via `mode-name`),
+                    // falling back to C1/C2. Other modes use the enum label.
+                    val label = when (mode) {
+                        BoseProtocol.AncMode.CUSTOM1 -> state.custom1Name.ifEmpty { "C1" }
+                        BoseProtocol.AncMode.CUSTOM2 -> state.custom2Name.ifEmpty { "C2" }
+                        else -> mode.label
+                    }
                     Surface(
                         modifier = Modifier
                             .weight(1f)
@@ -618,7 +625,7 @@ fun AncSection(
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Text(
-                                text = mode.label,
+                                text = label,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 maxLines = 1,

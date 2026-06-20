@@ -45,6 +45,10 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
         // modes carry it fixed (Immersion = Motion, Cinema = Still).
         val spatial: Int = 0,
         val spatialAdjustable: Boolean = false,
+        // Stored names of the two custom slots (set via the CLI `mode-name`). Empty when
+        // unset ("None") — the C1/C2 buttons fall back to "C1"/"C2".
+        val custom1Name: String = "",
+        val custom2Name: String = "",
         val autoOffTimer: String = "",
         val immersionLevel: IntArray? = null,
 
@@ -106,6 +110,10 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
                     Composites.readActiveModeConfig()?.let {
                         s = s.copy(noiseLevel = it.cncLevel, noiseAdjustable = it.cncMutable, modeName = it.displayName,
                             spatial = it.spatial, spatialAdjustable = it.spatialMutable)
+                    }
+                    Composites.readCustomModeNames().let { names ->
+                        fun clean(n: String?) = n?.takeIf { it != "None" } ?: ""
+                        s = s.copy(custom1Name = clean(names[4]), custom2Name = clean(names[5]))
                     }
                     BoseProtocol.getAutoOffTimer()?.let { s = s.copy(autoOffTimer = BoseProtocol.autoOffTimerDescription(it)) }
                     BoseProtocol.getSerialNumber()?.let { s = s.copy(serialNumber = it) }
