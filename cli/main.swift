@@ -153,13 +153,15 @@ func cmdInfoJSON() {
     // Active mode's noise config (1F,06) — drives the app's noise slider. Its own warm
     // session (event-driven read, not polled). `noiseAdjustable` (cncMutable) gates the
     // slider so a level write can never disable ANC (#83). nil → slider hidden/disabled.
-    var mode: [String: Any] = ["noiseAdjustable": false]
+    var mode: [String: Any] = ["noiseAdjustable": false, "spatialAdjustable": false]
     if let cfg = transport.readActiveModeConfig() {
         mode = [
             "modeName": cfg.displayName,
             "modeIndex": Int(cfg.index),
             "noiseLevel": Int(cfg.cncLevel),
             "noiseAdjustable": cfg.cncMutable,
+            "spatial": spatialName(Int(cfg.spatial)),
+            "spatialAdjustable": cfg.spatialMutable,
         ]
     }
 
@@ -252,6 +254,32 @@ func cmdAncLevel(_ arg: String?) {
     }
     guard let cfg = transport.readActiveModeConfig() else { fail("headphones not reachable") }
     print("\(cfg.displayName): noise level \(cfg.cncLevel)/10\(cfg.cncMutable ? "" : " (fixed)")")
+}
+
+/// Immersive Audio (spatial) mode names ↔ byte: 0 off, 1 Still, 2 Motion.
+let spatialNames = ["off", "still", "motion"]
+func spatialName(_ v: Int) -> String { (0..<spatialNames.count).contains(v) ? spatialNames[v] : "off" }
+
+/// spatial [off|still|motion] — Immersive Audio on the ACTIVE mode (1F,06 RMW). Bare =
+/// read. Settable only on the custom (spatialMutable) modes; named modes are fixed
+/// (Immersion = Motion, Cinema = Still). The global 05,0F function is FuncNotSupp here.
+func cmdSpatial(_ arg: String?) {
+    if let arg = arg {
+        guard let value = spatialNames.firstIndex(of: arg.lowercased()) else {
+            fail("spatial must be off | still | motion")
+        }
+        switch transport.setActiveModeSpatial(value) {
+        case .ok(let name, let spatial):
+            print("\(name): Immersive Audio \(spatialName(spatial))")
+        case .fixed(let name):
+            fail("\(name)'s Immersive Audio is fixed — switch to a custom mode to set it (Immersion = Motion, Cinema = Still)")
+        case .unreachable:
+            fail("headphones not reachable")
+        }
+        return
+    }
+    guard let cfg = transport.readActiveModeConfig() else { fail("headphones not reachable") }
+    print("\(cfg.displayName): Immersive Audio \(spatialName(Int(cfg.spatial)))\(cfg.spatialMutable ? "" : " (fixed)")")
 }
 
 /// name [new name] — get/set the headphone name. SET is `01,02,06,{len},00,{utf8}`
@@ -634,6 +662,7 @@ func usage() {
       bose swap <device>        Route audio to device (multipoint; keeps others)
       bose anc [mode]           Get/set ANC (quiet/aware/immersion/cinema/custom1/custom2, or slot 0-5)
       bose anc-level [0-10]     Get/set active mode's noise level (0=max cancel … 10=transparent; custom modes only)
+      bose spatial [off|still|motion]  Get/set Immersive Audio on the active mode (custom modes only)
       bose name [new name]      Get/set headphone name (max 30 UTF-8 bytes)
       bose volume [0-31]        Get/set volume
       bose multipoint [on|off]  Get/set multipoint
@@ -663,6 +692,7 @@ case "info":                   args.contains("--json") ? cmdInfoJSON() : cmdInfo
 case "battery", "b":           cmdBattery()
 case "anc":                    cmdAnc(args.count >= 3 ? args[2] : nil)
 case "anc-level":              cmdAncLevel(args.count >= 3 ? args[2] : nil)
+case "spatial", "immersive":   cmdSpatial(args.count >= 3 ? args[2] : nil)
 case "name":                   cmdName(args.count >= 3 ? args[2...].joined(separator: " ") : nil)
 case "devices":                cmdDevices()
 case "connect", "c":           cmdConnect(requireArg("device"))

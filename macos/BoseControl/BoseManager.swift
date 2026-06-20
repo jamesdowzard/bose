@@ -38,6 +38,14 @@ final class BoseManager: ObservableObject {
     @Published var noiseAdjustable: Bool = false
     @Published var modeName: String = ""
 
+    // Active mode's Immersive Audio (spatial) mode: "off" / "still" / "motion" (1F,06
+    // payload[44]). `spatialAdjustable` (the firmware spatialMutable bit, payload[41]
+    // bit2) gates the control — only the custom modes are settable; named modes carry it
+    // fixed (Immersion = Motion, Cinema = Still). Writing is via the CLI `spatial`, which
+    // refuses on fixed modes. The global 05,0F function is FuncNotSupp on this firmware.
+    @Published var spatial: String = "off"
+    @Published var spatialAdjustable: Bool = false
+
     // Device routing states: "active" / "connected" / "offline"
     @Published var deviceStates: [String: String] = [
         "mac": "offline", "phone": "offline", "ipad": "offline",
@@ -185,6 +193,8 @@ final class BoseManager: ObservableObject {
         noiseLevel = (s["noiseLevel"] as? Int) ?? noiseLevel
         noiseAdjustable = (s["noiseAdjustable"] as? Bool) ?? false
         modeName = (s["modeName"] as? String) ?? modeName
+        spatial = (s["spatial"] as? String) ?? spatial
+        spatialAdjustable = (s["spatialAdjustable"] as? Bool) ?? false
     }
 
     // MARK: - Write (each: run verb, optimistic local update, then re-read)
@@ -242,6 +252,15 @@ final class BoseManager: ObservableObject {
         let clamped = max(0, min(10, level))
         noiseLevel = clamped
         write(["anc-level", String(clamped)])
+    }
+
+    /// Set the active mode's Immersive Audio mode ("off"/"still"/"motion") via the CLI
+    /// `spatial` (the 1F,06 RMW). No-op unless the active mode is adjustable — the CLI
+    /// refuses on fixed modes anyway. Only the custom modes are settable.
+    func setSpatial(_ value: String) {
+        guard spatialAdjustable, ["off", "still", "motion"].contains(value) else { return }
+        spatial = value
+        write(["spatial", value])
     }
 
     /// Tell the headphones to make `name` the active sink. The tile shows a spinner

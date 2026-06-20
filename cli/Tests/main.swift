@@ -92,6 +92,21 @@ check(sp[39] == 1, "modeConfigSet: ancToggle forced ON @39 (level change can't d
 check(buildModeConfigSet(custom, newLevel: nil)[4 + 35] == 7, "modeConfigSet: nil keeps current level")
 check(buildModeConfigSet(custom, newLevel: 99)[4 + 35] == 10, "modeConfigSet: clamps to 10")
 
+// ── Immersive Audio / spatial (1F,06 payload[41] bit2 + payload[44]) ─────────────
+// Live verBosita (fw 8.2.20): custom modes p[41]=0x1d -> spatialMutable; Immersion
+// p[44]=2 (Motion), Cinema p[44]=1 (Still). spatial byte: 0 off, 1 Still, 2 Motion.
+check(custom.spatialMutable, "modeConfig: 0x1D mutability bit2 -> spatialMutable")
+check(!fixed.spatialMutable, "modeConfig: 0x00 mutability -> spatial fixed")
+func mcSpatial(_ value: UInt8) -> [UInt8] { var f = mc(index: 5, name: "None", mutability: 0x1D, level: 7, anc: 1); f[4 + 44] = value; return f }
+check(parseModeConfig(mcSpatial(2))!.spatial == 2, "modeConfig: spatial byte @44 = Motion")
+check(parseModeConfig(mcSpatial(1))!.spatial == 1, "modeConfig: spatial byte @44 = Still")
+// SET layout: spatial @37. newSpatial writes it; nil keeps current; clamps to 0...2.
+let motionMode = parseModeConfig(mcSpatial(0))!
+check(buildModeConfigSet(motionMode, newLevel: nil, newSpatial: 2)[4 + 37] == 2, "modeConfigSet: new spatial @37 = Motion")
+check(buildModeConfigSet(parseModeConfig(mcSpatial(2))!, newLevel: nil)[4 + 37] == 2, "modeConfigSet: nil keeps current spatial")
+check(buildModeConfigSet(motionMode, newLevel: nil, newSpatial: 9)[4 + 37] == 2, "modeConfigSet: clamps spatial to 2")
+check(buildModeConfigSet(motionMode, newLevel: 4, newSpatial: 1)[4 + 35] == 4, "modeConfigSet: level + spatial together (level @35)")
+
 // ── Favorites (1F,08) ───────────────────────────────────────────────────────────
 // Live capture on verBosita (fw 8.2.20): GET 1F 08 01 00 -> STATUS 1f 08 03 03 0b 00 07.
 // count 0x0b (11 slots) + reversed-order bitmask 00 07 = modes 0,1,2 favourited.

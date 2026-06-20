@@ -1,10 +1,10 @@
-# Agent Progress - surface-autopause-answer-favs
+# Agent Progress - bose-extra-controls
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-06-20T02:05:30Z
+# Created: 2026-06-20T02:52:42Z
 
-feature=surface-autopause-answer-favs
-name=Surface auto-pause/auto-answer/favorites in Raycast + Mac app (favorites display-only)
+feature=bose-extra-controls
+name=verBosita surface Immersive Audio Sidetone Voice prompts Button remap
 status=pending
 step=0
 step_name=Not started
-created=2026-06-20T02:05:30Z
+created=2026-06-20T02:52:42Z
