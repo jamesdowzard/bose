@@ -29,6 +29,9 @@ struct HeadphoneState {
     var audioCodec: String = ""
     var deviceName: String = ""
     var multipointEnabled: Bool = false
+    var autoPlayPause: Bool = false   // 01,18 — pause when removed
+    var autoAnswer: Bool = false      // 01,1B — answer call when donned
+    var favorites: [Int] = []         // 1F,08 — favourited mode slots
     var autoOffTimer: [UInt8] = []
     var cncLevel: Int = 0
     var eq: (bass: Int, mid: Int, treble: Int) = (0, 0, 0)
@@ -242,6 +245,9 @@ func parseAllState(_ provide: ResponseProvider) -> HeadphoneState {
     }
 
     if let r = resp(0x01, 0x0A) { s.multipointEnabled = parseMultipointEnabled(r[4]) }
+    if let r = resp(0x01, 0x18), r.count >= 5 { s.autoPlayPause = (r[4] & 0x01) != 0 }
+    if let r = resp(0x01, 0x1B), r.count >= 5 { s.autoAnswer = (r[4] & 0x01) != 0 }
+    if let r = provide(0x1F, 0x08), let fav = parseFavorites(r) { s.favorites = fav }
     if let r = resp(0x01, 0x0B) { s.autoOffTimer = Array(r[4...]) }
     // No on-head/wear field: the QC Ultra 2 headphones don't expose live worn state.
     // The real wear function is StatusInEar (02,09) — but it's an EARBUDS feature
