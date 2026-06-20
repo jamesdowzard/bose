@@ -10,7 +10,9 @@
 --   • Opt+⇧B — no-look toggle of audio between Mac and phone (direction from Mac's
 --              output device). The former Opt+B; kept as a fallback to the app. On the
 --              way, reads battery and warns if low (piggybacks the keypress; no poll).
---   • Opt+N  — cycle ANC mode quiet → aware → custom1.
+--   • Opt+N  — cycle ANC mode quiet → aware → immersion.
+--   • Opt+I  — cycle Immersive Audio off → still → motion (custom modes only; shows a
+--              hint on a fixed named mode).
 --   • Opt+J  — unconditionally bring the headphones to THIS Mac (connect + route
 --              audio here). Unlike Opt+⇧B, never guesses direction from the current
 --              output device — it always connects the Mac.
@@ -56,6 +58,13 @@ local TO_PHONE     = "phone"
 local ANC_MODS     = { "alt" }
 local ANC_KEY      = "n"
 local ANC_CYCLE    = { "quiet", "aware", "immersion" }
+
+-- Immersive Audio (spatial) cycle (Opt+I). Only works on a custom mode — the named
+-- modes carry spatial fixed (Immersion = Motion, Cinema = Still), so `bose spatial`
+-- refuses and the cycle shows a hint instead of an alert.
+local SPATIAL_MODS = { "alt" }
+local SPATIAL_KEY  = "i"
+local SPATIAL_CYCLE = { "off", "still", "motion" }
 
 -- Connect hotkey (Opt+J): always bring the headphones to THIS Mac, no toggle
 -- guessing. `connect mac` does the A2DP bring-up + BMAP route + poll-confirm.
@@ -259,10 +268,30 @@ local function cycleAnc()
   end)
 end
 
+-- Read current Immersive Audio mode, then set the next in the cycle. The active mode's
+-- spatial is fixed on the named modes, so the set can fail — surface a hint, not silence.
+local function cycleSpatial()
+  ctlRead({ "spatial" }, function(_, out)
+    local cur = out:match("Immersive Audio%s*(%w+)")
+    local nextMode = SPATIAL_CYCLE[1]
+    for i, m in ipairs(SPATIAL_CYCLE) do
+      if m == cur then nextMode = SPATIAL_CYCLE[(i % #SPATIAL_CYCLE) + 1]; break end
+    end
+    ctl({ "spatial", nextMode }, function(ok)
+      if ok then
+        hs.alert.show("🎧  Immersive Audio → " .. nextMode)
+      else
+        hs.alert.show("🎧  Immersive Audio is fixed — pick a custom mode")
+      end
+    end)
+  end)
+end
+
 function M.start()
   M.openHotkey = hs.hotkey.bind(OPEN_MODS, OPEN_KEY, toggleApp)
   M.hotkey = hs.hotkey.bind(HOTKEY_MODS, HOTKEY_KEY, toggle)
   M.ancHotkey = hs.hotkey.bind(ANC_MODS, ANC_KEY, cycleAnc)
+  M.spatialHotkey = hs.hotkey.bind(SPATIAL_MODS, SPATIAL_KEY, cycleSpatial)
   M.connectHotkey = hs.hotkey.bind(CONNECT_MODS, CONNECT_KEY, connectHere)
   if ANNOUNCE_BATTERY then
     lastBoseOut = boseIsMacOutput()   -- seed so (re)starting doesn't announce
@@ -283,6 +312,7 @@ function M.stop()
   if M.openHotkey then M.openHotkey:delete(); M.openHotkey = nil end
   if M.hotkey then M.hotkey:delete(); M.hotkey = nil end
   if M.ancHotkey then M.ancHotkey:delete(); M.ancHotkey = nil end
+  if M.spatialHotkey then M.spatialHotkey:delete(); M.spatialHotkey = nil end
   if M.connectHotkey then M.connectHotkey:delete(); M.connectHotkey = nil end
   if ANNOUNCE_BATTERY then hs.audiodevice.watcher.stop() end
   if M.appWatcher then M.appWatcher:stop(); M.appWatcher = nil end
