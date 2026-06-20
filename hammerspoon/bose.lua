@@ -289,10 +289,10 @@ end
 
 function M.start()
   M.openHotkey = hs.hotkey.bind(OPEN_MODS, OPEN_KEY, toggleApp)
-  M.hotkey = hs.hotkey.bind(HOTKEY_MODS, HOTKEY_KEY, toggle)
-  M.ancHotkey = hs.hotkey.bind(ANC_MODS, ANC_KEY, cycleAnc)
-  M.spatialHotkey = hs.hotkey.bind(SPATIAL_MODS, SPATIAL_KEY, cycleSpatial)
-  M.connectHotkey = hs.hotkey.bind(CONNECT_MODS, CONNECT_KEY, connectHere)
+  -- M.hotkey = hs.hotkey.bind(HOTKEY_MODS, HOTKEY_KEY, toggle)
+  -- M.ancHotkey = hs.hotkey.bind(ANC_MODS, ANC_KEY, cycleAnc)
+  -- M.spatialHotkey = hs.hotkey.bind(SPATIAL_MODS, SPATIAL_KEY, cycleSpatial)
+  -- M.connectHotkey = hs.hotkey.bind(CONNECT_MODS, CONNECT_KEY, connectHere)
   if ANNOUNCE_BATTERY then
     lastBoseOut = boseIsMacOutput()   -- seed so (re)starting doesn't announce
     hs.audiodevice.watcher.setCallback(onAudioChange)
