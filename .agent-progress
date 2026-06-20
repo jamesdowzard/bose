@@ -1,10 +1,10 @@
-# Agent Progress - android-eviction-parity
+# Agent Progress - surface-autopause-answer-favs
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-06-20T01:57:34Z
+# Created: 2026-06-20T02:05:30Z
 
-feature=android-eviction-parity
-name=Android multipoint-eviction parity — replicate CLI evictLowestPriorityIfFull/restoreEvicted in BoseService connect path
+feature=surface-autopause-answer-favs
+name=Surface auto-pause/auto-answer/favorites in Raycast + Mac app (favorites display-only)
 status=pending
 step=0
 step_name=Not started
-created=2026-06-20T01:57:34Z
+created=2026-06-20T02:05:30Z

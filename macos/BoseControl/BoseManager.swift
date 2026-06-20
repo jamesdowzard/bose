@@ -24,6 +24,9 @@ final class BoseManager: ObservableObject {
     @Published var deviceName: String = "verBosita"
     @Published var firmware: String = ""
     @Published var multipointEnabled: Bool = false
+    @Published var autoPlayPause: Bool = false   // 01,18 — pause when removed
+    @Published var autoAnswer: Bool = false      // 01,1B — answer call when donned
+    @Published var favorites: [Int] = []         // 1F,08 — favourited mode slots (display-only)
     @Published var eq: (bass: Int, mid: Int, treble: Int) = (0, 0, 0)
     @Published var isRefreshing: Bool = false
 
@@ -155,6 +158,9 @@ final class BoseManager: ObservableObject {
         volume = (s["volume"] as? Int) ?? volume
         volumeMax = (s["volumeMax"] as? Int) ?? volumeMax
         multipointEnabled = (s["multipoint"] as? Bool) ?? false
+        autoPlayPause = (s["autoPlayPause"] as? Bool) ?? false
+        autoAnswer = (s["autoAnswer"] as? Bool) ?? false
+        favorites = (s["favorites"] as? [Int]) ?? []
         if let name = s["deviceName"] as? String, !name.isEmpty { deviceName = name }
         if let fw = s["firmware"] as? String { firmware = fw }
         if let e = s["eq"] as? [String: Any] {
@@ -214,6 +220,18 @@ final class BoseManager: ObservableObject {
     func setMultipoint(_ enabled: Bool) {
         multipointEnabled = enabled
         write(["multipoint", enabled ? "on" : "off"])
+    }
+
+    /// Pause playback when the headphones are removed (01,18, SET_GET).
+    func setAutoPlayPause(_ enabled: Bool) {
+        autoPlayPause = enabled
+        write(["auto-pause", enabled ? "on" : "off"])
+    }
+
+    /// Answer an incoming call when the headphones are donned (01,1B, SET_GET).
+    func setAutoAnswer(_ enabled: Bool) {
+        autoAnswer = enabled
+        write(["auto-answer", enabled ? "on" : "off"])
     }
 
     /// Set the active mode's noise level (0 = max cancel … 10 = transparency) via the

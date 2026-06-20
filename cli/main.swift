@@ -174,6 +174,9 @@ func cmdInfoJSON() {
         "volumeMax": s.volumeMax,
         "eq": ["bass": s.eq.bass, "mid": s.eq.mid, "treble": s.eq.treble],
         "multipoint": s.multipointEnabled,
+        "autoPlayPause": s.autoPlayPause,
+        "autoAnswer": s.autoAnswer,
+        "favorites": s.favorites,
         "devices": deviceStates,
     ]
     out.merge(mode) { _, new in new }

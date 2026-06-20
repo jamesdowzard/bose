@@ -236,9 +236,61 @@ struct ContentView: View {
             .toggleStyle(.switch)
             .tint(boseAccent)
 
+            // Auto-pause (01,18) — pause when the headphones are removed
+            Toggle(isOn: Binding(
+                get: { manager.autoPlayPause },
+                set: { manager.setAutoPlayPause($0) }
+            )) {
+                Text("AUTO-PAUSE")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(secondaryColor)
+                    .tracking(1)
+            }
+            .toggleStyle(.switch)
+            .tint(boseAccent)
+
+            // Auto-answer (01,1B) — answer a call when the headphones are donned
+            Toggle(isOn: Binding(
+                get: { manager.autoAnswer },
+                set: { manager.setAutoAnswer($0) }
+            )) {
+                Text("AUTO-ANSWER")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(secondaryColor)
+                    .tracking(1)
+            }
+            .toggleStyle(.switch)
+            .tint(boseAccent)
+
+            // Favourites (1F,08) — display-only: which mode slots are marked favourite
+            if !manager.favorites.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("FAVOURITES")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(secondaryColor)
+                        .tracking(1)
+                    Text(manager.favorites.map(favoriteModeName).joined(separator: ", "))
+                        .font(.system(size: 12))
+                        .foregroundColor(inkColor)
+                }
+            }
+
             Spacer()
         }
         .padding(16)
+    }
+
+    /// Friendly name for a favourited AudioModes slot index (display-only).
+    private func favoriteModeName(_ idx: Int) -> String {
+        switch idx {
+        case 0: return "Quiet"
+        case 1: return "Aware"
+        case 2: return "Immersion"
+        case 3: return "Cinema"
+        case 4: return "Custom 1"
+        case 5: return "Custom 2"
+        default: return "Slot \(idx)"
+        }
     }
 
     // MARK: - Right Panel (Device Grid + EQ)

@@ -28,7 +28,8 @@ is three thin front-ends that shell out to the `cli/` binary (`~/bin/bose`), so
 nothing runs in the background and the Mac only touches the headphones on an
 explicit user action.
 - `macos/BoseControl/` -- **Bose.app**: a windowed SwiftUI app (warm-paper light
-  two-panel: battery/ANC mode/volume/multipoint + device grid + EQ). The light
+  two-panel: battery/ANC mode/volume/multipoint + auto-pause/auto-answer toggles
+  (01,18 / 01,1B) + a favourites display (1F,08, read-only) + device grid + EQ). The light
   theme (burnt-orange `#AF3A03` accent on warm paper, from the Midterm `paper-hc` palette)
   is shared with the Android app; macOS colours live in `ContentView.swift`, Android in
   `MainActivity.kt` (`BoseAccent`/`BoseConnected`/…). Six ANC
@@ -48,6 +49,7 @@ explicit user action.
 - `raycast/bose-connect.sh` / `bose-disconnect.sh` -- Raycast script commands with a device dropdown → `bose connect|disconnect <device>`
 - `raycast/bose-status.sh` / `bose-full-status.sh` -- `bose status` / `bose info`
 - `raycast/bose-anc-level.sh` / `bose-profile.sh` -- `bose anc-level [0-10]` (active mode's noise level, custom modes only) / `bose profile [name]` (text arg)
+- `raycast/bose-auto-pause.sh` / `bose-auto-answer.sh` -- `bose auto-pause [on|off]` / `bose auto-answer [on|off]` (blank arg = read); `bose-favorites.sh` -- `bose favorites` (display-only)
 - `profiles.json` (repo root) -- settings presets ({ANC mode, noise level, EQ, multipoint, volume}) applied by `bose profile`; versioned + hand-editable, ships flight/office/music. A profile's `noiseLevel` is applied via the `anc-level` (1F,06) RMW and ONLY takes effect on the adjustable custom modes (4/5, `cncMutable`) — named modes set the mode only (a level over quiet/aware/spatial is a no-op; the old 1F,0A depth write disabled ANC, #83). flight = {quiet, multipoint off}. Runtime JSON (not codegen'd TOML) because `profile save` writes it; loader resolves `$BOSE_PROFILES` → repo path → `~/.config/bose/`. Pure logic in `cli/Profiles.swift`, live apply in `cli/Composites.swift` (`applyProfile`).
 - `hammerspoon/bose.lua` -- Hammerspoon module, all **event-driven** (no timers): **Opt+B shows/hides the Bose app** (the windowed control surface — press once to open/focus, again to hide; switch devices/ANC/EQ from its tiles), **Opt+⇧B toggles Mac ↔ phone** (the former Opt+B; + one-shot low-battery warn piggybacked on the press), **Opt+N cycles ANC** (quiet→aware→immersion), **Opt+J connects the headphones to this Mac** (unconditional, no toggle direction-guessing; `CONNECT_TARGET` retargets it). Plus two **OS-event** behaviours (no hotkey, no poll — driven by `hs.audiodevice`/`hs.application` watchers): **battery announce** — `say`s the battery through the headphones when they become the Mac output (a stand-in for the power-on announcement Bose removed in fw 8.2.20; `ANNOUNCE_BATTERY`), and **auto-route on call** — a call app (Teams/Zoom/FaceTime/Slack/Webex) launching routes the Mac's *input* to the MacBook mic, and the audiodevice guard never lets the Bose be the system input (its over-ear mics make callers hear the room); input **stays** on the MacBook mic after calls — no restore, because `hs.application.watcher` doesn't reliably deliver `terminated` (verified 2026-06-20) and the MacBook mic is the right default. `AUTO_ROUTE_ON_CALL` + `CALL_APPS`. NB Teams can override the system input with its own setting — set its in-app mic once. Returns a table with `.start()`/`.stop()`. Wired in `init.lua` via `BoseCtl = dofile(os.getenv("HOME").."/code/personal/bose/hammerspoon/bose.lua"); BoseCtl.start()`. Edits apply on Hammerspoon reload.
 - The Swift core that does the actual RFCOMM work lives in `cli/` (see below). The macOS app target (`macos/BoseControl/`) is pure SwiftUI/Foundation and does NO RFCOMM — it shells `bose`, so the two never drift and the app can't reintroduce a transport/poll bug.
@@ -326,9 +328,9 @@ surface. Keep this in sync when adding a verb or control.
 | Device name | 01,02 | ✅ `name` | — | — | ✅ rename |
 | EQ band | 01,07 | ✅ `eq` | 👁 (in status) | — | ✅ 3-band |
 | Multipoint | 01,0A | ✅ `multipoint` | — | — | ✅ toggle |
-| Auto-pause | **01,18** | ✅ `auto-pause` | — | — | — (parser only, no UI) |
-| Auto-answer | **01,1B** | ✅ `auto-answer` | — | — | — |
-| Favorites | **1F,08** | ✅ `favorites` | — | — | — (parser only, no UI) |
+| Auto-pause | **01,18** | ✅ `auto-pause` | ✅ `bose-auto-pause` | — | — (parser only, no UI) |
+| Auto-answer | **01,1B** | ✅ `auto-answer` | ✅ `bose-auto-answer` | — | — |
+| Favorites | **1F,08** | ✅ `favorites` | 👁 `bose-favorites` | — | — (parser only, no UI) |
 | Connect device | 04,01 | ✅ `connect`/`swap` | ✅ `bose-connect` | ✅ Opt+⇧B toggle · Opt+J → Mac (Opt+B opens app) | ✅ widget/tile/picker |
 | Disconnect device | 04,02 | ✅ `disconnect` | ✅ `bose-disconnect` | 👁 (toggle path) | — |
 | Device info (ACL) | 04,05 | 👁 `devices` (○ state) | — | — | 👁 widget colour |
