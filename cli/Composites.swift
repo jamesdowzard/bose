@@ -119,6 +119,35 @@ extension Transport {
             return rmwActiveModeLevel(level) { t.send(ch, $0, timeout: 2.0) }
         } ?? .unreachable
     }
+
+    enum SpatialResult { case ok(name: String, spatial: Int), fixed(name: String), unreachable }
+
+    /// In-session RMW of the active mode's Immersive Audio (spatial) mode via the same
+    /// 1F,06 path as the noise level (0 = off, 1 = Still, 2 = Motion). The spatial byte is
+    /// per-mode and only editable where the firmware sets `spatialMutable` (payload[41]
+    /// bit2) — the two custom slots on verBosita; the named modes (Quiet/Aware/Immersion/
+    /// Cinema) carry it fixed (Immersion = Motion, Cinema = Still). Refuses on a fixed mode
+    /// so the call is a clean no-op rather than a silently-ignored write. The global
+    /// AudioManagement function (05,0F) is FuncNotSupp on this firmware — this per-mode RMW
+    /// is the only working path.
+    private func rmwActiveModeSpatial(_ spatial: Int, send: (_ frame: [UInt8]) -> [UInt8]?) -> SpatialResult {
+        guard let cur = send([0x1F, 0x03, 0x01, 0x00]), cur.count >= 5,
+              let r1 = send([0x1F, 0x06, 0x01, 0x01, cur[4]]),
+              let cfg = parseModeConfig(r1) else { return .unreachable }
+        guard cfg.spatialMutable else { return .fixed(name: cfg.displayName) }
+        _ = send(buildModeConfigSet(cfg, newLevel: nil, newSpatial: spatial))
+        let after = send([0x1F, 0x06, 0x01, 0x01, cur[4]]).flatMap(parseModeConfig)
+        return .ok(name: cfg.displayName, spatial: Int(after?.spatial ?? cfg.spatial))
+    }
+
+    /// Set the ACTIVE mode's Immersive Audio mode (0 = off, 1 = Still, 2 = Motion) via the
+    /// 1F,06 RMW. Refuses on a mode whose spatial is fixed. Returns the post-write value.
+    func setActiveModeSpatial(_ spatial: Int) -> SpatialResult {
+        session { ch, t in
+            _ = t.send(ch, [0x02, 0x02, 0x01, 0x00], timeout: 2.0)  // prime warm
+            return rmwActiveModeSpatial(spatial) { t.send(ch, $0, timeout: 2.0) }
+        } ?? .unreachable
+    }
 }
 
 /// Uppercase-hex MAC key for set membership (keeps this file independent of

@@ -90,9 +90,10 @@ struct ModeConfig: Equatable {
     var userConfigurable: Bool  // payload[3] — a user mode slot
     var name: [UInt8]      // 32 bytes, null-padded UTF-8
     var cncMutable: Bool   // payload[41] bit 0 — is the CNC level editable for this mode?
+    var spatialMutable: Bool  // payload[41] bit 2 — is the spatial (Immersive Audio) mode editable?
     var cncLevel: UInt8
     var autoCNC: UInt8
-    var spatial: UInt8
+    var spatial: UInt8     // 0 = off, 1 = Still (fixed-to-room), 2 = Motion (head-tracking)
     var windBlock: UInt8
     var ancToggle: UInt8
 
@@ -116,22 +117,26 @@ func parseModeConfig(_ resp: [UInt8]) -> ModeConfig? {
         userConfigurable: p[3] == 1,
         name: Array(p[6...37]),
         cncMutable: (p[41] & 0x01) == 1,
+        spatialMutable: (p[41] & 0x04) != 0,
         cncLevel: p[42], autoCNC: p[43], spatial: p[44],
         windBlock: p[46], ancToggle: p[47])
 }
 
-/// Build a 1F,06 AudioModesModeConfig SET_GET frame from a parsed mode, changing ONLY
-/// `cncLevel` and forcing `ancToggle = 1` (so a level change can't disable ANC). The
-/// SET payload layout (from the decompiled app, distinct from the response): [0]=index,
-/// [1..2]=prompt, [3..34]=32-byte name, [35]=cncLevel, [36]=autoCNC, [37]=spatial,
-/// [38]=windBlock, [39]=ancToggle. Pass `newLevel = nil` for an unchanged round-trip.
-func buildModeConfigSet(_ cfg: ModeConfig, newLevel: Int?) -> [UInt8] {
+/// Build a 1F,06 AudioModesModeConfig SET_GET frame from a parsed mode, changing only
+/// `cncLevel` and/or the spatial (Immersive Audio) mode, and forcing `ancToggle = 1` (so
+/// a level change can't disable ANC). The SET payload layout (from the decompiled app,
+/// distinct from the response): [0]=index, [1..2]=prompt, [3..34]=32-byte name,
+/// [35]=cncLevel, [36]=autoCNC, [37]=spatial, [38]=windBlock, [39]=ancToggle. Pass
+/// `newLevel`/`newSpatial = nil` to leave that field unchanged (a no-op round-trip when
+/// both are nil). `newSpatial`: 0 = off, 1 = Still, 2 = Motion.
+func buildModeConfigSet(_ cfg: ModeConfig, newLevel: Int?, newSpatial: Int? = nil) -> [UInt8] {
     let level = newLevel.map { UInt8(max(0, min(10, $0))) } ?? cfg.cncLevel
+    let spatial = newSpatial.map { UInt8(max(0, min(2, $0))) } ?? cfg.spatial
     var name = Array(cfg.name.prefix(32))
     while name.count < 32 { name.append(0) }
     var payload: [UInt8] = [cfg.index, cfg.promptB1, cfg.promptB2]
     payload += name
-    payload += [level, cfg.autoCNC, cfg.spatial, cfg.windBlock, 0x01]  // ancToggle forced on
+    payload += [level, cfg.autoCNC, spatial, cfg.windBlock, 0x01]  // ancToggle forced on
     return [0x1F, 0x06, 0x02, UInt8(payload.count)] + payload
 }
 

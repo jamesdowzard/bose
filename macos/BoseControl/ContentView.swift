@@ -199,6 +199,28 @@ struct ContentView: View {
                 }
             }
 
+            // Immersive Audio (1F,06 spatial byte): Off / Still / Motion. Settable only on
+            // the custom modes (firmware spatialMutable bit) — the named modes carry it
+            // fixed (Immersion = Motion, Cinema = Still), so this greys out on them just
+            // like the Level slider. The global 05,0F function is FuncNotSupp on this fw.
+            VStack(alignment: .leading, spacing: 6) {
+                Text("IMMERSIVE AUDIO")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(secondaryColor)
+                    .tracking(1)
+                HStack(spacing: 4) {
+                    spatialButton("Off", "off")
+                    spatialButton("Still", "still")
+                    spatialButton("Motion", "motion")
+                }
+                .opacity(manager.spatialAdjustable ? 1.0 : 0.5)
+                if !manager.spatialAdjustable {
+                    Text("\(manager.modeName.isEmpty ? "This mode" : manager.modeName)'s spatial mode is fixed — pick a custom mode")
+                        .font(.system(size: 9))
+                        .foregroundColor(offlineColor)
+                }
+            }
+
             // Volume
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
@@ -482,6 +504,31 @@ struct ContentView: View {
             .contentShape(RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain)
+    }
+
+    /// One Immersive Audio segment (Off/Still/Motion). Highlights the active spatial mode;
+    /// disabled when the active mode's spatial is fixed (only custom modes are settable).
+    private func spatialButton(_ label: String, _ value: String) -> some View {
+        let isActive = manager.spatial == value
+        return Button(action: { manager.setSpatial(value) }) {
+            Text(label)
+                .font(.system(size: 10, weight: .semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .foregroundColor(isActive ? .white : secondaryColor)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 5)
+                .padding(.horizontal, 2)
+                .background(isActive ? boseAccent : cardColor)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(isActive ? boseAccent : hairColor, lineWidth: 1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .contentShape(RoundedRectangle(cornerRadius: 6))
+        }
+        .buttonStyle(.plain)
+        .disabled(!manager.spatialAdjustable)
     }
 
     // MARK: - Disconnected View

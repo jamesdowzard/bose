@@ -28,7 +28,7 @@ is three thin front-ends that shell out to the `cli/` binary (`~/bin/bose`), so
 nothing runs in the background and the Mac only touches the headphones on an
 explicit user action.
 - `macos/BoseControl/` -- **Bose.app**: a windowed SwiftUI app (warm-paper light
-  two-panel: battery/ANC mode/volume/multipoint + auto-pause/auto-answer toggles
+  two-panel: battery/ANC mode/Immersive Audio (spatial Off/Still/Motion)/volume/multipoint + auto-pause/auto-answer toggles
   (01,18 / 01,1B) + a favourites display (1F,08, read-only) + device grid + EQ). The light
   theme (burnt-orange `#AF3A03` accent on warm paper, from the Midterm `paper-hc` palette)
   is shared with the Android app; macOS colours live in `ContentView.swift`, Android in
@@ -70,7 +70,7 @@ explicit user action.
 - Companion device registered for background FGS privileges
 
 ### CLI (`cli/`) — regenerated on the shared layer
-- `cli/main.swift` -- `bose` command surface (status/battery/anc/devices/connect/disconnect/swap/volume/multipoint/auto-pause/auto-answer/favorites/play-pause-next-prev/eq/raw). **No inline byte parsing** — every command routes through the generated `BMAP.*` builders. `connect`/`swap` poll-confirm via `getConnectedDevices` (ACK is never success); volume uses the generated SET_GET builder.
+- `cli/main.swift` -- `bose` command surface (status/battery/anc/anc-level/spatial/devices/connect/disconnect/swap/volume/multipoint/auto-pause/auto-answer/favorites/play-pause-next-prev/eq/raw). **No inline byte parsing** — every command routes through the generated `BMAP.*` builders. `connect`/`swap` poll-confirm via `getConnectedDevices` (ACK is never success); volume uses the generated SET_GET builder.
 - `cli/Transport.swift` -- IOBluetooth RFCOMM transport (per-command open/drain-300ms/close, cold-start warm-up, serial queue).
 - `cli/Composites.swift` -- live-channel composites (cncLevel RMW, connectedDevices list, getAllState single-session).
 - `cli/Parsers.swift` -- pure, hardware-free response parsers; `cli/Tests/main.swift` + `cli/run-tests.sh` are the standalone unit tests (same captured-byte corpus as Android `Parsers.kt`).
@@ -277,10 +277,16 @@ BMAP operator (SET/0x06 instead of SET_GET/0x02).
 | Media control | 05,03 | START | `05,03,05,01,{action}` | 01=play 02=pause 03=next 04=prev |
 | **EQ band** | 01,07 | **SET_GET** | `01,07,02,02,{value},{band}` | band: 0=bass 1=mid 2=treble, value: signed -10 to +10 |
 | **Noise level** | **1F,06** | **SET_GET** | per-mode read-modify-write (see below) | 0 = max cancel … 10 = transparency. The CORRECT level command (`bose anc-level`). Reads a mode's config, changes only the level, forces `ancToggle=1`, writes back — ANC stays anchored to the mode. Only on `cncMutable` modes (custom slots); Quiet/Aware/spatial modes are fixed. |
+| **Immersive Audio (spatial)** | **1F,06** | **SET_GET** | per-mode RMW, spatial byte (resp [44] / SET [37]) | 0 = off, 1 = Still (fixed-to-room), 2 = Motion (head-tracking). The CORRECT spatial command (`bose spatial off\|still\|motion`). Same 1F,06 RMW as noise level — changes only the spatial byte. Settable ONLY on `spatialMutable` modes (custom slots 4/5, payload[41] bit2); named modes carry it fixed (Immersion = Motion, Cinema = Still). The global 05,0F path is FuncNotSupp. |
 | ~~ANC depth~~ | ~~1F,0A~~ | — | — | **DO NOT USE.** `1F,0A` (AudioModesSettingsConfig) is GLOBAL live-tuning; writing it over an active mode DETACHES the mode → 1F,03 reads 255 = ANC OFF (#83, confirmed audibly). The old `anc-depth` command + Raycast used this — removed. Use `anc-level` (1F,06) instead. |
 
-**Not supported on QC Ultra 2:** StandbyTimer SET (01,04), MotionAutoOff (01,14), OnHeadDetection SET (01,10).
-Auto-off timer (01,0B) is read-only over RFCOMM — distinct from StandbyTimer (01,04).
+**Not supported / write-locked on QC Ultra 2 (all re-verified live 2026-06-20, fw 8.2.20 — don't re-investigate):**
+- **StandbyTimer SET (01,04)**, **MotionAutoOff (01,14)**, **OnHeadDetection SET (01,10)**, **CncPresets (01,0F)**: reply **FuncNotSupp** (error op 0x04, code 4) to a GET. Dead.
+- **Global Immersive/Spatial Audio (05,0F SpatialAudioMode, 05,10 SpatialAudioStatus)**: FuncNotSupp. The dedicated AudioManagement spatial functions don't exist here — spatial is per-mode only (see AudioModes 1F,06 below).
+- **VoicePrompts (01,03)**: GET works (`01 03 03 07 41 00 00 81 02 00 00` → enabled=0, lang=UsEnglish), but `isTogglable` (config bit7) = 0 and the enable SET_GET is **silently ignored** (response byte unchanged, cold + warm). Read-only on this firmware.
+- **Buttons / action-button mode (01,09)**: GET works (`01 09 03 07 80 09 13 …` → button id 0x80, eventType 0x09, **already SpatialAudioMode (0x13)**; only Vpa/Disabled/SpotifyGoMode/SpatialAudioMode assignable), but the SET_GET (op 0x02) **and** plain SET (op 0x06) both return **No response** and leave state unchanged, cold + warm. Write-locked — Bose's app likely uses a privileged channel we don't replicate.
+- **Sidetone**: no settable opcode (the 01,0B the generic BMAP enum labels "Sidetone" is the read-only **auto-off timer** here — returns `01 0b 03 03 01 02 0f`).
+- Auto-off timer (01,0B) is read-only over RFCOMM — distinct from StandbyTimer (01,04).
 
 ### AudioModes (block 0x1F) — ANC is MODE-based (reverse-engineered from the Bose app, confirmed live fw 8.2.20)
 
@@ -299,6 +305,7 @@ ancToggle. **Level semantics: 0 = max cancellation (Quiet end), 10 = full transp
 - **1F,06 GET** request `1F 06 01 01 {index}`. RESPONSE `1F 06 03 30 {48-byte payload}`; offsets (payload = frame[4:]): `[0]`index, `[1..2]`prompt, `[3]`userConfigurable, `[6..37]`32-byte name, `[41]`mutability bitfield (**bit0 = cncMutable** = level editable; bit4 = ancToggleMutable), `[42]`cncLevel, `[43]`autoCNC, `[44]`spatial, `[46]`windBlock, `[47]`ancToggle.
 - **1F,06 SET_GET** (DIFFERENT layout) `1F 06 02 28 {payload}`: `[0]`index, `[1..2]`prompt, `[3..34]`32-byte name, `[35]`cncLevel, `[36]`autoCNC, `[37]`spatial, `[38]`windBlock, `[39]`ancToggle.
 - `bose anc-level [0-10]` does the GET→change-level→SET_GET RMW on the **active** mode, forcing `ancToggle=1`, and refuses if the mode's `cncMutable` is false (so it can never disable ANC). Pure parse/build = `parseModeConfig`/`buildModeConfigSet` (Parsers); session RMW = `setActiveModeLevel` (Composites).
+- `bose spatial [off|still|motion]` does the same 1F,06 RMW on the **active** mode's spatial byte (Immersive Audio), refusing if the mode's `spatialMutable` (payload[41] bit2) is false. Verified live 2026-06-20: custom slots 4/5 have spatialMutable=1; Immersion carries spatial=2 (Motion), Cinema spatial=1 (Still). Build = `buildModeConfigSet(_, newSpatial:)`; session RMW = `setActiveModeSpatial` (Composites). `ModeConfig.spatialMutable` is the bit2 read. Surfaced in the macOS app as the IMMERSIVE AUDIO segmented control (greys out on fixed modes, like the Level slider).
 - Implementation derived from decompiling `com.bose.bosemusic` (`AudioModesModeConfigResponse`, `FBlockAudioModesKt`); see `docs/plans/2026-06-08-cnc-mode-config-proper.md`.
 
 ### BMAP Function IDs (Block 0x05 — Audio)
@@ -325,6 +332,7 @@ surface. Keep this in sync when adding a verb or control.
 |------------|-----------|-----------|---------|-------------|---------|
 | ANC mode | 1F,03 | ✅ `anc` | 👁 (in status) | ✅ Opt+N cycle | ✅ mode selector |
 | Noise level (CNC) | **1F,06** | ✅ `anc-level` (custom modes) | ✅ `bose-anc-level` | — | ✅ slider (1F,06 RMW, custom modes only) |
+| Immersive Audio (spatial) | **1F,06** | ✅ `spatial` (custom modes) | — | — | — (macOS app only) |
 | Device name | 01,02 | ✅ `name` | — | — | ✅ rename |
 | EQ band | 01,07 | ✅ `eq` | 👁 (in status) | — | ✅ 3-band |
 | Multipoint | 01,0A | ✅ `multipoint` | — | — | ✅ toggle |
