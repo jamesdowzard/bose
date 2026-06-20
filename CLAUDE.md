@@ -305,7 +305,7 @@ ancToggle. **Level semantics: 0 = max cancellation (Quiet end), 10 = full transp
 - **1F,06 GET** request `1F 06 01 01 {index}`. RESPONSE `1F 06 03 30 {48-byte payload}`; offsets (payload = frame[4:]): `[0]`index, `[1..2]`prompt, `[3]`userConfigurable, `[6..37]`32-byte name, `[41]`mutability bitfield (**bit0 = cncMutable** = level editable; bit4 = ancToggleMutable), `[42]`cncLevel, `[43]`autoCNC, `[44]`spatial, `[46]`windBlock, `[47]`ancToggle.
 - **1F,06 SET_GET** (DIFFERENT layout) `1F 06 02 28 {payload}`: `[0]`index, `[1..2]`prompt, `[3..34]`32-byte name, `[35]`cncLevel, `[36]`autoCNC, `[37]`spatial, `[38]`windBlock, `[39]`ancToggle.
 - `bose anc-level [0-10]` does the GET→change-level→SET_GET RMW on the **active** mode, forcing `ancToggle=1`, and refuses if the mode's `cncMutable` is false (so it can never disable ANC). Pure parse/build = `parseModeConfig`/`buildModeConfigSet` (Parsers); session RMW = `setActiveModeLevel` (Composites).
-- `bose spatial [off|still|motion]` does the same 1F,06 RMW on the **active** mode's spatial byte (Immersive Audio), refusing if the mode's `spatialMutable` (payload[41] bit2) is false. Verified live 2026-06-20: custom slots 4/5 have spatialMutable=1; Immersion carries spatial=2 (Motion), Cinema spatial=1 (Still). Build = `buildModeConfigSet(_, newSpatial:)`; session RMW = `setActiveModeSpatial` (Composites). `ModeConfig.spatialMutable` is the bit2 read. Surfaced in the macOS app as the IMMERSIVE AUDIO segmented control (greys out on fixed modes, like the Level slider).
+- `bose spatial [off|still|motion]` does the same 1F,06 RMW on the **active** mode's spatial byte (Immersive Audio), refusing if the mode's `spatialMutable` (payload[41] bit2) is false. Verified live 2026-06-20: custom slots 4/5 have spatialMutable=1; Immersion carries spatial=2 (Motion), Cinema spatial=1 (Still). Build = `buildModeConfigSet(_, newSpatial:)`; session RMW = `setActiveModeSpatial` (Composites). `ModeConfig.spatialMutable` is the bit2 read. Surfaced in the macOS app AND the Android app (`MainActivity.kt` SettingsSection → `BoseViewModel.setSpatial` → `Composites.setActiveModeSpatial`) as an Off/Still/Motion segmented control that greys out on fixed modes, like the Level slider.
 - Implementation derived from decompiling `com.bose.bosemusic` (`AudioModesModeConfigResponse`, `FBlockAudioModesKt`); see `docs/plans/2026-06-08-cnc-mode-config-proper.md`.
 
 ### BMAP Function IDs (Block 0x05 — Audio)
@@ -332,7 +332,7 @@ surface. Keep this in sync when adding a verb or control.
 |------------|-----------|-----------|---------|-------------|---------|
 | ANC mode | 1F,03 | ✅ `anc` | 👁 (in status) | ✅ Opt+N cycle | ✅ mode selector |
 | Noise level (CNC) | **1F,06** | ✅ `anc-level` (custom modes) | ✅ `bose-anc-level` | — | ✅ slider (1F,06 RMW, custom modes only) |
-| Immersive Audio (spatial) | **1F,06** | ✅ `spatial` (custom modes) | — | — | — (macOS app only) |
+| Immersive Audio (spatial) | **1F,06** | ✅ `spatial` (custom modes) | — | — | ✅ Off/Still/Motion selector (custom modes only) |
 | Device name | 01,02 | ✅ `name` | — | — | ✅ rename |
 | EQ band | 01,07 | ✅ `eq` | 👁 (in status) | — | ✅ 3-band |
 | Multipoint | 01,0A | ✅ `multipoint` | — | — | ✅ toggle |

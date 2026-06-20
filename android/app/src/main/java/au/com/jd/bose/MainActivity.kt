@@ -357,6 +357,7 @@ fun BoseApp(vm: BoseViewModel = viewModel()) {
                         onSetName = { vm.setDeviceName(it) },
                         onSetMultipoint = { vm.setMultipoint(it) },
                         onSetNoiseLevel = { vm.setNoiseLevel(it) },
+                        onSetSpatial = { vm.setSpatial(it) },
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
@@ -841,6 +842,7 @@ fun SettingsSection(
     onSetName: (String) -> Unit,
     onSetMultipoint: (Boolean) -> Unit,
     onSetNoiseLevel: (Int) -> Unit = {},
+    onSetSpatial: (Int) -> Unit = {},
 ) {
     // Device name
     var editingName by remember { mutableStateOf(false) }
@@ -936,6 +938,53 @@ fun SettingsSection(
     if (!state.noiseAdjustable) {
         Text(
             text = "${state.modeName.ifEmpty { "This mode" }}'s level is fixed — pick a custom mode",
+            fontSize = 11.sp,
+            color = BoseDim,
+            modifier = Modifier.padding(top = 2.dp),
+        )
+    }
+
+    Spacer(modifier = Modifier.height(12.dp))
+
+    // Immersive Audio (1F,06 spatial byte): Off / Still / Motion. Settable ONLY on the
+    // custom modes (firmware spatialMutable); named modes carry it fixed (Immersion = Motion,
+    // Cinema = Still) so this greys out on them, like the Noise Level slider. The global
+    // 05,0F path is FuncNotSupp — this per-mode RMW is the only working path.
+    Text("Immersive Audio", fontSize = 14.sp, color = BoseText)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        listOf("Off" to 0, "Still" to 1, "Motion" to 2).forEach { (label, value) ->
+            val isActive = state.spatial == value
+            Surface(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(40.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .border(1.dp, if (isActive) BoseAccent else BoseHair, RoundedCornerShape(10.dp))
+                    .then(if (state.spatialAdjustable) Modifier.clickable { onSetSpatial(value) } else Modifier),
+                color = if (isActive) BoseAccent else BoseCardBg,
+                shape = RoundedCornerShape(10.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = label,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        color = if (isActive) Color.White else BoseDim,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
+        }
+    }
+    if (!state.spatialAdjustable) {
+        Text(
+            text = "${state.modeName.ifEmpty { "This mode" }}'s spatial mode is fixed — pick a custom mode",
             fontSize = 11.sp,
             color = BoseDim,
             modifier = Modifier.padding(top = 2.dp),
