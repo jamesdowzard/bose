@@ -45,7 +45,9 @@ explicit user action.
   (Developer-ID signed → `/Applications`; no LaunchAgent). In-window keys: ⌘1-6
   ANC modes (slots 0-5), ⌘↑/⌘↓ volume, ⌘R refresh, ⌘M connect Mac. Global hotkeys stay in
   Hammerspoon. The `--json` read seam lives in `cli/main.swift` (`cmdInfoJSON`, pure
-  formatting over `getAllState` + `getDeviceStates`). It surfaces — but does not fix —
+  formatting over `getAllStateWithDevices` — bulk state + the device grid's active sink
+  AND idle ACL probes in ONE warm session, so neither is lost to the cold-second-session
+  quirk a separate `getDeviceStates` call hit, #132). It surfaces — but does not fix —
   the #83 flight/ancDepth behaviour; that fix lands in the CLI and the app inherits it.
 - `raycast/bose-connect.sh` / `bose-disconnect.sh` -- Raycast script commands with a device dropdown → `bose connect|disconnect <device>`
 - `raycast/bose-status.sh` / `bose-full-status.sh` -- `bose status` / `bose info`

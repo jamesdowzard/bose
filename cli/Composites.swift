@@ -29,6 +29,31 @@ extension Transport {
         }
     }
 
+    /// Bulk state AND per-device idle ACL in ONE RFCOMM session — the read seam for
+    /// `info --json`. `parseAllState` warms the channel and lands the active sink in
+    /// `state.connectedDevices` (its 4th read, 05,01); the per-device 04,05 idle probes
+    /// then run in that SAME warm session. Doing it as a single session (vs `getAllState`
+    /// followed by a separate `getDeviceStates`) is why neither the active sink nor the
+    /// idle set can be lost to the cold-second-session quirk that dropped every tile to
+    /// offline (#132) — and it costs one fewer RFCOMM open/drain/teardown. The headphones
+    /// answer 04,05 about a paired device promptly even when that device is offline, so
+    /// the probe loop doesn't stall. `idle` = ACL up but NOT the active sink. Returns nil
+    /// only if the session can't open (headphones unreachable).
+    func getAllStateWithDevices(query devices: [[UInt8]]) -> (state: HeadphoneState, idle: [[UInt8]])? {
+        session { ch, t in
+            let state = parseAllState { block, function in t.send(ch, [block, function, 0x01, 0x00], timeout: 2.0) }
+            let activeKeys = Set(state.connectedDevices.map { macKey($0) })
+            var idle: [[UInt8]] = []
+            for mac in devices where !activeKeys.contains(macKey(mac)) {
+                if let r = t.send(ch, BMAP.getDeviceInfo(mac: mac), timeout: 2.0),
+                   parseDeviceInfo(r)?.connected == true {
+                    idle.append(mac)
+                }
+            }
+            return (state, idle)
+        }
+    }
+
     /// Three-state device readout in ONE RFCOMM session:
     ///   `active`    — audio sink (05,01 ground truth)
     ///   `connected` — ACL up (per-device 04,05) but NOT the active sink
