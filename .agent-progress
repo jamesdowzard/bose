@@ -1,10 +1,10 @@
-# Agent Progress - info-json-one-session
+# Agent Progress - fix-connect-hang-rename
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-06-22T18:46:34Z
+# Created: 2026-06-22T19:03:25Z
 
-feature=info-json-one-session
-name=fold device probes into getAllState session
+feature=fix-connect-hang-rename
+name=fix bose connect hang + C1/C2 in-app rename #134
 status=pending
 step=0
 step_name=Not started
-created=2026-06-22T18:46:34Z
+created=2026-06-22T19:03:25Z

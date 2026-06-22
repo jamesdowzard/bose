@@ -138,7 +138,7 @@ func cmdInfoJSON() {
     // getDeviceStates call hit — it dropped every tile to offline despite `bose devices`
     // showing the mac active (#132). `bose devices` stays on getDeviceStates: as a
     // standalone session-1 read it's already warm, and it skips the bulk reads it doesn't need.
-    guard let (s, idleDevices) = transport.getAllStateWithDevices(
+    guard let (s, idleDevices, modeInfo) = transport.getAllStateWithDevices(
         query: BoseDeviceMap.knownDevices.map { $0.mac }
     ) else { emit(["connected": false]); return }
 
@@ -152,12 +152,12 @@ func cmdInfoJSON() {
                                : idle.contains(dev.name) ? "connected" : "offline"
     }
 
-    // Active mode's noise config (1F,06) — drives the app's noise slider. Its own warm
-    // session (event-driven read, not polled). `noiseAdjustable` (cncMutable) gates the
-    // slider so a level write can never disable ANC (#83). nil → slider hidden/disabled.
+    // Active mode's noise config (1F,06) — drives the app's noise slider. Read in the SAME
+    // warm session as the bulk state above (folded into getAllStateWithDevices), so it no
+    // longer hits the cold-second-session quirk that blanked it. `noiseAdjustable` (cncMutable)
+    // gates the slider so a level write can never disable ANC (#83). nil → slider disabled.
     var mode: [String: Any] = ["noiseAdjustable": false, "spatialAdjustable": false]
-    let modeInfo = transport.readModeInfo()
-    if let cfg = modeInfo?.active {
+    if let cfg = modeInfo.active {
         mode = [
             "modeName": cfg.displayName,
             "modeIndex": Int(cfg.index),
@@ -170,7 +170,7 @@ func cmdInfoJSON() {
     // Stored names of the two custom slots → the app labels the C1/C2 buttons with them
     // (falling back to "C1"/"C2" when unset, i.e. "None"). Empty string = use the fallback.
     func customName(_ idx: Int) -> String {
-        let n = modeInfo?.customNames[idx] ?? ""
+        let n = modeInfo.customNames[idx] ?? ""
         return n == "None" ? "" : n
     }
 
@@ -293,18 +293,31 @@ func cmdSpatial(_ arg: String?) {
     print("\(cfg.displayName): Immersive Audio \(spatialName(Int(cfg.spatial)))\(cfg.spatialMutable ? "" : " (fixed)")")
 }
 
-/// mode-name <name> — rename the ACTIVE mode (1F,06 RMW on the 32-byte name field). Only
-/// the custom slots (4/5, userConfigurable) can be renamed; the named presets are locked.
-/// The name persists on-device and shows on the C1/C2 buttons + in the Bose app.
-func cmdModeName(_ name: String?) {
+/// mode-name [--slot <4|5>] [name] — get/rename a custom mode's name (1F,06 RMW on the
+/// 32-byte name field). Only the custom slots (4/5, userConfigurable) can be renamed; the
+/// named presets are locked. With `--slot N` the target is slot N (4 = C1, 5 = C2) and the
+/// active ANC mode is left untouched — the Mac app uses this to rename C1/C2 in place.
+/// Without `--slot`, the ACTIVE mode is targeted (must already be a custom slot). The name
+/// persists on-device and shows on the C1/C2 buttons + in the Bose app.
+func cmdModeName(slot: Int?, name: String?) {
+    if let slot = slot, slot != 4 && slot != 5 { fail("--slot must be 4 (C1) or 5 (C2)") }
     guard let name = name, !name.isEmpty else {
-        guard let cfg = transport.readActiveModeConfig() else { fail("headphones not reachable") }
-        print("\(cfg.displayName)\(cfg.userConfigurable ? "" : " (preset — name locked)")")
+        if let slot = slot {
+            guard let info = transport.readModeInfo() else { fail("headphones not reachable") }
+            print(info.customNames[slot] ?? "None")
+        } else {
+            guard let cfg = transport.readActiveModeConfig() else { fail("headphones not reachable") }
+            print("\(cfg.displayName)\(cfg.userConfigurable ? "" : " (preset — name locked)")")
+        }
         return
     }
-    switch transport.setActiveModeName(name) {
+    let result = slot.map { transport.setModeName(slot: $0, name: name) }
+        ?? transport.setActiveModeName(name)
+    switch result {
     case .ok(let n):       print("mode renamed: \(n)")
-    case .notCustom:       fail("only the custom modes (C1/C2) can be renamed — switch to one first")
+    case .notCustom:       fail(slot != nil
+                                ? "slot \(slot!) is not a custom mode — only C1/C2 (4/5) can be renamed"
+                                : "only the custom modes (C1/C2) can be renamed — switch to one first")
     case .unreachable:     fail("headphones not reachable")
     }
 }
@@ -480,20 +493,37 @@ func cmdSwap(_ targetName: String) {
 enum ConnectOutcome { case active, idle, none }
 
 /// Poll `getDeviceStates` (one session per tick: 05,01 active + 04,05 ACL) until the
-/// target is audio-active, or the ~16s budget expires. Offline devices page slowly,
-/// and under multipoint a paged device settles into connected-idle a beat AFTER the
-/// command returns — so we must keep polling for BOTH states, not snapshot once.
-/// Returns `.active` the instant it's the sink; `.idle` if it only ever reached ACL
-/// (a real connection, exit 0); `.none` if it never appeared.
+/// target is audio-active, settled-idle, or the ~16s budget expires. Offline devices
+/// page slowly, and under multipoint a paged device settles into connected-idle a beat
+/// AFTER the command returns — so we must keep polling for BOTH states, not snapshot once.
+///
+/// An **idle** outcome (ACL up under multipoint, audio kept on the prior sink — the
+/// common case when you tap a non-sink device) is a real *success*, not something to
+/// wait out: returning it early kills the "Connecting…" hang (#134 — it used to burn the
+/// full 16s on every idle connect). We require two *consecutive* idle reads (~3s) before
+/// returning, so a transient mid-handover read on its way to `.active` isn't mistaken for
+/// a settled idle; a read that doesn't yet show the target (still paging) resets the
+/// streak, preserving the full 16s budget for a genuinely slow `.none`.
+///
+/// Returns `.active` the instant it's the sink; `.idle` once it's stably ACL-only (or at
+/// the deadline if it was ever seen idle); `.none` if it never appeared.
 func confirmConnect(_ mac: [UInt8]) -> ConnectOutcome {
     let target = macString(mac)
     let deadline = Date().addingTimeInterval(16.0)
+    let idleConfirmPolls = 2          // consecutive idle reads (~3s) before we trust it
     var sawIdle = false
+    var idleStreak = 0
     while Date() < deadline {
         Thread.sleep(forTimeInterval: 1.5)
         guard let st = transport.getDeviceStates(query: [mac]) else { continue }
         if st.active.contains(where: { macString($0) == target }) { return .active }
-        if st.connected.contains(where: { macString($0) == target }) { sawIdle = true }
+        if st.connected.contains(where: { macString($0) == target }) {
+            sawIdle = true
+            idleStreak += 1
+            if idleStreak >= idleConfirmPolls { return .idle }   // settled idle — don't wait out the deadline
+        } else {
+            idleStreak = 0            // not ACL-up yet (still paging) — restart the idle confirm
+        }
     }
     return sawIdle ? .idle : .none
 }
@@ -690,7 +720,7 @@ func usage() {
       bose anc [mode]           Get/set ANC (quiet/aware/immersion/cinema/custom1/custom2, or slot 0-5)
       bose anc-level [0-10]     Get/set active mode's noise level (0=max cancel … 10=transparent; custom modes only)
       bose spatial [off|still|motion]  Get/set Immersive Audio on the active mode (custom modes only)
-      bose mode-name [name]     Get/rename the active mode (custom modes only; persists on-device)
+      bose mode-name [--slot 4|5] [name]  Get/rename a custom mode (active mode, or slot 4=C1 / 5=C2; persists on-device)
       bose name [new name]      Get/set headphone name (max 30 UTF-8 bytes)
       bose volume [0-31]        Get/set volume
       bose multipoint [on|off]  Get/set multipoint
@@ -721,7 +751,15 @@ case "battery", "b":           cmdBattery()
 case "anc":                    cmdAnc(args.count >= 3 ? args[2] : nil)
 case "anc-level":              cmdAncLevel(args.count >= 3 ? args[2] : nil)
 case "spatial", "immersive":   cmdSpatial(args.count >= 3 ? args[2] : nil)
-case "mode-name":              cmdModeName(args.count >= 3 ? args[2...].joined(separator: " ") : nil)
+case "mode-name":
+    var mnArgs = args.count >= 3 ? Array(args[2...]) : []
+    var mnSlot: Int? = nil
+    if let i = mnArgs.firstIndex(of: "--slot") {
+        guard i + 1 < mnArgs.count, let s = Int(mnArgs[i + 1]) else { fail("--slot needs a slot number (4 or 5)") }
+        mnSlot = s
+        mnArgs.removeSubrange(i...(i + 1))
+    }
+    cmdModeName(slot: mnSlot, name: mnArgs.isEmpty ? nil : mnArgs.joined(separator: " "))
 case "name":                   cmdName(args.count >= 3 ? args[2...].joined(separator: " ") : nil)
 case "devices":                cmdDevices()
 case "connect", "c":           cmdConnect(requireArg("device"))

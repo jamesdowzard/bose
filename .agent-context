@@ -2,8 +2,8 @@
 # Max 20 lines. Updated by agent on Stop hook.
 
 ## Feature
-fold device probes into getAllState session
-fold device probes into getAllState session
+fix bose connect hang + C1/C2 in-app rename #134
+fix bose connect hang + C1/C2 in-app rename #134
 
 ## Current State
 Not started. No work has been done yet.

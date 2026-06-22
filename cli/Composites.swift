@@ -39,7 +39,8 @@ extension Transport {
     /// answer 04,05 about a paired device promptly even when that device is offline, so
     /// the probe loop doesn't stall. `idle` = ACL up but NOT the active sink. Returns nil
     /// only if the session can't open (headphones unreachable).
-    func getAllStateWithDevices(query devices: [[UInt8]]) -> (state: HeadphoneState, idle: [[UInt8]])? {
+    func getAllStateWithDevices(query devices: [[UInt8]])
+        -> (state: HeadphoneState, idle: [[UInt8]], mode: (active: ModeConfig?, customNames: [Int: String]))? {
         session { ch, t in
             let state = parseAllState { block, function in t.send(ch, [block, function, 0x01, 0x00], timeout: 2.0) }
             let activeKeys = Set(state.connectedDevices.map { macKey($0) })
@@ -50,7 +51,24 @@ extension Transport {
                     idle.append(mac)
                 }
             }
-            return (state, idle)
+            // Active mode config (1F,06) + the two custom slots' stored names, read in THIS
+            // already-warm session. A separate `readModeInfo()` ran as a cold SECOND session
+            // and reliably came back empty — blanking the noise slider, spatial control, AND
+            // the C1/C2 names in `info --json` (the same cold-second-session quirk #132/#133
+            // folded the device grid in to avoid). The session is warm by here (parseAllState
+            // already read battery etc.), so the 1F,06 reads land like readActiveModeConfig's.
+            var activeMode: ModeConfig? = nil
+            var customNames: [Int: String] = [:]
+            if let cur = t.send(ch, [0x1F, 0x03, 0x01, 0x00], timeout: 2.0), cur.count >= 5 {
+                activeMode = t.send(ch, [0x1F, 0x06, 0x01, 0x01, cur[4]], timeout: 2.0).flatMap(parseModeConfig)
+            }
+            for idx in [4, 5] as [UInt8] {
+                if let r = t.send(ch, [0x1F, 0x06, 0x01, 0x01, idx], timeout: 2.0),
+                   let cfg = parseModeConfig(r) {
+                    customNames[Int(idx)] = cfg.displayName
+                }
+            }
+            return (state, idle, (activeMode, customNames))
         }
     }
 
@@ -176,21 +194,42 @@ extension Transport {
 
     enum NameResult { case ok(name: String), notCustom, unreachable }
 
-    /// Rename the ACTIVE mode via the 1F,06 RMW (writes the 32-byte name field, preserving
-    /// level/spatial). Only the user-configurable custom slots can be renamed — the named
-    /// presets (Quiet/Aware/Immersion/Cinema) have `userConfigurable == false` and the
-    /// firmware ignores a name write, so refuse there. Returns the device's post-write name.
+    /// Rewrite custom-mode slot `idx`'s 32-byte name field in place, inside an already-open
+    /// warm session: 1F,06 GET → SET_GET (name only, preserving level/spatial) → read-back.
+    /// Only the user-configurable custom slots can be renamed — the named presets
+    /// (Quiet/Aware/Immersion/Cinema) have `userConfigurable == false` and the firmware
+    /// ignores a name write, so refuse there (`.notCustom`). Takes the session's `send` so it
+    /// stays IOBluetooth-type-free here (Composites is Foundation-only). Shared by
+    /// `setActiveModeName` (active slot) and `setModeName` (an explicit C1/C2 slot).
+    private func renameModeSlot(_ idx: UInt8, to name: String, send: ([UInt8]) -> [UInt8]?) -> NameResult {
+        guard let r1 = send([0x1F, 0x06, 0x01, 0x01, idx]),
+              let cfg = parseModeConfig(r1) else { return .unreachable }
+        guard cfg.userConfigurable else { return .notCustom }
+        _ = send(buildModeConfigSet(cfg, newLevel: nil, newName: name))
+        let after = send([0x1F, 0x06, 0x01, 0x01, idx]).flatMap(parseModeConfig)
+        return .ok(name: after?.displayName ?? name)
+    }
+
+    /// Rename the ACTIVE mode — resolve the active slot (1F,03), then RMW its name field.
+    /// Returns the device's post-write name. (Backs the CLI `mode-name`.)
     func setActiveModeName(_ name: String) -> NameResult {
         session { ch, t -> NameResult in
             _ = t.send(ch, [0x02, 0x02, 0x01, 0x00], timeout: 2.0)  // prime warm
             func send(_ f: [UInt8]) -> [UInt8]? { t.send(ch, f, timeout: 2.0) }
-            guard let cur = send([0x1F, 0x03, 0x01, 0x00]), cur.count >= 5,
-                  let r1 = send([0x1F, 0x06, 0x01, 0x01, cur[4]]),
-                  let cfg = parseModeConfig(r1) else { return .unreachable }
-            guard cfg.userConfigurable else { return .notCustom }
-            _ = send(buildModeConfigSet(cfg, newLevel: nil, newName: name))
-            let after = send([0x1F, 0x06, 0x01, 0x01, cur[4]]).flatMap(parseModeConfig)
-            return .ok(name: after?.displayName ?? name)
+            guard let cur = send([0x1F, 0x03, 0x01, 0x00]), cur.count >= 5 else { return .unreachable }
+            return self.renameModeSlot(cur[4], to: name, send: send)
+        } ?? .unreachable
+    }
+
+    /// Rename a custom slot (4 = C1, 5 = C2) by index, WITHOUT changing the active mode —
+    /// reads and rewrites that slot's config directly. Lets the Mac app rename C1/C2 in
+    /// place while the user's active ANC mode is untouched (unlike `setActiveModeName`).
+    /// Non-custom slots return `.notCustom`.
+    func setModeName(slot: Int, name: String) -> NameResult {
+        session { ch, t -> NameResult in
+            _ = t.send(ch, [0x02, 0x02, 0x01, 0x00], timeout: 2.0)  // prime warm
+            func send(_ f: [UInt8]) -> [UInt8]? { t.send(ch, f, timeout: 2.0) }
+            return self.renameModeSlot(UInt8(slot), to: name, send: send)
         } ?? .unreachable
     }
 

@@ -277,6 +277,11 @@ final class BoseManager: ObservableObject {
     /// off-head routing probe (see `assertedActiveDevice`).
     func connectDevice(_ name: String) {
         guard connectingDevice == nil else { return }   // ignore taps while one is in flight
+        // Skip-if-active: tapping the device that's already the audio sink is a no-op — don't
+        // re-run the whole connect sequence (or spin the tile) for a device that's already
+        // here. Mirrors Android's BoseService skip-if-active (CLAUDE.md). The CLI connect
+        // would settle near-instantly anyway, but this avoids the needless RFCOMM round-trips.
+        guard deviceStates[name] != "active" else { return }
         connectingDevice = name
         DispatchQueue.main.async { self.isRefreshing = true }
         queue.async { [weak self] in
@@ -301,6 +306,20 @@ final class BoseManager: ObservableObject {
 
     func applyProfile(_ name: String) {
         write(["profile", name])
+    }
+
+    /// Rename a custom ANC slot (4 = C1, 5 = C2) in place via `mode-name --slot`, WITHOUT
+    /// changing the active mode. Optimistically updates the local C1/C2 label, then writes +
+    /// refreshes so the button reflects the device's confirmed name. Trims to 30 UTF-8 bytes
+    /// (the 1F,06 name-field limit); a blank name is ignored (the CLI treats empty as a read,
+    /// so it can't clear a name — there's no on-device "unset" write).
+    func renameCustomMode(slot: Int, name: String) {
+        guard slot == 4 || slot == 5 else { return }
+        var trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        while trimmed.utf8.count > 30 { trimmed = String(trimmed.dropLast()) }
+        guard !trimmed.isEmpty else { return }
+        if slot == 4 { custom1Name = trimmed } else { custom2Name = trimmed }   // optimistic
+        write(["mode-name", "--slot", String(slot), trimmed])
     }
 
     /// Run a write verb off the main thread, then refresh to reflect the device's
