@@ -96,6 +96,18 @@ private final class BTReadyWaiter: NSObject, CBCentralManagerDelegate {
     }
 }
 
+// MARK: - SDP query completion waiter
+
+/// Receives the IOBluetooth SDP-query completion callback so warm-up can proceed
+/// the instant SDP resolves, instead of always waiting a flat timeout. Only ever
+/// touched on the warm-up run loop (the transport's serial queue).
+private final class SDPQueryWaiter: NSObject {
+    private(set) var done = false
+    @objc func sdpQueryComplete(_ device: IOBluetoothDevice!, status: IOReturn) {
+        done = true
+    }
+}
+
 // MARK: - Transport
 
 /// On-demand RFCOMM transport. All public methods hop onto `queue` so callers can
@@ -118,8 +130,18 @@ final class Transport: @unchecked Sendable {
         guard !warmedUp else { return }
         BTReadyWaiter().waitForReady()
         if let device = IOBluetoothDevice(addressString: Headphone.dashMac) {
-            device.performSDPQuery(nil)
-            RunLoop.current.run(until: Date().addingTimeInterval(1.0))
+            // Event-driven SDP: proceed the instant the query completes rather than
+            // always burning a flat 1.0s. The 1.0s cap preserves the old worst-case
+            // (and is the fallback if the callback never fires), so warm-up is never
+            // slower than before — just faster when SDP resolves quickly, the common
+            // case once an ACL link exists. The query still primes channel-ID
+            // resolution to avoid the cold-open error 913.
+            let sdp = SDPQueryWaiter()
+            device.performSDPQuery(sdp)
+            let deadline = Date().addingTimeInterval(1.0)
+            while !sdp.done && Date() < deadline {
+                RunLoop.current.run(until: Date().addingTimeInterval(0.03))
+            }
         }
         warmedUp = true
     }
@@ -164,9 +186,12 @@ final class Transport: @unchecked Sendable {
         }
         guard writeStatus == kIOReturnSuccess else { return nil }
 
+        // Poll at 20ms (was 50ms): the read returns on the first data callback, so a
+        // finer interval just trims the slop between arrival and return. Across ~20
+        // reads in a bulk session that adds up; per read it's a few ms, harmless.
         let deadline = Date().addingTimeInterval(timeout)
         while !delegate.gotResponse && Date() < deadline {
-            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
         }
         return delegate.gotResponse ? Array(delegate.responseData) : nil
     }

@@ -101,6 +101,33 @@ final class BoseManager: ObservableObject {
 
     private lazy var binary: String = Self.resolveBinary()
 
+    // MARK: - Optimistic paint (persisted last-good snapshot)
+
+    /// UserDefaults key for the persisted last-good `info` snapshot.
+    private let snapshotKey = "bose.lastSnapshot.v1"
+
+    /// Consecutive failed reads (see `apply`). Tolerates one blip before disconnecting.
+    private var consecutiveFailures = 0
+
+    /// Paint the last-good snapshot the moment the app launches, so the window shows
+    /// real values instead of the "Not Connected" placeholder during the first ~3s
+    /// `info` read. It's overwritten as soon as that live read lands. No-op if nothing
+    /// is cached or the cached snapshot was itself disconnected.
+    init() {
+        guard let data = UserDefaults.standard.data(forKey: snapshotKey),
+              let s = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              (s["connected"] as? Bool) == true
+        else { return }
+        apply(s)
+    }
+
+    /// Persist a connected snapshot for the next launch's optimistic paint.
+    private func persistSnapshot(_ s: [String: Any]) {
+        if let data = try? JSONSerialization.data(withJSONObject: s) {
+            UserDefaults.standard.set(data, forKey: snapshotKey)
+        }
+    }
+
     // MARK: - Process runner
 
     /// Run `bose <args>` synchronously (caller is already off the main thread).
@@ -151,11 +178,21 @@ final class BoseManager: ObservableObject {
     /// Apply a decoded snapshot to published properties. Must run on the main thread.
     private func apply(_ s: [String: Any]) {
         let connected = (s["connected"] as? Bool) ?? false
-        isConnected = connected
         guard connected else {
+            // One transient unreachable `info` read shouldn't wipe a known-good
+            // dashboard to "Not Connected". The CLI does a single RFCOMM attempt per
+            // command, so an occasional miss when the link is briefly busy is expected,
+            // not a real disconnect — tolerate one blip and only fall back to the
+            // disconnected view on a SECOND consecutive failure (or if we've never had a
+            // good read this session).
+            consecutiveFailures += 1
+            if isConnected && consecutiveFailures < 2 { return }
+            isConnected = false
             for k in deviceStates.keys { deviceStates[k] = "offline" }
             return
         }
+        consecutiveFailures = 0
+        isConnected = true
         batteryLevel = (s["batteryLevel"] as? Int) ?? batteryLevel
         batteryCharging = (s["batteryCharging"] as? Bool) ?? false
         let snapAnc = (s["ancMode"] as? Int) ?? ancMode
@@ -202,6 +239,7 @@ final class BoseManager: ObservableObject {
         spatialAdjustable = (s["spatialAdjustable"] as? Bool) ?? false
         custom1Name = (s["custom1Name"] as? String) ?? ""
         custom2Name = (s["custom2Name"] as? String) ?? ""
+        persistSnapshot(s)
     }
 
     // MARK: - Write (each: run verb, optimistic local update, then re-read)

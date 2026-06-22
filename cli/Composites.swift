@@ -10,6 +10,74 @@
 
 import Foundation
 
+// MARK: - Identity read memo (immutable-field cache)
+
+/// On-disk memo for the headphone's IMMUTABLE identity reads — serial (00,07),
+/// product (00,0F), platform (12,0D), codename (12,0C). These never change for a
+/// unit, yet `getAllState` re-reads them on every `bose info`/`status`: ~4 RFCOMM
+/// round-trips of pure waste per call. We cache the RAW response bytes and serve them
+/// at the SAME call site in the bulk session, so `parseAllState` parses them exactly
+/// as if read live (no parse-path change) and read order / session warmth are
+/// preserved. Firmware (00,05) is deliberately NOT cached — it changes on update.
+/// A corrupt cache entry can't produce wrong data: `parseAllState`'s `resp()` re-checks
+/// block/func/RESP on every value, so a bad entry simply reads as empty, not wrong.
+enum IdentityCache {
+    static func key(_ b: UInt8, _ f: UInt8) -> UInt16 { UInt16(b) << 8 | UInt16(f) }
+
+    /// block,func pairs safe to memo (immutable identity, all read via `resp()`).
+    static let cachedKeys: Set<UInt16> = [
+        key(0x00, 0x07),  // serial number
+        key(0x00, 0x0F),  // product name
+        key(0x12, 0x0D),  // platform
+        key(0x12, 0x0C),  // codename
+    ]
+
+    private static var path: String {
+        let dir = (NSHomeDirectory() as NSString).appendingPathComponent(".cache/bose")
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        return (dir as NSString).appendingPathComponent("identity-\(Headphone.dashMac).json")
+    }
+
+    static func load() -> [UInt16: [UInt8]] {
+        guard let data = FileManager.default.contents(atPath: path),
+              let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: [Int]]
+        else { return [:] }
+        var out: [UInt16: [UInt8]] = [:]
+        for (k, v) in obj { if let kk = UInt16(k) { out[kk] = v.map { UInt8($0 & 0xFF) } } }
+        return out
+    }
+
+    static func save(_ cache: [UInt16: [UInt8]]) {
+        var obj: [String: [Int]] = [:]
+        for (k, v) in cache { obj["\(k)"] = v.map { Int($0) } }
+        if let data = try? JSONSerialization.data(withJSONObject: obj) {
+            try? data.write(to: URL(fileURLWithPath: path))
+        }
+    }
+}
+
+/// Per-session wrapper around the bulk-read `provide` closure: serves identity reads
+/// from `IdentityCache` (and learns them on a miss from a valid RESP frame), running
+/// everything else live. One instance per session; call `flush()` after to persist.
+final class IdentityMemo {
+    private var cache = IdentityCache.load()
+    private var learned = false
+
+    func provide(_ block: UInt8, _ function: UInt8, live: () -> [UInt8]?) -> [UInt8]? {
+        let k = IdentityCache.key(block, function)
+        if IdentityCache.cachedKeys.contains(k), let hit = cache[k] { return hit }
+        let r = live()
+        if IdentityCache.cachedKeys.contains(k), let r = r, r.count >= 5,
+           r[0] == block, r[1] == function, r[2] == OP_RESP_BYTE {
+            cache[k] = r
+            learned = true
+        }
+        return r
+    }
+
+    func flush() { if learned { IdentityCache.save(cache) } }
+}
+
 extension Transport {
 
     // Composite GET frames are not emitted by the generator (commands are marked
@@ -23,9 +91,15 @@ extension Transport {
     }
 
     /// Bulk state in ONE RFCOMM session — issues every GET, parses via `parseAllState`.
+    /// Immutable identity reads are served from `IdentityMemo` at the same call site.
     func getAllState() -> HeadphoneState? {
         session { ch, t in
-            parseAllState { block, function in t.send(ch, [block, function, 0x01, 0x00], timeout: 2.0) }
+            let memo = IdentityMemo()
+            let state = parseAllState { block, function in
+                memo.provide(block, function) { t.send(ch, [block, function, 0x01, 0x00], timeout: 2.0) }
+            }
+            memo.flush()
+            return state
         }
     }
 
@@ -42,7 +116,11 @@ extension Transport {
     func getAllStateWithDevices(query devices: [[UInt8]])
         -> (state: HeadphoneState, idle: [[UInt8]], mode: (active: ModeConfig?, customNames: [Int: String]))? {
         session { ch, t in
-            let state = parseAllState { block, function in t.send(ch, [block, function, 0x01, 0x00], timeout: 2.0) }
+            let memo = IdentityMemo()
+            let state = parseAllState { block, function in
+                memo.provide(block, function) { t.send(ch, [block, function, 0x01, 0x00], timeout: 2.0) }
+            }
+            memo.flush()
             let activeKeys = Set(state.connectedDevices.map { macKey($0) })
             var idle: [[UInt8]] = []
             for mac in devices where !activeKeys.contains(macKey(mac)) {

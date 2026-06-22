@@ -2,8 +2,8 @@
 # Max 20 lines. Updated by agent on Stop hook.
 
 ## Feature
-Android UI: auto-pause/auto-answer toggles + favourites display (#123)
-Android UI: auto-pause/auto-answer toggles + favourites display (#123)
+bose: speed up BoseControl refresh — two-phase paint, cache immutable fields, read-until-quiet
+bose: speed up BoseControl refresh — two-phase paint, cache immutable fields, read-until-quiet
 
 ## Current State
 Not started. No work has been done yet.
