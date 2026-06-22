@@ -135,11 +135,20 @@ func cmdInfoJSON() {
 
     // Per-device 3-state, resolved by NAME (same logic as cmdDevices, #81). If the
     // dedicated probe is unreachable, fall back to active-only from getAllState.
+    //
+    // `getAllState` reads 05,01 as its 4th in-session read — well-warmed, reliably
+    // returns the active sink (→ activeFromAll). The dedicated `getDeviceStates` opens
+    // a FRESH session and re-reads 05,01 with a single battery prime; as the 2nd RFCOMM
+    // session in quick succession that read can come back EMPTY (the #81 cold-channel
+    // quirk a standalone `bose devices` call doesn't hit). When it does, `states.active`
+    // is empty and every tile defaulted to offline even though the headphones report the
+    // mac active. Union activeFromAll into active so the warm read always wins — no retry
+    // loop (single-attempt rule), just don't discard data already in hand.
     var deviceStates: [String: String] = [:]
     let activeFromAll = Set(s.connectedDevices.map { activeName(forMac: $0) })
     if let states = transport.getDeviceStates(query: BoseDeviceMap.knownDevices.map { $0.mac }) {
-        let active = Set(states.active.map { activeName(forMac: $0) })
-        let idle = Set(states.connected.map { displayName(forMac: $0) })
+        let active = activeFromAll.union(states.active.map { activeName(forMac: $0) })
+        let idle = Set(states.connected.map { displayName(forMac: $0) }).subtracting(active)
         for dev in BoseDeviceMap.knownDevices {
             deviceStates[dev.name] = active.contains(dev.name) ? "active"
                                    : idle.contains(dev.name) ? "connected" : "offline"
