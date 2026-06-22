@@ -358,6 +358,8 @@ fun BoseApp(vm: BoseViewModel = viewModel()) {
                         onSetMultipoint = { vm.setMultipoint(it) },
                         onSetNoiseLevel = { vm.setNoiseLevel(it) },
                         onSetSpatial = { vm.setSpatial(it) },
+                        onSetAutoPlayPause = { vm.setAutoPlayPause(it) },
+                        onSetAutoAnswer = { vm.setAutoAnswer(it) },
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
@@ -850,6 +852,8 @@ fun SettingsSection(
     onSetMultipoint: (Boolean) -> Unit,
     onSetNoiseLevel: (Int) -> Unit = {},
     onSetSpatial: (Int) -> Unit = {},
+    onSetAutoPlayPause: (Boolean) -> Unit = {},
+    onSetAutoAnswer: (Boolean) -> Unit = {},
 ) {
     // Device name
     var editingName by remember { mutableStateOf(false) }
@@ -906,6 +910,39 @@ fun SettingsSection(
                 uncheckedThumbColor = BoseDim,
                 uncheckedTrackColor = BoseHair,
             ),
+        )
+    }
+
+    Spacer(modifier = Modifier.height(12.dp))
+
+    // Auto-pause (01,18) — pause when the headphones are removed. SET_GET toggle,
+    // mirroring the Mac app's AUTO-PAUSE switch.
+    ToggleRow(
+        label = "Auto-Pause",
+        checked = state.autoPlayPause,
+        onCheckedChange = onSetAutoPlayPause,
+    )
+
+    Spacer(modifier = Modifier.height(12.dp))
+
+    // Auto-answer (01,1B) — answer a call when the headphones are donned. SET_GET toggle.
+    ToggleRow(
+        label = "Auto-Answer",
+        checked = state.autoAnswer,
+        onCheckedChange = onSetAutoAnswer,
+    )
+
+    Spacer(modifier = Modifier.height(12.dp))
+
+    // Favourites (1F,08) — display-only, matching the Mac app: which mode slots are
+    // marked favourite. Mapped slot-index → name via favoriteModeName.
+    SettingRow("Favourites") {
+        Text(
+            text = if (state.favorites.isEmpty()) "-"
+            else state.favorites.joinToString(", ") { favoriteModeName(it) },
+            fontSize = 14.sp,
+            color = BoseText,
+            textAlign = TextAlign.End,
         )
     }
 
@@ -1021,6 +1058,49 @@ fun SettingsSection(
             color = BoseText,
         )
     }
+}
+
+/**
+ * A labelled on/off switch row (warm-paper theme), mirroring the Mac app's
+ * MULTIPOINT / AUTO-PAUSE / AUTO-ANSWER toggles. The value text reads On/Off in the
+ * accent colour when on, dim when off.
+ */
+@Composable
+fun ToggleRow(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    SettingRow(label) {
+        Text(
+            text = if (checked) "On" else "Off",
+            fontSize = 14.sp,
+            color = if (checked) BoseAccent else BoseDim,
+            modifier = Modifier.weight(1f),
+        )
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color(0xFFFFFFFF),
+                checkedTrackColor = BoseAccent,
+                uncheckedThumbColor = BoseDim,
+                uncheckedTrackColor = BoseHair,
+            ),
+        )
+    }
+}
+
+/** Friendly name for a favourited AudioModes slot index (display-only). Mirrors the
+ *  Mac app's favoriteModeName: 0 Quiet … 5 Custom 2, else "Slot N". */
+private fun favoriteModeName(idx: Int): String = when (idx) {
+    0 -> "Quiet"
+    1 -> "Aware"
+    2 -> "Immersion"
+    3 -> "Cinema"
+    4 -> "Custom 1"
+    5 -> "Custom 2"
+    else -> "Slot $idx"
 }
 
 @Composable

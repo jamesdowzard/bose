@@ -188,6 +188,9 @@ class ParsersTest {
             (0x05 to 0x05) to intArrayOf(0x05, 0x05, 0x03, 0x02, 0x1F, 0x14),             // volMax 31, vol 20
             (0x05 to 0x01) to twoDevices,
             (0x01 to 0x0A) to intArrayOf(0x01, 0x0A, 0x03, 0x01, 0x07),                   // multipoint on
+            (0x01 to 0x18) to intArrayOf(0x01, 0x18, 0x03, 0x01, 0x01),                   // auto-pause on
+            (0x01 to 0x1B) to intArrayOf(0x01, 0x1B, 0x03, 0x01, 0x00),                   // auto-answer off
+            (0x1F to 0x08) to intArrayOf(0x1F, 0x08, 0x03, 0x03, 0x0B, 0x00, 0x07),       // favorites 0/1/2
             (0x00 to 0x05) to (intArrayOf(0x00, 0x05, 0x03, 0x05) + "1.2.3".map { it.code }.toIntArray()),
             // EQ RESP: value bytes at absolute indices 6, 10, 14 (signed).
             (0x01 to 0x07) to intArrayOf(
@@ -205,6 +208,9 @@ class ParsersTest {
         assertEquals(31, s.volumeMax)
         assertEquals(2, s.connectedDevices.size)
         assertTrue(s.multipointEnabled)
+        assertTrue(s.autoPlayPause)            // 01,18 status byte 0x01 & 0x01 → on
+        assertFalse(s.autoAnswer)              // 01,1B status byte 0x00 → off
+        assertEquals(listOf(0, 1, 2), s.favorites) // 1F,08 reversed bitmask 00 07
         assertEquals("1.2.3", s.firmware)
         assertEquals(3, s.eqBass)
         assertEquals(0, s.eqMid)

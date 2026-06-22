@@ -35,6 +35,11 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
 
         // Settings
         val multipointEnabled: Boolean = false,
+        // Auto-pause (01,18) — pause when removed; Auto-answer (01,1B) — answer call when donned.
+        val autoPlayPause: Boolean = false,
+        val autoAnswer: Boolean = false,
+        // Favourited mode slots (1F,08) — display-only, mirroring the Mac app.
+        val favorites: List<Int> = emptyList(),
         // Noise level (1F,06) — the active mode's CNC level + whether it's adjustable
         // (firmware cncMutable: only the custom slots 4/5). modeName labels the hint.
         val noiseLevel: Int = 0,
@@ -107,6 +112,9 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
                     BoseProtocol.getFirmwareVersion()?.let { s = s.copy(firmwareVersion = it) }
                     BoseProtocol.getDeviceName()?.let { s = s.copy(deviceName = it) }
                     BoseProtocol.getMultipoint()?.let { s = s.copy(multipointEnabled = it) }
+                    BoseProtocol.getAutoPlayPause()?.let { s = s.copy(autoPlayPause = it) }
+                    BoseProtocol.getAutoAnswer()?.let { s = s.copy(autoAnswer = it) }
+                    BoseProtocol.getFavorites()?.let { s = s.copy(favorites = it) }
                     Composites.readActiveModeConfig()?.let {
                         s = s.copy(noiseLevel = it.cncLevel, noiseAdjustable = it.cncMutable, modeName = it.displayName,
                             spatial = it.spatial, spatialAdjustable = it.spatialMutable)
@@ -230,6 +238,18 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
     fun setEq(bass: Int, mid: Int, treble: Int) = command("Failed to set EQ",
         action = { BoseProtocol.setEq(bass, mid, treble) },
         onSuccess = { _state.value = _state.value.copy(eqBass = bass, eqMid = mid, eqTreble = treble) },
+    )
+
+    /** Pause playback when the headphones are removed (01,18, SET_GET). Optimistic + refresh. */
+    fun setAutoPlayPause(enabled: Boolean) = command("Failed to set auto-pause",
+        action = { BoseProtocol.setAutoPlayPause(enabled) },
+        onSuccess = { _state.value = _state.value.copy(autoPlayPause = enabled) },
+    )
+
+    /** Answer an incoming call when the headphones are donned (01,1B, SET_GET). Optimistic + refresh. */
+    fun setAutoAnswer(enabled: Boolean) = command("Failed to set auto-answer",
+        action = { BoseProtocol.setAutoAnswer(enabled) },
+        onSuccess = { _state.value = _state.value.copy(autoAnswer = enabled) },
     )
 
     /**
