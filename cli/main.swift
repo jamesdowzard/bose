@@ -131,32 +131,25 @@ func cmdInfoJSON() {
         print(str)
     }
 
-    guard let s = transport.getAllState() else { emit(["connected": false]); return }
+    // Bulk state AND device grid from ONE warm RFCOMM session. The active sink comes from
+    // parseAllState's warm 05,01 read; the idle (ACL-up-but-not-sink) devices from
+    // per-device 04,05 probes in the SAME session. Reading both in one session is what
+    // keeps either from being lost to the cold-second-session quirk that a separate
+    // getDeviceStates call hit — it dropped every tile to offline despite `bose devices`
+    // showing the mac active (#132). `bose devices` stays on getDeviceStates: as a
+    // standalone session-1 read it's already warm, and it skips the bulk reads it doesn't need.
+    guard let (s, idleDevices) = transport.getAllStateWithDevices(
+        query: BoseDeviceMap.knownDevices.map { $0.mac }
+    ) else { emit(["connected": false]); return }
 
-    // Per-device 3-state, resolved by NAME (same logic as cmdDevices, #81). If the
-    // dedicated probe is unreachable, fall back to active-only from getAllState.
-    //
-    // `getAllState` reads 05,01 as its 4th in-session read — well-warmed, reliably
-    // returns the active sink (→ activeFromAll). The dedicated `getDeviceStates` opens
-    // a FRESH session and re-reads 05,01 with a single battery prime; as the 2nd RFCOMM
-    // session in quick succession that read can come back EMPTY (the #81 cold-channel
-    // quirk a standalone `bose devices` call doesn't hit). When it does, `states.active`
-    // is empty and every tile defaulted to offline even though the headphones report the
-    // mac active. Union activeFromAll into active so the warm read always wins — no retry
-    // loop (single-attempt rule), just don't discard data already in hand.
+    // Per-device 3-state, resolved by NAME (same logic as cmdDevices, #81). Active wins
+    // over idle when a device resolves to both.
     var deviceStates: [String: String] = [:]
-    let activeFromAll = Set(s.connectedDevices.map { activeName(forMac: $0) })
-    if let states = transport.getDeviceStates(query: BoseDeviceMap.knownDevices.map { $0.mac }) {
-        let active = activeFromAll.union(states.active.map { activeName(forMac: $0) })
-        let idle = Set(states.connected.map { displayName(forMac: $0) }).subtracting(active)
-        for dev in BoseDeviceMap.knownDevices {
-            deviceStates[dev.name] = active.contains(dev.name) ? "active"
-                                   : idle.contains(dev.name) ? "connected" : "offline"
-        }
-    } else {
-        for dev in BoseDeviceMap.knownDevices {
-            deviceStates[dev.name] = activeFromAll.contains(dev.name) ? "active" : "offline"
-        }
+    let active = Set(s.connectedDevices.map { activeName(forMac: $0) })
+    let idle = Set(idleDevices.map { displayName(forMac: $0) }).subtracting(active)
+    for dev in BoseDeviceMap.knownDevices {
+        deviceStates[dev.name] = active.contains(dev.name) ? "active"
+                               : idle.contains(dev.name) ? "connected" : "offline"
     }
 
     // Active mode's noise config (1F,06) — drives the app's noise slider. Its own warm

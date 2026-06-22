@@ -2,8 +2,8 @@
 # Max 20 lines. Updated by agent on Stop hook.
 
 ## Feature
-fix-info-json-device-grid-offline
-fix-info-json-device-grid-offline
+fold device probes into getAllState session
+fold device probes into getAllState session
 
 ## Current State
 Not started. No work has been done yet.
