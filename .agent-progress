@@ -1,10 +1,10 @@
-# Agent Progress - android-autopause-fav-ui
+# Agent Progress - speed-up-refresh
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-06-22T19:25:10Z
+# Created: 2026-06-22T21:17:15Z
 
-feature=android-autopause-fav-ui
-name=Android UI: auto-pause/auto-answer toggles + favourites display (#123)
+feature=speed-up-refresh
+name=bose: speed up BoseControl refresh — two-phase paint, cache immutable fields, read-until-quiet
 status=pending
 step=0
 step_name=Not started
-created=2026-06-22T19:25:10Z
+created=2026-06-22T21:17:15Z
