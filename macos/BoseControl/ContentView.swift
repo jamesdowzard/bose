@@ -49,6 +49,11 @@ struct ContentView: View {
     @State private var eqMid: Double = 0
     @State private var eqTreble: Double = 0
 
+    // C1/C2 rename (custom ANC slots 4/5) — driven from a right-click "Rename…" on the button.
+    @State private var renameSlot: Int = 4
+    @State private var renameText: String = ""
+    @State private var showRename: Bool = false
+
     var body: some View {
         Group {
             if manager.isConnected {
@@ -73,6 +78,23 @@ struct ContentView: View {
         .onReceive(manager.objectWillChange) { _ in
             DispatchQueue.main.async { syncSliders() }
         }
+        // Rename a custom slot (C1/C2). The text field seeds with the current name; Save
+        // writes via `mode-name --slot` (custom slots only; the active mode is untouched).
+        .alert("Rename \(renameSlot == 4 ? "C1" : "C2")", isPresented: $showRename) {
+            TextField("Name", text: $renameText)
+            Button("Cancel", role: .cancel) {}
+            Button("Save") { manager.renameCustomMode(slot: renameSlot, name: renameText) }
+        } message: {
+            Text("Up to 30 characters. Names the custom mode on-device.")
+        }
+    }
+
+    /// Open the rename alert for a custom slot (4 = C1, 5 = C2), seeding the field with its
+    /// current name so an edit (rather than a blank retype) is the default.
+    private func beginRename(slot: Int) {
+        renameSlot = slot
+        renameText = slot == 4 ? manager.custom1Name : manager.custom2Name
+        showRename = true
     }
 
     private func syncSliders() {
@@ -169,9 +191,12 @@ struct ContentView: View {
                     HStack(spacing: 4) {
                         ancButton("Cinema", 3)
                         // Custom slots show their stored on-device name (set via `mode-name`),
-                        // falling back to C1/C2 when unnamed.
+                        // falling back to C1/C2 when unnamed. Right-click → Rename… (slots 4/5
+                        // only; the preset buttons are firmware-locked, so they carry no menu).
                         ancButton(manager.custom1Name.isEmpty ? "C1" : manager.custom1Name, 4)
+                            .contextMenu { Button("Rename…") { beginRename(slot: 4) } }
                         ancButton(manager.custom2Name.isEmpty ? "C2" : manager.custom2Name, 5)
+                            .contextMenu { Button("Rename…") { beginRename(slot: 5) } }
                     }
                 }
                 // Noise level (1F,06): 0 = max cancellation … 10 = transparency.
