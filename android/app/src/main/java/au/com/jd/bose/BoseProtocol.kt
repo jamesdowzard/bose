@@ -107,6 +107,43 @@ object BoseProtocol {
     fun setMultipoint(enabled: Boolean): Boolean =
         Transport.send(BMAP.setMultipoint(if (enabled) 0x07 else 0x00)).isAccepted()
 
+    // ── Auto-pause (01,18) / Auto-answer (01,1B) — SET_GET bool toggles ────────────
+    //
+    // Auto-pause = pause playback when the headphones are removed; auto-answer = answer
+    // a call when they're donned. Both are SET_GET: the set's own RESP carries the new
+    // STATUS byte, so no separate verify-GET (a second back-to-back open intermittently
+    // returns nil). Parse `& 0x01` of the status byte, matching the CLI (cmdAutoPlayPause/
+    // cmdAutoAnswer) and Parsers.parseAllState.
+
+    fun getAutoPlayPause(): Boolean? {
+        val resp = Transport.send(BMAP.getAutoPlayPause()) ?: return null
+        if (resp.size >= 5 && resp[2] == OP_RESP) return (resp[4] and 0x01) != 0
+        return null
+    }
+
+    fun setAutoPlayPause(enabled: Boolean): Boolean {
+        val resp = Transport.send(BMAP.setAutoPlayPause(if (enabled) 1 else 0)) ?: return false
+        return resp.size >= 5 && resp[2] == OP_RESP
+    }
+
+    fun getAutoAnswer(): Boolean? {
+        val resp = Transport.send(BMAP.getAutoAnswer()) ?: return null
+        if (resp.size >= 5 && resp[2] == OP_RESP) return (resp[4] and 0x01) != 0
+        return null
+    }
+
+    fun setAutoAnswer(enabled: Boolean): Boolean {
+        val resp = Transport.send(BMAP.setAutoAnswer(if (enabled) 1 else 0)) ?: return false
+        return resp.size >= 5 && resp[2] == OP_RESP
+    }
+
+    /** GET favourited mode slots (1F,08). Display-only — decoded by the hand-written
+     *  bitmask parser (the SET_GET payload isn't expressible in the codegen DSL). */
+    fun getFavorites(): List<Int>? {
+        val resp = Transport.send(BMAP.getFavorites()) ?: return null
+        return Parsers.parseFavorites(resp)
+    }
+
     // ── EQ (SET_GET; band: 0=bass 1=mid 2=treble, value -10..+10) ─────────────────
 
     data class EqBand(val id: Int, val value: Int)

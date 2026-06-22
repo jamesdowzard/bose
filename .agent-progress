@@ -1,10 +1,10 @@
-# Agent Progress - fix-connect-hang-rename
+# Agent Progress - android-autopause-fav-ui
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-06-22T19:03:25Z
+# Created: 2026-06-22T19:25:10Z
 
-feature=fix-connect-hang-rename
-name=fix bose connect hang + C1/C2 in-app rename #134
+feature=android-autopause-fav-ui
+name=Android UI: auto-pause/auto-answer toggles + favourites display (#123)
 status=pending
 step=0
 step_name=Not started
-created=2026-06-22T19:03:25Z
+created=2026-06-22T19:25:10Z

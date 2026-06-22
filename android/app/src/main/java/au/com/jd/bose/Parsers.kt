@@ -31,6 +31,9 @@ object Parsers {
         var audioCodec: String = "",
         var deviceName: String = "",
         var multipointEnabled: Boolean = false,
+        var autoPlayPause: Boolean = false, // 01,18 — pause when removed
+        var autoAnswer: Boolean = false, // 01,1B — answer call when donned
+        var favorites: List<Int> = emptyList(), // 1F,08 — favourited mode slots
         var autoOffTimer: IntArray = IntArray(0),
         var eqBass: Int = 0,
         var eqMid: Int = 0,
@@ -217,6 +220,9 @@ object Parsers {
         }
 
         resp(0x01, 0x0A)?.let { s.multipointEnabled = it[4] != 0 }
+        resp(0x01, 0x18)?.let { if (it.size >= 5) s.autoPlayPause = (it[4] and 0x01) != 0 }
+        resp(0x01, 0x1B)?.let { if (it.size >= 5) s.autoAnswer = (it[4] and 0x01) != 0 }
+        provide.response(0x1F, 0x08)?.let { r -> parseFavorites(r)?.let { s.favorites = it } }
         resp(0x01, 0x0B)?.let { s.autoOffTimer = it.copyOfRange(4, it.size) }
         // No on-head/wear: StatusInEar (02,09) is an EARBUDS function; the QC Ultra 2
         // headphones answer FuncNotSupp. Live worn state isn't exposed over BMAP.
