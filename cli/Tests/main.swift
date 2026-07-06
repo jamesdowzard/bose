@@ -279,6 +279,22 @@ check(cap.multipoint == true, "profile capture: multipoint")
 check(Profile(name: "s", ancMode: "custom1", noiseLevel: 3).summary == " — anc custom1, noise 3",
       "profile summary: shows noise level")
 
+// ── last-active-mac flag ─────────────────────────────────────────────────────────
+// Uses $BOSE_STATE_DIR override so the test never touches real ~/.config/bose.
+let tmpState = NSTemporaryDirectory() + "bose-test-state-\(getpid())"
+setenv("BOSE_STATE_DIR", tmpState, 1)
+let flagPath = tmpState + "/last-active-mac"
+
+setLastActiveMac(true)
+check(FileManager.default.fileExists(atPath: flagPath), "flag: set true creates the flag file")
+check(lastActiveMacIsSet(), "flag: lastActiveMacIsSet true after set")
+
+setLastActiveMac(false)
+check(!FileManager.default.fileExists(atPath: flagPath), "flag: set false removes the flag file")
+check(!lastActiveMacIsSet(), "flag: lastActiveMacIsSet false after clear")
+
+try? FileManager.default.removeItem(atPath: tmpState)
+
 // ── summary ─────────────────────────────────────────────────────────────────────
 
 if failures == 0 {
