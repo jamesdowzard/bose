@@ -1,10 +1,10 @@
-# Agent Progress - bose-walk-back-reconnect
+# Agent Progress - fix-walkback-review
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-07-06T12:06:07Z
+# Created: 2026-07-06T13:18:10Z
 
-feature=bose-walk-back-reconnect
-name=bose walk-back auto-reconnect on desk return
+feature=fix-walkback-review
+name=walk-back reconnect review fixes: flag on active-only + pcall-hardened decision load
 status=pending
 step=0
 step_name=Not started
-created=2026-07-06T12:06:07Z
+created=2026-07-06T13:18:10Z
