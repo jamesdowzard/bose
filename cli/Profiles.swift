@@ -123,6 +123,35 @@ struct ProfileStore: Codable {
     }
 }
 
+// MARK: - last-active-mac flag
+//
+// A presence flag: the file EXISTS iff the Mac was the last source we connected.
+// Written by cmdConnect/cmdSwap/cmdDisconnect; read by the Hammerspoon walk-back
+// watcher (which only auto-reconnects the Mac when this is set, so returning to the
+// desk never yanks audio off the phone). Dir mirrors the profiles resolution:
+// $BOSE_STATE_DIR override (for tests) → ~/.config/bose.
+func boseStateDir() -> String {
+    if let d = ProcessInfo.processInfo.environment["BOSE_STATE_DIR"], !d.isEmpty { return d }
+    return FileManager.default.homeDirectoryForCurrentUser.path + "/.config/bose"
+}
+
+func lastActiveMacFlagPath() -> String { boseStateDir() + "/last-active-mac" }
+
+func setLastActiveMac(_ active: Bool) {
+    let path = lastActiveMacFlagPath()
+    if active {
+        try? FileManager.default.createDirectory(atPath: boseStateDir(),
+                                                  withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: path, contents: Data())
+    } else {
+        try? FileManager.default.removeItem(atPath: path)
+    }
+}
+
+func lastActiveMacIsSet() -> Bool {
+    FileManager.default.fileExists(atPath: lastActiveMacFlagPath())
+}
+
 /// Map an ANC-mode name to its byte, single-sourced from the generated `AncMode` enum.
 func ancModeByte(_ name: String) -> UInt8? {
     switch name.lowercased() {

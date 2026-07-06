@@ -453,7 +453,12 @@ func cmdConnect(_ deviceName: String) {
 
     _ = transport.oneShot(BMAP.connectDevice(mac: mac), timeout: 5.0)
 
-    switch confirmConnect(mac) {
+    let outcome = confirmConnect(mac)
+    // Track the last active source for the Hammerspoon walk-back watcher: set iff we
+    // connected the Mac, clear on any other device. Only on a real connection (.none
+    // means it never landed — leave the flag as-is).
+    if outcome == .active || outcome == .idle { setLastActiveMac(isMacDevice(mac)) }
+    switch outcome {
     case .active: print("Connected \(deviceName)")
     case .idle:   print("Connected \(deviceName) (idle — audio stayed on the active device; multipoint)")
     case .none:
@@ -476,7 +481,9 @@ func cmdSwap(_ targetName: String) {
 
     _ = transport.oneShot(BMAP.connectDevice(mac: mac), timeout: 5.0)
 
-    switch confirmConnect(mac) {
+    let outcome = confirmConnect(mac)
+    if outcome == .active || outcome == .idle { setLastActiveMac(isMacDevice(mac)) }
+    switch outcome {
     case .active: print("Swapped to \(targetName)")
     case .idle:   print("Connected \(targetName) (idle — audio stayed on the active device; multipoint)")
     case .none:
@@ -490,7 +497,7 @@ func cmdSwap(_ targetName: String) {
 /// `none` = never connected. The idle case is a real connection — not a failure —
 /// and must not exit non-zero (it spuriously broke the macOS app / scripts, surfaced
 /// while testing multipoint: paging a 2nd device joins it idle, not active).
-enum ConnectOutcome { case active, idle, none }
+enum ConnectOutcome: Equatable { case active, idle, none }
 
 /// Poll `getDeviceStates` (one session per tick: 05,01 active + 04,05 ACL) until the
 /// target is audio-active, settled-idle, or the ~16s budget expires. Offline devices
@@ -534,9 +541,12 @@ func cmdDisconnect(_ deviceName: String) {
 
     _ = transport.oneShot(BMAP.disconnectDevice(mac: mac))
 
-    // If disconnecting Mac, also drop the Mac BT stack link.
+    // If disconnecting Mac, also drop the Mac BT stack link, and clear the
+    // last-active-mac flag — an explicit Mac disconnect means "I don't want the Mac",
+    // so the walk-back watcher must not auto-reconnect it.
     if isMacDevice(mac) {
         runBlueutil(["--disconnect", Headphone.mac])
+        setLastActiveMac(false)
     }
 
     print("Disconnected \(deviceName)")
