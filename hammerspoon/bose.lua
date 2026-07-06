@@ -270,9 +270,16 @@ local function connectHere()
 end
 
 -- Pure walk-back decision, co-located in this dir. Loaded by absolute repo path (the
--- same convention init.lua uses to dofile bose.lua itself).
-local decideReconnect = dofile(os.getenv("HOME")
+-- same convention init.lua uses to dofile bose.lua itself). pcall-wrapped so a missing
+-- or broken decision file degrades to "walk-back off" instead of throwing out of the
+-- module load and taking down battery-announce / auto-route / hotkeys with it (#139).
+local decideOk, decideReconnect = pcall(dofile, os.getenv("HOME")
   .. "/code/personal/bose/hammerspoon/reconnect_decision.lua")
+if not decideOk or type(decideReconnect) ~= "function" then
+  print("[bose] walk-back decision load failed (" .. tostring(decideReconnect)
+    .. "); disabling walk-back reconnect")
+  decideReconnect = nil
+end
 
 local walkbackLastActivity = hs.timer.secondsSinceEpoch()
 local walkbackLastFire     = -math.huge
@@ -359,7 +366,7 @@ function M.start()
       setMacInput(MAC_MIC)
     end
   end
-  if WALKBACK_ENABLED then
+  if WALKBACK_ENABLED and decideReconnect then
     M.walkbackTap = hs.eventtap.new(
       { hs.eventtap.event.types.keyDown,
         hs.eventtap.event.types.leftMouseDown,
