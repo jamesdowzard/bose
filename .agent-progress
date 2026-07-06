@@ -1,10 +1,10 @@
-# Agent Progress - speed-up-refresh
+# Agent Progress - bose-walk-back-reconnect
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-06-22T21:17:15Z
+# Created: 2026-07-06T12:06:07Z
 
-feature=speed-up-refresh
-name=bose: speed up BoseControl refresh — two-phase paint, cache immutable fields, read-until-quiet
+feature=bose-walk-back-reconnect
+name=bose walk-back auto-reconnect on desk return
 status=pending
 step=0
 step_name=Not started
-created=2026-06-22T21:17:15Z
+created=2026-07-06T12:06:07Z
