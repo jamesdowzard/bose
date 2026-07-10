@@ -289,6 +289,28 @@ setLastActiveMac(true)
 check(FileManager.default.fileExists(atPath: flagPath), "flag: set true creates the flag file")
 check(lastActiveMacIsSet(), "flag: lastActiveMacIsSet true after set")
 
+// The walk-back TTL (Hammerspoon) reads this file's mtime as the flag's AGE, so
+// setLastActiveMac(true) must stamp mtime≈now — on create AND on refresh (#139 finding #1).
+func flagMtime() -> Date? {
+    (try? FileManager.default.attributesOfItem(atPath: flagPath))?[.modificationDate] as? Date
+}
+if let m = flagMtime() {
+    check(abs(m.timeIntervalSinceNow) < 5, "flag: set true stamps a fresh mtime (walk-back TTL reads this)")
+} else {
+    check(false, "flag: set true stamps a fresh mtime (walk-back TTL reads this)")
+}
+
+// Backdate the flag, then re-set true: the mtime must jump forward to ≈now — proves each
+// .active Mac connect REFRESHES the age the TTL gates on, not just the first write.
+try? FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -10_000)],
+                                       ofItemAtPath: flagPath)
+setLastActiveMac(true)
+if let m = flagMtime() {
+    check(abs(m.timeIntervalSinceNow) < 5, "flag: re-setting true refreshes the mtime (age resets)")
+} else {
+    check(false, "flag: re-setting true refreshes the mtime (age resets)")
+}
+
 setLastActiveMac(false)
 check(!FileManager.default.fileExists(atPath: flagPath), "flag: set false removes the flag file")
 check(!lastActiveMacIsSet(), "flag: lastActiveMacIsSet false after clear")

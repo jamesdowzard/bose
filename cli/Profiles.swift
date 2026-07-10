@@ -142,7 +142,16 @@ func setLastActiveMac(_ active: Bool) {
     if active {
         try? FileManager.default.createDirectory(atPath: boseStateDir(),
                                                   withIntermediateDirectories: true)
+        // The file's PRESENCE means "the Mac was the last active source"; its MODIFICATION
+        // TIME records WHEN. The Hammerspoon walk-back watcher reads that mtime as the
+        // flag's age and suppresses a reconnect once it exceeds WALKBACK_FLAG_TTL, so a flag
+        // left stale by a phone-side source switch can't steal audio back to the Mac forever
+        // (#139 finding #1). createFile stamps mtime=now on create; we then set it explicitly
+        // so an already-present flag is REFRESHED too — every .active Mac connect resets the
+        // age, keeping a genuinely-in-use Mac session trusted.
         FileManager.default.createFile(atPath: path, contents: Data())
+        try? FileManager.default.setAttributes([.modificationDate: Date()],
+                                               ofItemAtPath: path)
     } else {
         try? FileManager.default.removeItem(atPath: path)
     }

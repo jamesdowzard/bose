@@ -85,6 +85,23 @@ local CONNECT_TARGET = "mac"
 local WALKBACK_ENABLED    = true
 local WALKBACK_IDLE_GAP   = 150   -- s of inactivity that counts as "walked away"
 local WALKBACK_COOLDOWN   = 30    -- s: don't re-fire connect within this window
+-- Max age (s) of the last-active-mac flag that still counts as "the Mac was truly the
+-- last active source". The flag is written ONLY by the Mac `bose` CLI (its mtime = when),
+-- so a source switch made on the PHONE side (Android app / QS tile / headphone button)
+-- leaves it stale-set — and a walk-back on a stale flag would STEAL audio back off the
+-- phone (#139 finding #1). This TTL suppresses a walk-back once the flag is older than it.
+-- TRADEOFF (no value is perfect — blueutil + this flag are the only channel-free signals,
+-- so we can't confirm the true active sink without an RFCOMM read, which is forbidden):
+--   too SHORT → suppresses valid walk-backs after a long continuous Mac session. The flag
+--               is refreshed only on an explicit `connect/swap mac`, NOT while you listen;
+--               connect the Mac at 9am and your first >150s break is at 6pm ⇒ a 9h-old
+--               flag, and a shorter TTL would wrongly skip the reconnect.
+--   too LONG  → re-opens the phone-switch hole: a stale flag stays "trusted" for longer.
+-- 8h ≈ a workday: a same-day Mac session stays trusted, but a flag left set overnight /
+-- across days (switched to the phone yesterday, walk back today) expires and can't steal.
+-- It does NOT close the same-session hole (switch to phone 10 min after a Mac connect,
+-- walk away, come back — the flag is still fresh); that residual is a documented limit.
+local WALKBACK_FLAG_TTL   = 8 * 3600   -- 28800 s
 local HEADPHONE_MAC       = "E4:58:BC:C0:2F:72"
 local BLUEUTIL            = "/opt/homebrew/bin/blueutil"
 local FLAG_PATH           = os.getenv("HOME") .. "/.config/bose/last-active-mac"
@@ -291,16 +308,40 @@ local function flagSet()
   return false
 end
 
+-- Age of the last-active-mac flag in seconds — its mtime is WHEN the CLI last recorded a
+-- Mac-active connect (setLastActiveMac stamps mtime=now on every .active connect). Returns
+-- math.huge when the flag is absent, so a missing flag reads as infinitely stale and the
+-- TTL gate can never fire on it (flagSet already covers that case; belt-and-braces).
+local function flagAge()
+  local mtime = hs.fs.attributes(FLAG_PATH, "modification")
+  if not mtime then return math.huge end
+  return hs.timer.secondsSinceEpoch() - mtime
+end
+
 -- Async: query blueutil --is-connected (channel-free — never opens RFCOMM), then
 -- decide + maybe connect. Reuses connectHere() for the actual (gated) bring-up.
 local function maybeReconnect(gap)
-  hs.task.new(BLUEUTIL, function(_, stdout)
+  -- `blueutil --is-connected` prints "1"/"0" and exits 0 for BOTH states; a non-zero exit
+  -- or a failure to LAUNCH (binary missing/moved/not executable) is a genuine read failure.
+  -- Previously the exit code was discarded and a non-launch made hs.task a silent no-op, so
+  -- walk-back could die invisibly (#139 finding #2). Log both and SKIP rather than misread a
+  -- failed read as connected=false (which would let a flag-set walk-back fire on bad data).
+  local task = hs.task.new(BLUEUTIL, function(exitCode, stdout, stderr)
+    if exitCode ~= 0 then
+      print(string.format("[bose] walk-back: %s --is-connected exited %s (%s) — skipping reconnect",
+        BLUEUTIL, tostring(exitCode), (tostring(stderr or ""):gsub("%s+$", ""))))
+      return
+    end
     local connected = (stdout or ""):match("1") ~= nil
-    if decideReconnect(gap, WALKBACK_IDLE_GAP, connected, flagSet()) then
+    if decideReconnect(gap, WALKBACK_IDLE_GAP, connected, flagSet(), flagAge(), WALKBACK_FLAG_TTL) then
       walkbackLastFire = hs.timer.secondsSinceEpoch()
       connectHere()
     end
-  end, { "--is-connected", HEADPHONE_MAC }):start()
+  end, { "--is-connected", HEADPHONE_MAC })
+  if not task or not task:start() then
+    print("[bose] walk-back: could not launch " .. BLUEUTIL ..
+      " (missing / not executable?) — walk-back reconnect skipped this cycle")
+  end
 end
 
 -- Event-driven "resumed activity after a gap" detector. Discrete events only
