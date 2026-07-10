@@ -92,10 +92,13 @@ local WALKBACK_COOLDOWN   = 30    -- s: don't re-fire connect within this window
 -- phone (#139 finding #1). This TTL suppresses a walk-back once the flag is older than it.
 -- TRADEOFF (no value is perfect — blueutil + this flag are the only channel-free signals,
 -- so we can't confirm the true active sink without an RFCOMM read, which is forbidden):
---   too SHORT → suppresses valid walk-backs after a long continuous Mac session. The flag
---               is refreshed only on an explicit `connect/swap mac`, NOT while you listen;
---               connect the Mac at 9am and your first >150s break is at 6pm ⇒ a 9h-old
---               flag, and a shorter TTL would wrongly skip the reconnect.
+--   too SHORT → suppresses valid walk-backs after a long CONTINUOUS Mac session. The flag's
+--               mtime is refreshed on every explicit `connect/swap mac` AND on every
+--               successful walk-back reconnect (connectHere re-stamps it), but NOT while you
+--               merely listen. So the only real too-short failure is a >TTL Mac session where
+--               the link never drops (walk-back never fires to refresh) and the first drop+
+--               return lands past the TTL — and that fails SAFE (no auto-reconnect; a manual
+--               `connect mac` still works). Everyday walk-away/return keeps resetting the age.
 --   too LONG  → re-opens the phone-switch hole: a stale flag stays "trusted" for longer.
 -- 8h ≈ a workday: a same-day Mac session stays trusted, but a flag left set overnight /
 -- across days (switched to the phone yesterday, walk back today) expires and can't steal.

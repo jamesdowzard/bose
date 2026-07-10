@@ -93,9 +93,13 @@ active sink would need an RFCOMM read (forbidden). The TTL closes the **cross-se
 case (switched to the phone yesterday, walk back today ⇒ flag expired ⇒ no theft) but NOT
 the **same-session** case (switch to the phone 10 min after a Mac connect, walk away, come
 back ⇒ flag still fresh ⇒ it can still steal). The value is a tradeoff: too short suppresses
-valid walk-backs after a long continuous Mac session (the flag is refreshed only on an
-explicit Mac connect, not while you listen), too long re-opens more of the phone-switch
-hole. 8h ≈ a workday — a same-day Mac session stays trusted, an overnight/stale flag doesn't.
+valid walk-backs after a long continuous Mac session, too long re-opens more of the
+phone-switch hole. The flag's mtime is refreshed on every explicit Mac connect **and on
+every successful walk-back reconnect** (not while you merely listen), so everyday
+walk-away/return keeps resetting the age — the only genuine too-short failure is a >TTL
+Mac session where the link never drops, and that fails safe (no auto-reconnect; manual
+`connect mac` still works). 8h ≈ a workday — a same-day Mac session stays trusted, an
+overnight/stale flag doesn't.
 
 Net effect: if he walked off listening to a podcast on his **phone** (switched via the
 Mac), returning won't yank it to the Mac; if the Mac was his source when he left, it comes
