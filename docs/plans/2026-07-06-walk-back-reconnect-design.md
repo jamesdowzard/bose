@@ -71,15 +71,40 @@ Because step 1 uses the non-RFCOMM check and RFCOMM is only opened once the code
 *decided* to connect, this structurally cannot reproduce #61/#62 — there is no
 state-probe that could make the firmware steal audio.
 
-**Last-active-mac gate.** A one-line flag file at `~/.config/bose/last-active-mac`:
+**Last-active-mac gate.** A flag file at `~/.config/bose/last-active-mac`:
 
-- **Set** it whenever `bose connect mac` succeeds.
-- **Clear** it whenever a connect/switch targets any **non-Mac** device.
-- On return, auto-reconnect only if the flag is set.
+- **Set** it whenever a `bose connect/swap mac` routes audio here (`.active` outcome).
+- **Clear** it whenever a connect/switch targets any **non-Mac** device (or an explicit
+  Mac disconnect).
+- Its **mtime records WHEN** it was last set (the CLI stamps it to now on every write).
+- On return, auto-reconnect only if the flag is set **and still fresh** (see TTL below).
 
-Net effect: if he walked off listening to a podcast on his **phone**, returning
-won't yank it to the Mac; if the Mac was his source when he left, it comes back.
-This is the principled version of the #61 fix.
+**Staleness TTL on the flag (`WALKBACK_FLAG_TTL`, default 8h).** The flag is written
+ONLY by the Mac `bose` CLI, so a source switch made on the **phone** side (Android app /
+QS tile / headphone button) sends BMAP directly and never clears it — leaving the flag
+**stale-set**. Without a guard, a later walk-back would fire `connect mac` and *steal
+audio off the phone* — exactly what this feature must never do (#139 finding #1). So the
+gate also requires `flagAge < WALKBACK_FLAG_TTL`: once the flag is older than the TTL,
+walk-back is suppressed.
+
+**This narrows the hole, it does not fully close it — stated honestly:** the only
+channel-free signals are `blueutil --is-connected` + this flag; confirming the *true*
+active sink would need an RFCOMM read (forbidden). The TTL closes the **cross-session**
+case (switched to the phone yesterday, walk back today ⇒ flag expired ⇒ no theft) but NOT
+the **same-session** case (switch to the phone 10 min after a Mac connect, walk away, come
+back ⇒ flag still fresh ⇒ it can still steal). The value is a tradeoff: too short suppresses
+valid walk-backs after a long continuous Mac session, too long re-opens more of the
+phone-switch hole. The flag's mtime is refreshed on every explicit Mac connect **and on
+every successful walk-back reconnect** (not while you merely listen), so everyday
+walk-away/return keeps resetting the age — the only genuine too-short failure is a >TTL
+Mac session where the link never drops, and that fails safe (no auto-reconnect; manual
+`connect mac` still works). 8h ≈ a workday — a same-day Mac session stays trusted, an
+overnight/stale flag doesn't.
+
+Net effect: if he walked off listening to a podcast on his **phone** (switched via the
+Mac), returning won't yank it to the Mac; if the Mac was his source when he left, it comes
+back; and a flag left stale by a phone-side switch can't steal audio back indefinitely.
+This is the principled version of the #61 fix, with its one residual gap documented.
 
 ## Components / touch points
 
@@ -102,10 +127,13 @@ isConnected(Bose)? ──yes──► do nothing (already connected)
 last-active-mac flag set? ──no──► do nothing (was on phone/other)
         │ yes
         ▼
+flag age < WALKBACK_FLAG_TTL? ──no──► do nothing (stale flag — maybe a phone-side switch)
+        │ yes
+        ▼
 bose connect mac  (blueutil --connect + BMAP connectDevice, poll-confirmed)
         │
         ▼
-(re)set last-active-mac flag on success
+(re)set last-active-mac flag on success  (mtime = now → age resets)
 ```
 
 ## Error handling
