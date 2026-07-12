@@ -206,11 +206,15 @@ own MAC. Use `getConnectedDevices` (05,01) for audio-active devices and
 | tv | 14:C1:4E:B7:CB:68 | macOS only | Chromecast |
 | appletv | 48:E1:5C:5D:33:B6 | macOS + S21 in-app | Katrina's Apple TV 4K (label "Katrina's Apple TV"; `widget=false` → no home-screen widget) |
 | quest | 78:C4:FA:C8:5C:3D | yes | Meta Quest 3 |
+| audikast | 00:1D:43:B8:03:01 | macOS tile only | Avantree Audikast Plus BT transmitter (TV → headphones), Shenzhen G-link OUI. Lowest priority (evicted first); deliberately NOT in cycle_order (never cycle audio to a transmitter) |
 
 A device's optional `label` (devices.toml) is the friendly display name shared by the Mac app + S21 in-app tile; absent → fall back to the key.
 
 **Connection priority** (`priority` in devices.toml; 1 = highest):
-`1 mac → 2 phone → 3 appletv → 4 ipad → 5 quest → 6 tv → 7 iphone`.
+`1 mac → 2 phone → 3 appletv → 4 ipad → 5 quest → 6 tv → 7 iphone → 8 audikast`.
+The codegen (`emit_devices.py` `_device_order`) emits `knownDevices` as cycle_order first,
+then any non-cycle devices (e.g. `audikast`) — so a source-only device gets a tile + eviction
+priority without ever being a cycle target.
 The headset holds 2 devices (multipoint) and the firmware only evicts by its own LRU
 (`ConnectionPriority 0x10` is FuncNotSupp — see `docs/reverse-engineering.md`). So the
 CLI's `connect`/`swap` enforce the hierarchy in software: when both slots are full and

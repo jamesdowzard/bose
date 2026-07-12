@@ -33,6 +33,7 @@ enum BoseDeviceMap {
         BoseDevice(name: "tv", mac: [0x14, 0xC1, 0x4E, 0xB7, 0xCB, 0x68], widget: false, label: nil, priority: 6),
         BoseDevice(name: "appletv", mac: [0x48, 0xE1, 0x5C, 0x5D, 0x33, 0xB6], widget: false, label: "Katrina's Apple TV", priority: 3),
         BoseDevice(name: "phone", mac: [0xA8, 0x76, 0x50, 0xD3, 0xB1, 0x1B], widget: true, label: nil, priority: 2),
+        BoseDevice(name: "audikast", mac: [0x00, 0x1D, 0x43, 0xB8, 0x03, 0x01], widget: false, label: "Avantree Audikast Plus", priority: 8),
     ]
 
     static let cycleOrder = ["mac", "quest", "ipad", "iphone", "tv", "appletv", "phone"]
