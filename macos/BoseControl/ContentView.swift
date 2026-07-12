@@ -36,6 +36,7 @@ private let deviceButtons: [DeviceButton] = [
     DeviceButton(id: "tv", label: "TV", symbol: "tv"),
     DeviceButton(id: "appletv", label: "Katrina's Apple TV", symbol: "appletv"),
     DeviceButton(id: "quest", label: "Quest", symbol: "visionpro"),
+    DeviceButton(id: "audikast", label: "Avantree Audikast", symbol: "antenna.radiowaves.left.and.right"),
 ]
 
 // MARK: - Main View

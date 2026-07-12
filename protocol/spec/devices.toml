@@ -51,3 +51,10 @@ priority = 3
 label = "Katrina's Apple TV"
 widget = false          # macOS app + S21 in-app tile only — no Android home-screen widget
 notes = "Lounge Room Apple TV 4K (gen 3)"
+
+[devices.audikast]
+mac = "00:1D:43:B8:03:01"          # captured live from connected_devices (05,01); 00:1D:43 = Shenzhen G-link OUI (Avantree ODM)
+priority = 8                        # LOWEST — a source, not a sink; evicted first so it can never block mac/ipad/etc.
+label = "Avantree Audikast Plus"
+widget = false          # macOS app tile only — a TV transmitter, not an Android home-screen button
+notes = "Avantree Audikast Plus BT transmitter (TV → headphones). Re-pages aggressively; kept lowest priority so `connect`/`swap` evict it first. Intentionally NOT in cycle_order — never cycle audio to a transmitter."

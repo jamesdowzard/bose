@@ -35,7 +35,7 @@ data class BoseDevice(
 
 /** Single source of truth for the paired device map (from devices.toml). */
 object BoseDeviceMap {
-    /** All known devices, in cycle order. */
+    /** All known devices: cycle-order first, then source-only extras. */
     val knownDevices: List<BoseDevice> = listOf(
         BoseDevice("mac", byteArrayOf(0xBC.toByte(), 0xD0.toByte(), 0x74, 0x11, 0xDB.toByte(), 0x27), widget = true, label = null, priority = 1),
         BoseDevice("quest", byteArrayOf(0x78, 0xC4.toByte(), 0xFA.toByte(), 0xC8.toByte(), 0x5C, 0x3D), widget = true, label = null, priority = 5),
@@ -44,6 +44,7 @@ object BoseDeviceMap {
         BoseDevice("tv", byteArrayOf(0x14, 0xC1.toByte(), 0x4E, 0xB7.toByte(), 0xCB.toByte(), 0x68), widget = false, label = null, priority = 6),
         BoseDevice("appletv", byteArrayOf(0x48, 0xE1.toByte(), 0x5C, 0x5D, 0x33, 0xB6.toByte()), widget = false, label = "Katrina's Apple TV", priority = 3),
         BoseDevice("phone", byteArrayOf(0xA8.toByte(), 0x76, 0x50, 0xD3.toByte(), 0xB1.toByte(), 0x1B), widget = true, label = null, priority = 2),
+        BoseDevice("audikast", byteArrayOf(0x00, 0x1D, 0x43, 0xB8.toByte(), 0x03, 0x01), widget = false, label = "Avantree Audikast Plus", priority = 8),
     )
 
     /** name -> device, insertion-ordered to match cycle order. */

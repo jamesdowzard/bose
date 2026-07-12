@@ -43,6 +43,18 @@ def _dash(mac: str) -> str:
     return mac.replace(":", "-")
 
 
+def _device_order(spec: dict) -> list[str]:
+    """Names for `knownDevices`: cycle_order first, then any devices not in the
+    cycle (alpha-sorted for determinism). Decouples the device *list* from the
+    switch *cycle* — a source-only device (e.g. a TV transmitter) is a known
+    device with a tile + eviction priority, but is deliberately absent from
+    cycle_order so `bose` cycling never routes audio to it.
+    """
+    cycle = spec["cycle_order"]
+    extras = sorted(n for n in spec["devices"] if n not in cycle)
+    return list(cycle) + extras
+
+
 def emit_devices_swift(spec: dict) -> str:
     headphone_mac = spec["headphone_mac"]
     headphone_name = spec["headphone_name"]
@@ -74,8 +86,8 @@ def emit_devices_swift(spec: dict) -> str:
     lines.append("")
     lines.append("enum BoseDeviceMap {")
     lines.append("    static let knownDevices: [BoseDevice] = [")
-    # Emit in cycle order so the list is deterministic and matches switch order.
-    for name in cycle:
+    # Cycle-order devices first, then any source-only extras (not in the cycle).
+    for name in _device_order(spec):
         d = devices[name]
         widget = "true" if d.get("widget", False) else "false"
         label = d.get("label")
@@ -144,9 +156,9 @@ def emit_devices_kotlin(spec: dict) -> str:
     lines.append("")
     lines.append("/** Single source of truth for the paired device map (from devices.toml). */")
     lines.append("object BoseDeviceMap {")
-    lines.append("    /** All known devices, in cycle order. */")
+    lines.append("    /** All known devices: cycle-order first, then source-only extras. */")
     lines.append("    val knownDevices: List<BoseDevice> = listOf(")
-    for name in cycle:
+    for name in _device_order(spec):
         d = devices[name]
         widget = "true" if d.get("widget", False) else "false"
         label = d.get("label")
