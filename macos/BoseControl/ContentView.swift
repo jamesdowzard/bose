@@ -39,6 +39,30 @@ private let deviceButtons: [DeviceButton] = [
     DeviceButton(id: "audikast", label: "Avantree Audikast", symbol: "antenna.radiowaves.left.and.right"),
 ]
 
+/// Live grid reorder: as a dragged tile passes over another, move it there; on drop,
+/// commit (persist the order + connect the pair if the top-2 changed).
+private struct DeviceDropDelegate: DropDelegate {
+    let targetId: String
+    @Binding var draggingId: String?
+    @Binding var order: [String]
+    let onCommit: () -> Void
+
+    func dropEntered(info: DropInfo) {
+        guard let dragging = draggingId, dragging != targetId,
+              let from = order.firstIndex(of: dragging),
+              let to = order.firstIndex(of: targetId) else { return }
+        withAnimation(.easeInOut(duration: 0.15)) {
+            order.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
+        }
+    }
+    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
+    func performDrop(info: DropInfo) -> Bool {
+        draggingId = nil
+        onCommit()
+        return true
+    }
+}
+
 // MARK: - Main View
 
 struct ContentView: View {
@@ -54,6 +78,14 @@ struct ContentView: View {
     @State private var renameSlot: Int = 4
     @State private var renameText: String = ""
     @State private var showRename: Bool = false
+
+    // Multipoint pair picker: device order (index 0 = primary/active, 1 = secondary/held,
+    // rest = eviction order). Seeded from the tile default, overridden by the saved
+    // `bose priority` order on appear. `draggingId` tracks the in-flight drag.
+    @State private var deviceOrder: [String] = deviceButtons.map { $0.id }
+    @State private var draggingId: String? = nil
+    // The top-2 we last connected as a pair — so reordering positions 3-8 doesn't re-page.
+    @State private var appliedTop2: [String] = []
 
     var body: some View {
         Group {
@@ -75,6 +107,13 @@ struct ContentView: View {
             manager.refreshState()
             syncSliders()
             installShortcuts()
+            // Load the saved multipoint priority order; append any devices missing from it
+            // (e.g. a newly-added tile) so the grid always shows every device.
+            manager.loadPriorityOrder { saved in
+                guard !saved.isEmpty else { return }
+                let all = deviceButtons.map { $0.id }
+                deviceOrder = saved.filter { all.contains($0) } + all.filter { !saved.contains($0) }
+            }
         }
         .onReceive(manager.objectWillChange) { _ in
             DispatchQueue.main.async { syncSliders() }
@@ -371,16 +410,47 @@ struct ContentView: View {
         .padding(16)
     }
 
+    /// Tiles in the user's priority order (index 0 = primary, 1 = secondary, rest = eviction).
+    private var orderedButtons: [DeviceButton] {
+        deviceOrder.compactMap { id in deviceButtons.first { $0.id == id } }
+    }
+
     private var deviceGrid: some View {
         let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 3)
         return LazyVGrid(columns: columns, spacing: 8) {
-            ForEach(deviceButtons) { button in
-                deviceButton(button)
+            ForEach(Array(orderedButtons.enumerated()), id: \.element.id) { idx, button in
+                deviceButton(button, index: idx)
+                    .onDrag {
+                        draggingId = button.id
+                        return NSItemProvider(object: button.id as NSString)
+                    }
+                    .onDrop(of: [.text], delegate: DeviceDropDelegate(
+                        targetId: button.id,
+                        draggingId: $draggingId,
+                        order: $deviceOrder,
+                        onCommit: applyOrder))
             }
         }
     }
 
-    private func deviceButton(_ button: DeviceButton) -> some View {
+    /// Persist the new order and, if the top-2 (the multipoint pair) changed, connect it now.
+    private func applyOrder() {
+        manager.setPriority(deviceOrder)
+        let top2 = Array(deviceOrder.prefix(2))
+        guard top2.count == 2, top2 != appliedTop2 else { return }
+        appliedTop2 = top2
+        manager.applyPair(primary: top2[0], secondary: top2[1])
+    }
+
+    /// Move a device to a slot (used by the right-click Make Primary/Secondary actions).
+    private func moveDevice(_ id: String, to index: Int) {
+        guard let from = deviceOrder.firstIndex(of: id) else { return }
+        deviceOrder.remove(at: from)
+        deviceOrder.insert(id, at: min(index, deviceOrder.count))
+        applyOrder()
+    }
+
+    private func deviceButton(_ button: DeviceButton, index: Int) -> some View {
         let state = manager.deviceStates[button.id] ?? "offline"
         let isConnecting = manager.connectingDevice == button.id
         let isActive = state == "active"
@@ -421,10 +491,29 @@ struct ContentView: View {
             )
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .contentShape(RoundedRectangle(cornerRadius: 10))  // whole tile is the hit area
+            // Multipoint role badge: 1 = Primary (active audio), 2 = Secondary (held).
+            .overlay(alignment: .topLeading) {
+                if index <= 1 {
+                    Text(index == 0 ? "1" : "2")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundColor(paperColor)
+                        .frame(width: 13, height: 13)
+                        .background(Circle().fill(index == 0 ? boseAccent : connectedColor))
+                        .padding(4)
+                        .help(index == 0 ? "Primary — active audio" : "Secondary — held on multipoint")
+                }
+            }
         }
         .buttonStyle(.plain)
         .disabled(isBlocked)
         .opacity(isBlocked ? 0.4 : (state == "offline" && !isConnecting ? 0.6 : 1.0))
+        // Drag a tile to reorder, or use these — index 0 = Primary, 1 = Secondary.
+        .contextMenu {
+            Button("Make Primary") { moveDevice(button.id, to: 0) }
+            Button("Make Secondary") { moveDevice(button.id, to: 1) }
+            Divider()
+            Button("Disconnect") { manager.disconnectDevice(button.id) }
+        }
     }
 
     private struct EqPreset {

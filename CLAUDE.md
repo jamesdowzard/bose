@@ -29,7 +29,7 @@ nothing runs in the background and the Mac only touches the headphones on an
 explicit user action.
 - `macos/BoseControl/` -- **Bose.app**: a windowed SwiftUI app (warm-paper light
   two-panel: battery/ANC mode/Immersive Audio (spatial Off/Still/Motion)/volume/multipoint + auto-pause/auto-answer toggles
-  (01,18 / 01,1B) + a favourites display (1F,08, read-only) + device grid + EQ). The light
+  (01,18 / 01,1B) + a favourites display (1F,08, read-only) + a **reorderable device grid** + EQ). The light
   theme (burnt-orange `#AF3A03` accent on warm paper, from the Midterm `paper-hc` palette)
   is shared with the Android app; macOS colours live in `ContentView.swift`, Android in
   `MainActivity.kt` (`BoseAccent`/`BoseConnected`/…). Six ANC
@@ -75,7 +75,7 @@ explicit user action.
 - Companion device registered for background FGS privileges
 
 ### CLI (`cli/`) — regenerated on the shared layer
-- `cli/main.swift` -- `bose` command surface (status/battery/anc/anc-level/spatial/mode-name/devices/connect/disconnect/swap/volume/multipoint/auto-pause/auto-answer/favorites/play-pause-next-prev/eq/raw). `mode-name [--slot 4|5] [name]` renames a custom mode via the 1F,06 RMW (name field, SET payload [3..34]) — custom slots only (`userConfigurable`; presets are locked, firmware ignores the write). Without `--slot` it targets the ACTIVE mode (`setActiveModeName`); with `--slot 4`/`5` it renames C1/C2 **in place without changing the active mode** (`setModeName`, used by the Mac app's right-click rename). Both share `renameModeSlot`. The name persists on-device and shows in the Bose app too. `info --json` emits `custom1Name`/`custom2Name` (slot 4/5 stored names) AND the active mode config (modeName/noiseLevel/spatial/adjustable) — all read in the SAME warm session as the bulk state, folded into `getAllStateWithDevices` (a separate `readModeInfo` call ran as a cold SECOND session and reliably came back empty, blanking the slider/spatial/C1-C2 names, #134). The Mac app labels the C1/C2 buttons with the names (falling back to "C1"/"C2" when unset = "None") and renames them via right-click → Rename… → `mode-name --slot`. The Android app does the same display on its mode selector — `Composites.readCustomModeNames()` (slots 4/5) → `BoseViewModel` `custom1Name`/`custom2Name` → `AncSection` label. (Display only on Android; renaming is Mac/CLI via `mode-name`.) **No inline byte parsing** — every command routes through the generated `BMAP.*` builders. `connect`/`swap` poll-confirm via `getConnectedDevices` (ACK is never success); volume uses the generated SET_GET builder.
+- `cli/main.swift` -- `bose` command surface (status/battery/anc/anc-level/spatial/mode-name/devices/connect/disconnect/swap/pair/priority/volume/multipoint/auto-pause/auto-answer/favorites/play-pause-next-prev/eq/raw). `pair <primary> <secondary>` = the multipoint-pair composite (evict others → connect secondary held → primary active); `priority [--set n… | --clear]` shows/sets the runtime eviction order in `~/.config/bose/priority.json` (index 0 = primary). Pure order logic in `cli/Priority.swift` (`PriorityOrder` + `effectiveRank`, unit-tested); `evictLowestPriorityIfFull` ranks by it (runtime order overrides the compiled devices.toml priority, graceful fallback when absent). `mode-name [--slot 4|5] [name]` renames a custom mode via the 1F,06 RMW (name field, SET payload [3..34]) — custom slots only (`userConfigurable`; presets are locked, firmware ignores the write). Without `--slot` it targets the ACTIVE mode (`setActiveModeName`); with `--slot 4`/`5` it renames C1/C2 **in place without changing the active mode** (`setModeName`, used by the Mac app's right-click rename). Both share `renameModeSlot`. The name persists on-device and shows in the Bose app too. `info --json` emits `custom1Name`/`custom2Name` (slot 4/5 stored names) AND the active mode config (modeName/noiseLevel/spatial/adjustable) — all read in the SAME warm session as the bulk state, folded into `getAllStateWithDevices` (a separate `readModeInfo` call ran as a cold SECOND session and reliably came back empty, blanking the slider/spatial/C1-C2 names, #134). The Mac app labels the C1/C2 buttons with the names (falling back to "C1"/"C2" when unset = "None") and renames them via right-click → Rename… → `mode-name --slot`. The Android app does the same display on its mode selector — `Composites.readCustomModeNames()` (slots 4/5) → `BoseViewModel` `custom1Name`/`custom2Name` → `AncSection` label. (Display only on Android; renaming is Mac/CLI via `mode-name`.) **No inline byte parsing** — every command routes through the generated `BMAP.*` builders. `connect`/`swap` poll-confirm via `getConnectedDevices` (ACK is never success); volume uses the generated SET_GET builder.
 - `cli/Transport.swift` -- IOBluetooth RFCOMM transport (per-command open/drain-300ms/close, cold-start warm-up, serial queue).
 - `cli/Composites.swift` -- live-channel composites (cncLevel RMW, connectedDevices list, getAllState single-session).
 - `cli/Parsers.swift` -- pure, hardware-free response parsers; `cli/Tests/main.swift` + `cli/run-tests.sh` are the standalone unit tests (same captured-byte corpus as Android `Parsers.kt`).
@@ -221,7 +221,13 @@ CLI's `connect`/`swap` enforce the hierarchy in software: when both slots are fu
 the target isn't already connected, it **disconnects the lowest-priority of the two held
 devices first**, then pages the target — and **restores the evicted device if the target
 fails to connect** (`evictLowestPriorityIfFull` / `restoreEvicted` in `cli/main.swift`).
-Mac app / Raycast / Hammerspoon inherit this (they shell `bose`). **Android now replicates
+Mac app / Raycast / Hammerspoon inherit this (they shell `bose`). **Runtime override:** a
+user-chosen order in `~/.config/bose/priority.json` (`bose priority --set …`, or the Mac
+app's **drag-to-reorder device grid** — index 0 = primary/active, 1 = secondary/held) takes
+precedence over the compiled priorities for victim selection (`effectiveRank`, `cli/Priority.swift`).
+`bose pair <primary> <secondary>` connects exactly that pair (evict others → secondary held →
+primary active). The order is host-side only — never pushed to the headphones (no firmware
+priority hierarchy). **Android now replicates
 it too**: pure victim selection in `android/.../Eviction.kt` (`evictionVictim`, JVM-unit-
 tested), held-state read via `Composites.getDeviceStates`, wired into `BoseService.switchDevice`
 (evict-then-page, restore on failure). Android can't run the Mac's host-side blueutil step, so
@@ -349,6 +355,7 @@ surface. Keep this in sync when adding a verb or control.
 | Auto-answer | **01,1B** | ✅ `auto-answer` | ✅ `bose-auto-answer` | — | — |
 | Favorites | **1F,08** | ✅ `favorites` | 👁 `bose-favorites` | — | — (parser only, no UI) |
 | Connect device | 04,01 | ✅ `connect`/`swap` | ✅ `bose-connect` | Opt+B opens app (Opt+⇧B/Opt+J disabled 2026-06-20) | ✅ widget/tile/picker |
+| Multipoint pair / priority | host-side (priority.json) | ✅ `pair` / `priority` | — | — | — (compiled `Eviction.kt` only) |
 | Disconnect device | 04,02 | ✅ `disconnect` | ✅ `bose-disconnect` | 👁 (toggle path) | — |
 | Device info (ACL) | 04,05 | 👁 `devices` (○ state) | — | — | 👁 widget colour |
 | Connected devices | 05,01 | 👁 `devices`/`status`/`info` | 👁 (in status) | 👁 toggle-direction | 👁 widget/tile active |

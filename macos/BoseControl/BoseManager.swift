@@ -370,6 +370,54 @@ final class BoseManager: ObservableObject {
         }
     }
 
+    // MARK: - Multipoint priority / pair
+
+    /// Load the saved runtime priority order (`bose priority`) for the reorderable grid.
+    /// Returns [] when no override is saved (the app then falls back to the tile default).
+    func loadPriorityOrder(_ completion: @escaping ([String]) -> Void) {
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            let out = self.run(["priority"]).out
+            var order: [String] = []
+            if let r = out.range(of: "priority:") {
+                let rest = out[r.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
+                if !rest.hasPrefix("(") {          // "(default — …)" means no override
+                    order = rest.split(separator: " ").map(String.init)
+                }
+            }
+            DispatchQueue.main.async { completion(order) }
+        }
+    }
+
+    /// Persist the runtime eviction order (index 0 = primary). Writes priority.json only —
+    /// no device I/O, so no refresh.
+    func setPriority(_ order: [String]) {
+        queue.async { [weak self] in _ = self?.run(["priority", "--set"] + order) }
+    }
+
+    /// Disconnect a single device (right-click → Disconnect). Refreshes state after.
+    func disconnectDevice(_ name: String) {
+        write(["disconnect", name])
+    }
+
+    /// Apply the multipoint pair now: evict others, connect secondary (held) then primary
+    /// (active). Spins the primary tile while it runs (mirrors connectDevice), then refreshes.
+    func applyPair(primary: String, secondary: String) {
+        guard connectingDevice == nil else { return }
+        connectingDevice = primary
+        isRefreshing = true
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            _ = self.run(["pair", primary, secondary])
+            let snapshot = Self.parse(self.run(["info", "--json"]).out)
+            DispatchQueue.main.async {
+                self.apply(snapshot)
+                self.connectingDevice = nil
+                self.isRefreshing = false
+            }
+        }
+    }
+
     /// Run a write verb, then read `info` a few times until `confirm` reports the new
     /// value has landed (applying each snapshot so the rest of the UI stays fresh). This
     /// is a BOUNDED, self-terminating post-write settle — it returns the instant the

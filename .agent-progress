@@ -1,10 +1,10 @@
-# Agent Progress - add-audikast-device
+# Agent Progress - multipoint-pair-picker
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-07-12T14:57:06Z
+# Created: 2026-07-12T15:25:21Z
 
-feature=add-audikast-device
-name=add Avantree Audikast Plus to device map
+feature=multipoint-pair-picker
+name=multipoint primary/secondary pair picker
 status=pending
 step=0
 step_name=Not started
-created=2026-07-12T14:57:06Z
+created=2026-07-12T15:25:21Z

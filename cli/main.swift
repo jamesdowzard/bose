@@ -425,7 +425,13 @@ func evictLowestPriorityIfFull(target: [UInt8]) -> BoseDevice? {
     if heldKeys.contains(targetKey) { return nil }   // already connected — nothing to evict
     if heldKeys.count < 2 { return nil }             // a slot is free — no eviction needed
     let held = BoseDeviceMap.knownDevices.filter { heldKeys.contains(macString($0.mac)) }
-    guard let victim = held.max(by: { $0.priority < $1.priority }) else { return nil }
+    // Rank by the user's runtime order (priority.json) when present, else the compiled
+    // devices.toml priority — evict the WORST-ranked (highest effectiveRank) held device.
+    let order = PriorityOrder.load().order
+    guard let victim = held.max(by: {
+        effectiveRank($0.name, order: order, compiledPriority: $0.priority)
+            < effectiveRank($1.name, order: order, compiledPriority: $1.priority)
+    }) else { return nil }
     _ = transport.oneShot(BMAP.disconnectDevice(mac: victim.mac))
     if isMacDevice(victim.mac) { runBlueutil(["--disconnect", Headphone.mac]) }
     print("Evicted \(victim.name) (priority \(victim.priority)) to free a multipoint slot")
@@ -554,6 +560,74 @@ func cmdDisconnect(_ deviceName: String) {
     }
 
     print("Disconnected \(deviceName)")
+}
+
+/// priority [--set n1 n2 …] [--clear] — the runtime multipoint order (priority.json).
+/// Bare: print the saved order (or the compiled default). `--set`: validate + persist a
+/// new order (index 0 = primary). `--clear`: revert to the devices.toml hierarchy.
+/// Host-side only — never pushed to the headphones (firmware has no priority hierarchy).
+func cmdPriority(_ a: [String]) {
+    if a.isEmpty {
+        let order = PriorityOrder.load().order
+        print(order.isEmpty
+            ? "priority: (default — devices.toml hierarchy)"
+            : "priority: " + order.joined(separator: " "))
+        return
+    }
+    if a[0] == "--clear" {
+        PriorityOrder.clear()
+        print("priority cleared (reverted to devices.toml hierarchy)")
+        return
+    }
+    var names = a
+    if names.first == "--set" { names.removeFirst() }
+    guard !names.isEmpty else { fail("priority --set needs device names") }
+    for n in names where BoseDeviceMap.device(n) == nil { fail("unknown device: \(n)") }
+    do { try PriorityOrder(order: names.map { $0.lowercased() }).save() }
+    catch { fail("could not save priority: \(error)") }
+    print("priority set: " + names.joined(separator: " "))
+}
+
+/// pair <primary> <secondary> — make exactly these two the multipoint pair: evict any
+/// OTHER held device, connect the secondary (held), then the primary (active). The Mac
+/// app's drag-reorder shells this when the top-2 changes. The firmware has no priority
+/// lock, so an aggressive re-pager (e.g. the Audikast) or a sleeping target can still win
+/// the slot — we report the honest outcome rather than fight it with a retry loop.
+func cmdPair(_ primary: String, _ secondary: String) {
+    let pMac = macForName(primary)
+    let sMac = macForName(secondary)
+    if macString(pMac) == macString(sMac) { fail("pair needs two different devices") }
+    let keep = Set([macString(pMac), macString(sMac)])
+
+    // Evict everything that isn't the intended pair so both slots are free for them.
+    if let st = transport.getDeviceStates(query: BoseDeviceMap.knownDevices.map { $0.mac }) {
+        let held = st.active + st.connected
+        var evictedAny = false
+        for m in held where !keep.contains(macString(m)) {
+            _ = transport.oneShot(BMAP.disconnectDevice(mac: m))
+            if isMacDevice(m) { runBlueutil(["--disconnect", Headphone.mac]) }
+            print("Evicted \(displayName(forMac: m)) to free a slot for the pair")
+            evictedAny = true
+        }
+        if evictedAny { Thread.sleep(forTimeInterval: 0.8) }   // let the slots clear
+    }
+
+    // Page the secondary first (settles held), then the primary (should become active).
+    func page(_ mac: [UInt8]) -> ConnectOutcome {
+        if isMacDevice(mac) { runBlueutil(["--connect", Headphone.mac]); Thread.sleep(forTimeInterval: 1.5) }
+        _ = transport.oneShot(BMAP.connectDevice(mac: mac), timeout: 5.0)
+        return confirmConnect(mac)
+    }
+    let sOut = page(sMac)
+    let pOut = page(pMac)
+    if pOut == .active { setLastActiveMac(isMacDevice(pMac)) }
+
+    let secNote = sOut == .none ? "not connected" : "held"
+    switch pOut {
+    case .active: print("Paired: \(primary) (active) + \(secondary) (\(secNote))")
+    case .idle:   print("Paired: \(primary) (connected, idle) + \(secondary) (\(secNote))")
+    case .none:   fail("pair: \(primary) did not connect (target asleep, or a device is re-grabbing the slot — power it off)")
+    }
 }
 
 /// volume / vol / v [level] — generated setVolume uses SET_GET (05,05,02). The v1
@@ -731,6 +805,8 @@ func usage() {
       bose connect <device>     Route audio to device (poll-confirmed)
       bose disconnect <device>  Disconnect a device
       bose swap <device>        Route audio to device (multipoint; keeps others)
+      bose pair <primary> <secondary>  Make these two the multipoint pair (primary active, secondary held; evicts others)
+      bose priority [--set n… | --clear]  Show/set the runtime eviction order (index 0 = primary); drives connect/swap/pair eviction
       bose anc [mode]           Get/set ANC (quiet/aware/immersion/cinema/custom1/custom2, or slot 0-5)
       bose anc-level [0-10]     Get/set active mode's noise level (0=max cancel … 10=transparent; custom modes only)
       bose spatial [off|still|motion]  Get/set Immersive Audio on the active mode (custom modes only)
@@ -779,6 +855,10 @@ case "devices":                cmdDevices()
 case "connect", "c":           cmdConnect(requireArg("device"))
 case "disconnect", "d":        cmdDisconnect(requireArg("device"))
 case "swap":                   cmdSwap(requireArg("device"))
+case "priority", "prio":       cmdPriority(args.count >= 3 ? Array(args[2...]) : [])
+case "pair":
+    guard args.count >= 4 else { fail("pair needs <primary> <secondary>") }
+    cmdPair(args[2], args[3])
 case "volume", "vol", "v":     cmdVolume(args.count >= 3 ? args[2] : nil)
 case "multipoint", "mp":       cmdMultipoint(args.count >= 3 ? args[2] : nil)
 case "auto-pause", "autopause": cmdAutoPlayPause(args.count >= 3 ? args[2] : nil)

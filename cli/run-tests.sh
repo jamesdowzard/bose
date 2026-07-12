@@ -18,6 +18,7 @@ swiftc \
     "$GEN_DIR/BMAP.generated.swift" \
     "$SCRIPT_DIR/Parsers.swift" \
     "$SCRIPT_DIR/Profiles.swift" \
+    "$SCRIPT_DIR/Priority.swift" \
     "$SCRIPT_DIR/Tests/main.swift" \
     -o "$BIN"
 

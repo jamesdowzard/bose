@@ -317,6 +317,43 @@ check(!lastActiveMacIsSet(), "flag: lastActiveMacIsSet false after clear")
 
 try? FileManager.default.removeItem(atPath: tmpState)
 
+// ── priority: effectiveRank + victim selection + round-trip ─────────────────────
+
+// Listed device ranks by its index (0 = primary, kept longest).
+check(effectiveRank("ipad", order: ["ipad", "mac"], compiledPriority: 4) == 0,
+      "rank: listed primary = index 0")
+check(effectiveRank("mac", order: ["ipad", "mac"], compiledPriority: 1) == 1,
+      "rank: listed secondary = index 1")
+// Unlisted device sorts AFTER all listed ones, then by compiled priority.
+check(effectiveRank("audikast", order: ["ipad", "mac"], compiledPriority: 8) == 10,
+      "rank: unlisted = order.count + compiledPriority")
+// Empty order = pure compiled fallback (index-free).
+check(effectiveRank("phone", order: [], compiledPriority: 2) == 2,
+      "rank: empty order falls back to compiled priority")
+
+// Victim selection mirrors `held.max(by: effectiveRank<)`: the WORST-ranked held device.
+func victim(_ held: [(String, Int)], _ order: [String]) -> String? {
+    held.max(by: {
+        effectiveRank($0.0, order: order, compiledPriority: $0.1)
+            < effectiveRank($1.0, order: order, compiledPriority: $1.1)
+    })?.0
+}
+// Default (no override): audikast (compiled 8) is evicted over mac (1).
+check(victim([("mac", 1), ("audikast", 8)], []) == "audikast",
+      "victim: compiled default evicts the lowest-priority (audikast)")
+// Runtime order FLIPS it: user keeps audikast (listed) → mac (unlisted) is evicted instead.
+check(victim([("mac", 1), ("audikast", 8)], ["ipad", "audikast"]) == "mac",
+      "victim: runtime order overrides compiled — unlisted mac evicted, listed audikast kept")
+
+// PriorityOrder round-trips through disk (BOSE_STATE_DIR override).
+let tmpPrio = NSTemporaryDirectory() + "bose-prio-test-\(ProcessInfo.processInfo.processIdentifier)"
+setenv("BOSE_STATE_DIR", tmpPrio, 1)
+try? PriorityOrder(order: ["ipad", "mac", "phone"]).save()
+check(PriorityOrder.load().order == ["ipad", "mac", "phone"], "priority.json: save/load round-trip")
+PriorityOrder.clear()
+check(PriorityOrder.load().order == [], "priority.json: clear reverts to empty (compiled default)")
+try? FileManager.default.removeItem(atPath: tmpPrio)
+
 // ── summary ─────────────────────────────────────────────────────────────────────
 
 if failures == 0 {
