@@ -460,13 +460,6 @@ func cmdConnect(_ deviceName: String) {
     _ = transport.oneShot(BMAP.connectDevice(mac: mac), timeout: 5.0)
 
     let outcome = confirmConnect(mac)
-    // Track the last ACTIVE audio source for the Hammerspoon walk-back watcher.
-    // Only update on `.active` — i.e. when audio actually routed here. On `.idle`
-    // the audio stayed on the prior sink (multipoint), so the active source did NOT
-    // change and the flag must be left reflecting the true source: setting it on an
-    // idle Mac connect would arm a walk-back reconnect that steals audio off the
-    // phone (#139 review). `.none` never landed — also leave as-is.
-    if outcome == .active { setLastActiveMac(isMacDevice(mac)) }
     switch outcome {
     case .active: print("Connected \(deviceName)")
     case .idle:   print("Connected \(deviceName) (idle — audio stayed on the active device; multipoint)")
@@ -491,8 +484,6 @@ func cmdSwap(_ targetName: String) {
     _ = transport.oneShot(BMAP.connectDevice(mac: mac), timeout: 5.0)
 
     let outcome = confirmConnect(mac)
-    // Only on `.active` — see cmdConnect: an idle Mac connect must not arm walk-back (#139).
-    if outcome == .active { setLastActiveMac(isMacDevice(mac)) }
     switch outcome {
     case .active: print("Swapped to \(targetName)")
     case .idle:   print("Connected \(targetName) (idle — audio stayed on the active device; multipoint)")
@@ -551,12 +542,9 @@ func cmdDisconnect(_ deviceName: String) {
 
     _ = transport.oneShot(BMAP.disconnectDevice(mac: mac))
 
-    // If disconnecting Mac, also drop the Mac BT stack link, and clear the
-    // last-active-mac flag — an explicit Mac disconnect means "I don't want the Mac",
-    // so the walk-back watcher must not auto-reconnect it.
+    // If disconnecting Mac, also drop the Mac BT stack link.
     if isMacDevice(mac) {
         runBlueutil(["--disconnect", Headphone.mac])
-        setLastActiveMac(false)
     }
 
     print("Disconnected \(deviceName)")
@@ -620,7 +608,6 @@ func cmdPair(_ primary: String, _ secondary: String) {
     }
     let sOut = page(sMac)
     let pOut = page(pMac)
-    if pOut == .active { setLastActiveMac(isMacDevice(pMac)) }
 
     let secNote = sOut == .none ? "not connected" : "held"
     switch pOut {
