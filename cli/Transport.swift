@@ -20,27 +20,6 @@ import CoreBluetooth
 
 let RFCOMM_CHANNEL: BluetoothRFCOMMChannelID = 2  // SPP (BMAP) — resolved via SDP
 
-/// Run blueutil CLI for A2DP connect/disconnect (IOBluetooth doesn't expose this).
-/// Ported from v1. Used only on the explicit "switch to mac" path.
-@discardableResult
-func runBlueutil(_ args: [String], path: String = "/opt/homebrew/bin/blueutil") -> (Int32, String) {
-    let proc = Process()
-    proc.executableURL = URL(fileURLWithPath: path)
-    proc.arguments = args
-    let pipe = Pipe()
-    proc.standardOutput = pipe
-    proc.standardError = pipe
-    do {
-        try proc.run()
-        proc.waitUntilExit()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        let out = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return (proc.terminationStatus, out)
-    } catch {
-        return (1, "")
-    }
-}
-
 enum TransportError: Error, CustomStringConvertible {
     case deviceNotFound
     case connectionFailed(IOReturn)
