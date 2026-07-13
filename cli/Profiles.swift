@@ -123,42 +123,13 @@ struct ProfileStore: Codable {
     }
 }
 
-// MARK: - last-active-mac flag
+// MARK: - shared runtime state dir
 //
-// A presence flag: the file EXISTS iff the Mac was the last source we connected.
-// Written by cmdConnect/cmdSwap/cmdDisconnect; read by the Hammerspoon walk-back
-// watcher (which only auto-reconnects the Mac when this is set, so returning to the
-// desk never yanks audio off the phone). Dir mirrors the profiles resolution:
-// $BOSE_STATE_DIR override (for tests) → ~/.config/bose.
+// The dir for runtime state files (e.g. the pair picker's priority.json). Mirrors
+// the profiles resolution: $BOSE_STATE_DIR override (for tests) → ~/.config/bose.
 func boseStateDir() -> String {
     if let d = ProcessInfo.processInfo.environment["BOSE_STATE_DIR"], !d.isEmpty { return d }
     return FileManager.default.homeDirectoryForCurrentUser.path + "/.config/bose"
-}
-
-func lastActiveMacFlagPath() -> String { boseStateDir() + "/last-active-mac" }
-
-func setLastActiveMac(_ active: Bool) {
-    let path = lastActiveMacFlagPath()
-    if active {
-        try? FileManager.default.createDirectory(atPath: boseStateDir(),
-                                                  withIntermediateDirectories: true)
-        // The file's PRESENCE means "the Mac was the last active source"; its MODIFICATION
-        // TIME records WHEN. The Hammerspoon walk-back watcher reads that mtime as the
-        // flag's age and suppresses a reconnect once it exceeds WALKBACK_FLAG_TTL, so a flag
-        // left stale by a phone-side source switch can't steal audio back to the Mac forever
-        // (#139 finding #1). createFile stamps mtime=now on create; we then set it explicitly
-        // so an already-present flag is REFRESHED too — every .active Mac connect resets the
-        // age, keeping a genuinely-in-use Mac session trusted.
-        FileManager.default.createFile(atPath: path, contents: Data())
-        try? FileManager.default.setAttributes([.modificationDate: Date()],
-                                               ofItemAtPath: path)
-    } else {
-        try? FileManager.default.removeItem(atPath: path)
-    }
-}
-
-func lastActiveMacIsSet() -> Bool {
-    FileManager.default.fileExists(atPath: lastActiveMacFlagPath())
 }
 
 /// Map an ANC-mode name to its byte, single-sourced from the generated `AncMode` enum.

@@ -1,10 +1,10 @@
-# Agent Progress - multipoint-pair-picker
+# Agent Progress - remove-walkback-reconnect
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-07-12T15:25:21Z
+# Created: 2026-07-13T02:34:37Z
 
-feature=multipoint-pair-picker
-name=multipoint primary/secondary pair picker
+feature=remove-walkback-reconnect
+name=remove walk-back auto-reconnect too aggressive
 status=pending
 step=0
 step_name=Not started
-created=2026-07-12T15:25:21Z
+created=2026-07-13T02:34:37Z

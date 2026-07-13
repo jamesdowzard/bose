@@ -74,41 +74,6 @@ local CONNECT_MODS   = { "alt" }
 local CONNECT_KEY    = "j"
 local CONNECT_TARGET = "mac"
 
--- ── Walk-back auto-reconnect ────────────────────────────────────────────────────
--- When input resumes after >= WALKBACK_IDLE_GAP seconds of inactivity (you left the
--- desk and came back) AND the headphones have dropped off the Mac AND the Mac was
--- your last active source (the ~/.config/bose/last-active-mac flag the CLI writes),
--- reconnect the Mac. Event-driven (hs.eventtap) — NO headphone polling, NO RFCOMM
--- probe to decide (uses blueutil --is-connected, which is channel-free). Multipoint
--- stays on. This is the deliberate, safe successor to the removed #61/#62 timer,
--- which fought device switches by probing over RFCOMM; this one never probes.
-local WALKBACK_ENABLED    = true
-local WALKBACK_IDLE_GAP   = 150   -- s of inactivity that counts as "walked away"
-local WALKBACK_COOLDOWN   = 30    -- s: don't re-fire connect within this window
--- Max age (s) of the last-active-mac flag that still counts as "the Mac was truly the
--- last active source". The flag is written ONLY by the Mac `bose` CLI (its mtime = when),
--- so a source switch made on the PHONE side (Android app / QS tile / headphone button)
--- leaves it stale-set — and a walk-back on a stale flag would STEAL audio back off the
--- phone (#139 finding #1). This TTL suppresses a walk-back once the flag is older than it.
--- TRADEOFF (no value is perfect — blueutil + this flag are the only channel-free signals,
--- so we can't confirm the true active sink without an RFCOMM read, which is forbidden):
---   too SHORT → suppresses valid walk-backs after a long CONTINUOUS Mac session. The flag's
---               mtime is refreshed on every explicit `connect/swap mac` AND on every
---               successful walk-back reconnect (connectHere re-stamps it), but NOT while you
---               merely listen. So the only real too-short failure is a >TTL Mac session where
---               the link never drops (walk-back never fires to refresh) and the first drop+
---               return lands past the TTL — and that fails SAFE (no auto-reconnect; a manual
---               `connect mac` still works). Everyday walk-away/return keeps resetting the age.
---   too LONG  → re-opens the phone-switch hole: a stale flag stays "trusted" for longer.
--- 8h ≈ a workday: a same-day Mac session stays trusted, but a flag left set overnight /
--- across days (switched to the phone yesterday, walk back today) expires and can't steal.
--- It does NOT close the same-session hole (switch to phone 10 min after a Mac connect,
--- walk away, come back — the flag is still fresh); that residual is a documented limit.
-local WALKBACK_FLAG_TTL   = 8 * 3600   -- 28800 s
-local HEADPHONE_MAC       = "E4:58:BC:C0:2F:72"
-local BLUEUTIL            = "/opt/homebrew/bin/blueutil"
-local FLAG_PATH           = os.getenv("HOME") .. "/.config/bose/last-active-mac"
-
 -- Low-battery warning threshold (%), checked on each toggle (no separate poll).
 local LOW_BATTERY  = 20
 
@@ -289,75 +254,6 @@ local function connectHere()
   end)
 end
 
--- Pure walk-back decision, co-located in this dir. Loaded by absolute repo path (the
--- same convention init.lua uses to dofile bose.lua itself). pcall-wrapped so a missing
--- or broken decision file degrades to "walk-back off" instead of throwing out of the
--- module load and taking down battery-announce / auto-route / hotkeys with it (#139).
-local decideOk, decideReconnect = pcall(dofile, os.getenv("HOME")
-  .. "/code/personal/bose/hammerspoon/reconnect_decision.lua")
-if not decideOk or type(decideReconnect) ~= "function" then
-  print("[bose] walk-back decision load failed (" .. tostring(decideReconnect)
-    .. "); disabling walk-back reconnect")
-  decideReconnect = nil
-end
-
-local walkbackLastActivity = hs.timer.secondsSinceEpoch()
-local walkbackLastFire     = -math.huge
-
--- The last-active-mac flag exists iff the Mac was our last connected source.
-local function flagSet()
-  local f = io.open(FLAG_PATH, "r")
-  if f then f:close(); return true end
-  return false
-end
-
--- Age of the last-active-mac flag in seconds — its mtime is WHEN the CLI last recorded a
--- Mac-active connect (setLastActiveMac stamps mtime=now on every .active connect). Returns
--- math.huge when the flag is absent, so a missing flag reads as infinitely stale and the
--- TTL gate can never fire on it (flagSet already covers that case; belt-and-braces).
-local function flagAge()
-  local mtime = hs.fs.attributes(FLAG_PATH, "modification")
-  if not mtime then return math.huge end
-  return hs.timer.secondsSinceEpoch() - mtime
-end
-
--- Async: query blueutil --is-connected (channel-free — never opens RFCOMM), then
--- decide + maybe connect. Reuses connectHere() for the actual (gated) bring-up.
-local function maybeReconnect(gap)
-  -- `blueutil --is-connected` prints "1"/"0" and exits 0 for BOTH states; a non-zero exit
-  -- or a failure to LAUNCH (binary missing/moved/not executable) is a genuine read failure.
-  -- Previously the exit code was discarded and a non-launch made hs.task a silent no-op, so
-  -- walk-back could die invisibly (#139 finding #2). Log both and SKIP rather than misread a
-  -- failed read as connected=false (which would let a flag-set walk-back fire on bad data).
-  local task = hs.task.new(BLUEUTIL, function(exitCode, stdout, stderr)
-    if exitCode ~= 0 then
-      print(string.format("[bose] walk-back: %s --is-connected exited %s (%s) — skipping reconnect",
-        BLUEUTIL, tostring(exitCode), (tostring(stderr or ""):gsub("%s+$", ""))))
-      return
-    end
-    local connected = (stdout or ""):match("1") ~= nil
-    if decideReconnect(gap, WALKBACK_IDLE_GAP, connected, flagSet(), flagAge(), WALKBACK_FLAG_TTL) then
-      walkbackLastFire = hs.timer.secondsSinceEpoch()
-      connectHere()
-    end
-  end, { "--is-connected", HEADPHONE_MAC })
-  if not task or not task:start() then
-    print("[bose] walk-back: could not launch " .. BLUEUTIL ..
-      " (missing / not executable?) — walk-back reconnect skipped this cycle")
-  end
-end
-
--- Event-driven "resumed activity after a gap" detector. Discrete events only
--- (keyDown / mouse down / scroll) — NOT mouseMoved, to stay cheap. Never swallows.
-local function onWalkbackActivity()
-  local now = hs.timer.secondsSinceEpoch()
-  local gap = now - walkbackLastActivity
-  walkbackLastActivity = now
-  if gap >= WALKBACK_IDLE_GAP and (now - walkbackLastFire) >= WALKBACK_COOLDOWN then
-    maybeReconnect(gap)
-  end
-  return false
-end
 
 -- Read current ANC, then set the next mode in the cycle.
 local function cycleAnc()
@@ -410,15 +306,6 @@ function M.start()
       setMacInput(MAC_MIC)
     end
   end
-  if WALKBACK_ENABLED and decideReconnect then
-    M.walkbackTap = hs.eventtap.new(
-      { hs.eventtap.event.types.keyDown,
-        hs.eventtap.event.types.leftMouseDown,
-        hs.eventtap.event.types.rightMouseDown,
-        hs.eventtap.event.types.scrollWheel },
-      onWalkbackActivity)
-    M.walkbackTap:start()
-  end
   return M
 end
 
@@ -430,7 +317,6 @@ function M.stop()
   if M.connectHotkey then M.connectHotkey:delete(); M.connectHotkey = nil end
   if ANNOUNCE_BATTERY then hs.audiodevice.watcher.stop() end
   if M.appWatcher then M.appWatcher:stop(); M.appWatcher = nil end
-  if M.walkbackTap then M.walkbackTap:stop(); M.walkbackTap = nil end
 end
 
 return M
