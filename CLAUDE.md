@@ -28,8 +28,13 @@ is three thin front-ends that shell out to the `cli/` binary (`~/bin/bose`), so
 nothing runs in the background and the Mac only touches the headphones on an
 explicit user action.
 - `macos/BoseControl/` -- **Bose.app**: a windowed SwiftUI app (warm-paper light
-  two-panel: battery/ANC mode/Immersive Audio (spatial Off/Still/Motion)/volume/multipoint + auto-pause/auto-answer toggles
-  (01,18 / 01,1B) + a favourites display (1F,08, read-only) + a **reorderable device grid** + EQ). The light
+  **three-panel**: left = settings (battery/ANC mode/Immersive Audio (spatial Off/Still/Motion)/volume/multipoint + auto-pause/auto-answer toggles
+  (01,18 / 01,1B) + a favourites display (1F,08, read-only)); middle = a **draggable device sidebar** (a vertical
+  list of device rows — **drag up/down to rank priority**, index 0 = primary/① and 1 = secondary/② for the
+  multipoint pair; **tap a row to connect** that device as the active sink; a rank badge + a live state dot
+  ● active / ● held / ○ offline per row, so the badge shows your ranked preference and the dot shows reality;
+  drag persists `priority.json` via `bose priority --set` and does NOT touch the radio — connecting is only ever
+  an explicit tap; right-click → Disconnect); right = EQ. The light
   theme (burnt-orange `#AF3A03` accent on warm paper, from the Midterm `paper-hc` palette)
   is shared with the Android app; macOS colours live in `ContentView.swift`, Android in
   `MainActivity.kt` (`BoseAccent`/`BoseConnected`/…). Six ANC
@@ -223,15 +228,23 @@ devices first**, then pages the target — and **restores the evicted device if 
 fails to connect** (`evictLowestPriorityIfFull` / `restoreEvicted` in `cli/main.swift`).
 Mac app / Raycast / Hammerspoon inherit this (they shell `bose`). **Runtime override:** a
 user-chosen order in `~/.config/bose/priority.json` (`bose priority --set …`, or the Mac
-app's **drag-to-reorder device grid** — index 0 = primary/active, 1 = secondary/held) takes
+app's **draggable device sidebar** — drag up/down to rank, index 0 = primary, 1 = secondary;
+dragging only sets priority, tapping a row connects) takes
 precedence over the compiled priorities for victim selection (`effectiveRank`, `cli/Priority.swift`).
 `bose pair <primary> <secondary>` connects exactly that pair (evict others → secondary held →
 primary active). The order is host-side only — never pushed to the headphones (no firmware
 priority hierarchy). **Android now replicates
 it too**: pure victim selection in `android/.../Eviction.kt` (`evictionVictim`, JVM-unit-
 tested), held-state read via `Composites.getDeviceStates`, wired into `BoseService.switchDevice`
-(evict-then-page, restore on failure). Android can't run the Mac's host-side blueutil step, so
-it only sends the BMAP disconnect/connect — correct from the phone's side.
+(evict-then-page, restore on failure).
+
+**The Mac is a plain device — no host-side A2DP dance (2026-07-13).** `connect`/`swap`/
+`disconnect`/`pair`/eviction previously special-cased the Mac with a `blueutil --connect/
+--disconnect` step (+ a 1.5s settle) to bring up the macOS-side A2DP link. That was removed —
+the Mac now goes through the exact same BMAP connect/disconnect as any other device (the
+headphones page it; macOS establishes A2DP on its side). This kills the blueutil-timing
+flakiness that made "connect Mac" unreliable, at the cost of relying on macOS to accept the
+page (verify on hardware). `isMacDevice`/`runBlueutil` are gone from the CLI.
 
 **Cycle order** (bose): `mac → quest → ipad → iphone → tv → appletv → phone`
 

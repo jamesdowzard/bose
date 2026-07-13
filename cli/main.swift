@@ -48,10 +48,6 @@ func activeName(forMac mac: [UInt8]) -> String {
     BoseDeviceMap.name(forMac: mac) ?? "mac"
 }
 
-func isMacDevice(_ mac: [UInt8]) -> Bool {
-    BoseDeviceMap.mac("mac") == mac
-}
-
 // MARK: - Commands
 
 /// status / s — full snapshot in ONE RFCOMM session via the getAllState composite.
@@ -433,7 +429,6 @@ func evictLowestPriorityIfFull(target: [UInt8]) -> BoseDevice? {
             < effectiveRank($1.name, order: order, compiledPriority: $1.priority)
     }) else { return nil }
     _ = transport.oneShot(BMAP.disconnectDevice(mac: victim.mac))
-    if isMacDevice(victim.mac) { runBlueutil(["--disconnect", Headphone.mac]) }
     print("Evicted \(victim.name) (priority \(victim.priority)) to free a multipoint slot")
     Thread.sleep(forTimeInterval: 0.8)           // let the slot clear before paging the target
     return victim
@@ -442,7 +437,6 @@ func evictLowestPriorityIfFull(target: [UInt8]) -> BoseDevice? {
 /// Re-page a device we evicted, after the target connect failed — restores the prior pair.
 func restoreEvicted(_ victim: BoseDevice, failedTarget: String) {
     _ = transport.oneShot(BMAP.connectDevice(mac: victim.mac))
-    if isMacDevice(victim.mac) { runBlueutil(["--connect", Headphone.mac]) }
     print("Restored \(victim.name) (target \(failedTarget) was unreachable)")
 }
 
@@ -450,12 +444,6 @@ func restoreEvicted(_ victim: BoseDevice, failedTarget: String) {
 func cmdConnect(_ deviceName: String) {
     let mac = macForName(deviceName)
     let evicted = evictLowestPriorityIfFull(target: mac)
-
-    // For the Mac itself, ensure A2DP first (macOS link), like v1/the app.
-    if isMacDevice(mac) {
-        runBlueutil(["--connect", Headphone.mac])
-        Thread.sleep(forTimeInterval: 1.5)
-    }
 
     _ = transport.oneShot(BMAP.connectDevice(mac: mac), timeout: 5.0)
 
@@ -475,11 +463,6 @@ func cmdConnect(_ deviceName: String) {
 func cmdSwap(_ targetName: String) {
     let mac = macForName(targetName)
     let evicted = evictLowestPriorityIfFull(target: mac)
-
-    if isMacDevice(mac) {
-        runBlueutil(["--connect", Headphone.mac])
-        Thread.sleep(forTimeInterval: 1.5)
-    }
 
     _ = transport.oneShot(BMAP.connectDevice(mac: mac), timeout: 5.0)
 
@@ -542,11 +525,6 @@ func cmdDisconnect(_ deviceName: String) {
 
     _ = transport.oneShot(BMAP.disconnectDevice(mac: mac))
 
-    // If disconnecting Mac, also drop the Mac BT stack link.
-    if isMacDevice(mac) {
-        runBlueutil(["--disconnect", Headphone.mac])
-    }
-
     print("Disconnected \(deviceName)")
 }
 
@@ -593,7 +571,6 @@ func cmdPair(_ primary: String, _ secondary: String) {
         var evictedAny = false
         for m in held where !keep.contains(macString(m)) {
             _ = transport.oneShot(BMAP.disconnectDevice(mac: m))
-            if isMacDevice(m) { runBlueutil(["--disconnect", Headphone.mac]) }
             print("Evicted \(displayName(forMac: m)) to free a slot for the pair")
             evictedAny = true
         }
@@ -602,7 +579,6 @@ func cmdPair(_ primary: String, _ secondary: String) {
 
     // Page the secondary first (settles held), then the primary (should become active).
     func page(_ mac: [UInt8]) -> ConnectOutcome {
-        if isMacDevice(mac) { runBlueutil(["--connect", Headphone.mac]); Thread.sleep(forTimeInterval: 1.5) }
         _ = transport.oneShot(BMAP.connectDevice(mac: mac), timeout: 5.0)
         return confirmConnect(mac)
     }

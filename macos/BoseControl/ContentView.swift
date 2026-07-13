@@ -1,5 +1,6 @@
-/// ContentView: Warm-paper two-panel layout for Bose headphone control.
-/// Left panel = status sidebar (220px), right panel = device grid + EQ.
+/// ContentView: Warm-paper three-panel layout for Bose headphone control.
+/// Left = status sidebar (260px), middle = device sidebar (a draggable vertical list —
+/// drag to rank priority, index 0 = primary; tap to connect), right = EQ.
 /// Light theme — burnt-orange accent on warm paper (drawn from the Midterm "paper-hc"
 /// terminal theme), matching the Android app.
 
@@ -84,8 +85,6 @@ struct ContentView: View {
     // `bose priority` order on appear. `draggingId` tracks the in-flight drag.
     @State private var deviceOrder: [String] = deviceButtons.map { $0.id }
     @State private var draggingId: String? = nil
-    // The top-2 we last connected as a pair — so reordering positions 3-8 doesn't re-page.
-    @State private var appliedTop2: [String] = []
 
     var body: some View {
         Group {
@@ -99,7 +98,7 @@ struct ContentView: View {
         // width/height + .windowResizability(.contentSize) pinned it to one exact size. The
         // ideal is the bigger default; maxWidth/Height .infinity let the panels fill when
         // dragged larger; the min keeps the two-column layout + hints from clipping.
-        .frame(minWidth: 700, idealWidth: 760, maxWidth: .infinity,
+        .frame(minWidth: 800, idealWidth: 860, maxWidth: .infinity,
                minHeight: 480, idealHeight: 560, maxHeight: .infinity)
         .background(paperColor)
         .preferredColorScheme(.light)
@@ -108,7 +107,7 @@ struct ContentView: View {
             syncSliders()
             installShortcuts()
             // Load the saved multipoint priority order; append any devices missing from it
-            // (e.g. a newly-added tile) so the grid always shows every device.
+            // (e.g. a newly-added device) so the list always shows every device.
             manager.loadPriorityOrder { saved in
                 guard !saved.isEmpty else { return }
                 let all = deviceButtons.map { $0.id }
@@ -177,13 +176,16 @@ struct ContentView: View {
             leftPanel
                 .frame(width: 260)  // wide enough for the fixed-mode hints to wrap cleanly
 
-            // Divider
-            Rectangle()
-                .fill(dividerColor)
-                .frame(width: 1)
+            Rectangle().fill(dividerColor).frame(width: 1)
 
-            // Right panel — device grid + EQ
-            rightPanel
+            // Middle panel — device sidebar (draggable priority list)
+            deviceSidebar
+                .frame(width: 220)
+
+            Rectangle().fill(dividerColor).frame(width: 1)
+
+            // Right panel — EQ
+            eqPanel
                 .frame(maxWidth: .infinity)
         }
         .padding(.top, 28)  // clear transparent title bar
@@ -387,39 +389,67 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Right Panel (Device Grid + EQ)
+    // MARK: - Middle Panel (Device Sidebar — draggable priority list)
 
-    private var rightPanel: some View {
-        VStack(alignment: .leading, spacing: 14) {
+    private var deviceSidebar: some View {
+        VStack(alignment: .leading, spacing: 10) {
             Text("DEVICES")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundColor(secondaryColor)
                 .tracking(1)
 
-            deviceGrid
+            deviceList
 
-            Text("EQUALIZER")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundColor(secondaryColor)
-                .tracking(1)
-                .padding(.top, 4)
+            Text("Drag to rank · tap to connect")
+                .font(.system(size: 9))
+                .foregroundColor(offlineColor)
 
-            eqPresets
-            eqSliders
+            Spacer(minLength: 0)
+
+            // State legend
+            HStack(spacing: 12) {
+                legendDot(boseAccent, "active")
+                legendDot(connectedColor, "held")
+                legendDot(offlineColor.opacity(0.5), "offline")
+            }
+            .font(.system(size: 9))
+            .foregroundColor(secondaryColor)
         }
         .padding(16)
     }
 
-    /// Tiles in the user's priority order (index 0 = primary, 1 = secondary, rest = eviction).
+    private func legendDot(_ color: Color, _ label: String) -> some View {
+        HStack(spacing: 4) {
+            Circle().fill(color).frame(width: 7, height: 7)
+            Text(label)
+        }
+    }
+
+    // MARK: - Right Panel (EQ)
+
+    private var eqPanel: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("EQUALIZER")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(secondaryColor)
+                .tracking(1)
+
+            eqPresets
+            eqSliders
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+    }
+
+    /// Rows in the user's priority order (index 0 = primary, 1 = secondary, rest = eviction).
     private var orderedButtons: [DeviceButton] {
         deviceOrder.compactMap { id in deviceButtons.first { $0.id == id } }
     }
 
-    private var deviceGrid: some View {
-        let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 3)
-        return LazyVGrid(columns: columns, spacing: 8) {
+    private var deviceList: some View {
+        VStack(spacing: 6) {
             ForEach(Array(orderedButtons.enumerated()), id: \.element.id) { idx, button in
-                deviceButton(button, index: idx)
+                deviceRow(button, index: idx)
                     .onDrag {
                         draggingId = button.id
                         return NSItemProvider(object: button.id as NSString)
@@ -433,85 +463,85 @@ struct ContentView: View {
         }
     }
 
-    /// Persist the new order and, if the top-2 (the multipoint pair) changed, connect it now.
+    /// Persist the new priority order (index 0 = primary). Dragging ONLY ranks — it does
+    /// not touch the radio. Connecting is an explicit tap on a row (see deviceRow's action).
     private func applyOrder() {
         manager.setPriority(deviceOrder)
-        let top2 = Array(deviceOrder.prefix(2))
-        guard top2.count == 2, top2 != appliedTop2 else { return }
-        appliedTop2 = top2
-        manager.applyPair(primary: top2[0], secondary: top2[1])
     }
 
-    /// Move a device to a slot (used by the right-click Make Primary/Secondary actions).
-    private func moveDevice(_ id: String, to index: Int) {
-        guard let from = deviceOrder.firstIndex(of: id) else { return }
-        deviceOrder.remove(at: from)
-        deviceOrder.insert(id, at: min(index, deviceOrder.count))
-        applyOrder()
-    }
-
-    private func deviceButton(_ button: DeviceButton, index: Int) -> some View {
+    /// One device row: [rank badge] [icon] label … [state dot]. Tap connects it; drag ranks.
+    private func deviceRow(_ button: DeviceButton, index: Int) -> some View {
         let state = manager.deviceStates[button.id] ?? "offline"
         let isConnecting = manager.connectingDevice == button.id
         let isActive = state == "active"
         let isConnected = state == "connected"
-        // Another tile is mid-connect — dim this one and ignore taps until it settles.
+        // Another row is mid-connect — dim this one and ignore taps until it settles.
         let isBlocked = manager.connectingDevice != nil && !isConnecting
 
+        let dotColor: Color = isActive ? boseAccent
+            : (isConnected ? connectedColor : offlineColor.opacity(0.5))
         let textColor: Color = (isActive || isConnecting) ? boseAccent
-            : (isConnected ? connectedColor : offlineColor)
+            : (isConnected ? inkColor : secondaryColor)
         let bg: Color = (isActive || isConnecting) ? activeBg : cardColor
         let borderColor: Color = (isActive || isConnecting) ? boseAccent.opacity(0.7) : hairColor
 
         return Button(action: { manager.connectDevice(button.id) }) {
-            VStack(spacing: 3) {
+            HStack(spacing: 9) {
+                // Rank badge — 1/2 filled for the multipoint pair, faint number below.
+                ZStack {
+                    if index <= 1 {
+                        Circle().fill(index == 0 ? boseAccent : connectedColor)
+                            .frame(width: 16, height: 16)
+                        Text(index == 0 ? "1" : "2")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(paperColor)
+                    } else {
+                        Text("\(index + 1)")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(offlineColor)
+                    }
+                }
+                .frame(width: 16)
+
+                Image(systemName: button.symbol)
+                    .font(.system(size: 15, weight: .regular))
+                    .foregroundColor(textColor)
+                    .frame(width: 20)
+
+                Text(button.label)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(textColor)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+
+                Spacer(minLength: 4)
+
                 if isConnecting {
                     ProgressView()
                         .controlSize(.small)
-                        .scaleEffect(0.7)
-                        .frame(height: 18)
+                        .scaleEffect(0.6)
+                        .frame(width: 12, height: 12)
                 } else {
-                    Image(systemName: button.symbol)
-                        .font(.system(size: 18, weight: .regular))
-                        .foregroundColor(textColor)
+                    Circle().fill(dotColor).frame(width: 8, height: 8)
                 }
-                Text(isConnecting ? "Connecting…" : button.label)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(textColor)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.center)
-                    .minimumScaleFactor(0.7)
             }
+            .padding(.horizontal, 10)
+            .frame(height: 38)
             .frame(maxWidth: .infinity)
-            .frame(height: 52)
             .background(bg)
             .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(borderColor, lineWidth: 1)
+                RoundedRectangle(cornerRadius: 9).stroke(borderColor, lineWidth: 1)
             )
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-            .contentShape(RoundedRectangle(cornerRadius: 10))  // whole tile is the hit area
-            // Multipoint role badge: 1 = Primary (active audio), 2 = Secondary (held).
-            .overlay(alignment: .topLeading) {
-                if index <= 1 {
-                    Text(index == 0 ? "1" : "2")
-                        .font(.system(size: 8, weight: .bold))
-                        .foregroundColor(paperColor)
-                        .frame(width: 13, height: 13)
-                        .background(Circle().fill(index == 0 ? boseAccent : connectedColor))
-                        .padding(4)
-                        .help(index == 0 ? "Primary — active audio" : "Secondary — held on multipoint")
-                }
-            }
+            .clipShape(RoundedRectangle(cornerRadius: 9))
+            .contentShape(RoundedRectangle(cornerRadius: 9))  // whole row is the hit area
         }
         .buttonStyle(.plain)
         .disabled(isBlocked)
-        .opacity(isBlocked ? 0.4 : (state == "offline" && !isConnecting ? 0.6 : 1.0))
-        // Drag a tile to reorder, or use these — index 0 = Primary, 1 = Secondary.
+        .opacity(isBlocked ? 0.4 : (state == "offline" && !isConnecting ? 0.7 : 1.0))
+        .help(index == 0 ? "Primary — drag to rank, tap to connect"
+            : index == 1 ? "Secondary — drag to rank, tap to connect"
+            : "Drag up to rank · tap to connect")
         .contextMenu {
-            Button("Make Primary") { moveDevice(button.id, to: 0) }
-            Button("Make Secondary") { moveDevice(button.id, to: 1) }
-            Divider()
             Button("Disconnect") { manager.disconnectDevice(button.id) }
         }
     }
