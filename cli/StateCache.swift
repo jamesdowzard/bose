@@ -81,4 +81,43 @@ enum StateCache {
         out[ageSecondsKey] = max(0, Int(now.timeIntervalSince(savedAt)))
         return out
     }
+
+    // MARK: - BLE correlation log
+
+    /// One JSONL line pairing a BLE advert capture with the last-known battery, for
+    /// offline decoding of the advert payload (which byte tracks charge — unproven,
+    /// 2026-07-18). Pure — unit-tested; nil when there's no battery to correlate
+    /// against (a payload with no reference value teaches nothing).
+    static func correlationLine(now: Date, rssi: Int, mfr: [UInt8],
+                                cachedBattery: Int?, cacheAge: Int?) -> String? {
+        guard let battery = cachedBattery else { return nil }
+        var obj: [String: Any] = [
+            "ts": Int(now.timeIntervalSince1970),
+            "rssi": rssi,
+            "mfr": mfr.map { String(format: "%02x", $0) }.joined(),
+            "battery": battery,
+        ]
+        if let age = cacheAge { obj["cacheAgeSeconds"] = age }
+        guard let data = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]),
+              let str = String(data: data, encoding: .utf8) else { return nil }
+        return str
+    }
+
+    /// Append a correlation line to `ble-correlation-<MAC>.jsonl` (same dir as the
+    /// state cache). Battery + age come from the cache; a missing cache is a no-op.
+    static func appendCorrelation(rssi: Int, mfr: [UInt8], now: Date = Date()) {
+        let cached = load()
+        let battery = cached?.snapshot["batteryLevel"] as? Int
+        let age = cached.map { max(0, Int(now.timeIntervalSince($0.savedAt))) }
+        guard let line = correlationLine(now: now, rssi: rssi, mfr: mfr,
+                                         cachedBattery: battery, cacheAge: age) else { return }
+        let logPath = (path as NSString).deletingLastPathComponent + "/ble-correlation-\(Headphone.dashMac).jsonl"
+        if let handle = FileHandle(forWritingAtPath: logPath) {
+            handle.seekToEndOfFile()
+            handle.write(Data((line + "\n").utf8))
+            handle.closeFile()
+        } else {
+            try? Data((line + "\n").utf8).write(to: URL(fileURLWithPath: logPath))
+        }
+    }
 }

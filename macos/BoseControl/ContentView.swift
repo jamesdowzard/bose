@@ -575,6 +575,9 @@ struct ContentView: View {
         let isConnected = state == "connected"
         // Another row is mid-connect — dim this one and ignore taps until it settles.
         let isBlocked = manager.connectingDevice != nil && !isConnecting
+        // Painting a cached snapshot: the dots describe the PAST, not live truth —
+        // render them hollow + dim the row so the grid reads "as of last read".
+        let isStale = !manager.reachable
 
         let dotColor: Color = isActive ? boseAccent
             : (isConnected ? connectedColor : offlineColor.opacity(0.5))
@@ -619,6 +622,9 @@ struct ContentView: View {
                         .controlSize(.small)
                         .scaleEffect(0.6)
                         .frame(width: 12, height: 12)
+                } else if isStale {
+                    // Hollow ring = last-known state, not a live reading.
+                    Circle().stroke(dotColor, lineWidth: 1.5).frame(width: 7, height: 7)
                 } else {
                     Circle().fill(dotColor).frame(width: 8, height: 8)
                 }
@@ -635,7 +641,9 @@ struct ContentView: View {
         }
         .buttonStyle(.plain)
         .disabled(isBlocked)
-        .opacity(isBlocked ? 0.4 : (state == "offline" && !isConnecting ? 0.7 : 1.0))
+        .opacity(isBlocked ? 0.4
+            : isStale ? 0.75   // cached snapshot — whole row reads muted under the banner
+            : (state == "offline" && !isConnecting ? 0.7 : 1.0))
         .help(index == 0 ? "Primary — drag to rank, tap to connect"
             : index == 1 ? "Secondary — drag to rank, tap to connect"
             : "Drag up to rank · tap to connect")

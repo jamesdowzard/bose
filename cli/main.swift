@@ -50,8 +50,41 @@ func activeName(forMac mac: [UInt8]) -> String {
 
 // MARK: - Commands
 
+/// Human-readable print of the cached snapshot — the no-ACL fallback for `status`
+/// and `info` (same cached-first rule as `info --json`, #148: never page for a
+/// read). Returns false when there's no usable cache (caller fails with a hint).
+func printCachedStatus() -> Bool {
+    guard let out = StateCache.staleOutput() else { return false }
+    let age = (out[StateCache.ageSecondsKey] as? Int) ?? 0
+    let ageText = age < 60 ? "\(age)s" : age < 3600 ? "\(age / 60)m" : "\(age / 3600)h \((age % 3600) / 60)m"
+    print("(cached \(ageText) ago — headphones not connected to this Mac; --page for a live read)")
+    if let b = out["batteryLevel"] as? Int {
+        print("Battery:  \(b)%\((out["batteryCharging"] as? Bool) == true ? " ⚡" : "")")
+    }
+    if let m = out["ancMode"] as? Int { print("ANC:      \(ancModeName(m))") }
+    if let v = out["volume"] as? Int, let vm = out["volumeMax"] as? Int { print("Volume:   \(v)/\(vm)") }
+    if let d = out["devices"] as? [String: String] {
+        let active = d.filter { $0.value == "active" }.keys.sorted()
+        let held = d.filter { $0.value == "connected" }.keys.sorted()
+        let slots = active + held
+        print("Slots:    \(slots.count >= 1 ? slots[0] : "—") | \(slots.count >= 2 ? slots[1] : "—")")
+    }
+    return true
+}
+
+/// Shared no-ACL gate for the human read commands. Never pages: cached print, or a
+/// clear failure when nothing is cached. Live verbs (battery/devices/…) stay live —
+/// they're explicit, single-purpose asks.
+func gateHumanRead(_ verb: String, forcePage: Bool) {
+    if !forcePage && !transport.isHeadphoneConnected() {
+        if printCachedStatus() { exit(0) }
+        fail("headphones not connected to this Mac (no cached state; `bose \(verb) --page` for a live read)")
+    }
+}
+
 /// status / s — full snapshot in ONE RFCOMM session via the getAllState composite.
-func cmdStatus() {
+func cmdStatus(forcePage: Bool = false) {
+    gateHumanRead("status", forcePage: forcePage)
     guard let s = transport.getAllState() else { fail("headphones not reachable") }
 
     let connectedNames = s.connectedDevices.map { displayName(forMac: $0) }
@@ -73,7 +106,8 @@ func cmdStatus() {
 /// `status` is the quick subset; `info` dumps everything the bulk read returns
 /// (identity, power, full audio config, and the audio-active device list).
 /// No new protocol work — pure formatting over the existing composite.
-func cmdInfo() {
+func cmdInfo(forcePage: Bool = false) {
+    gateHumanRead("info", forcePage: forcePage)
     guard let s = transport.getAllState() else { fail("headphones not reachable") }
 
     // Left-pad a 12-char label so values line up in a column.
@@ -238,9 +272,17 @@ func cmdPresence(_ a: [String]) {
         timeout = min(15, max(0.5, t))
     }
     let hit = PresenceScanner().scan(timeout: timeout)
+    // Correlation log: every presence hit appends {ts, rssi, mfr, cachedBattery,
+    // cacheAge} to ble-correlation-<MAC>.jsonl (same cache dir). Over days of use
+    // this builds the dataset to decode battery out of the advert payload (byte
+    // offsets unknown, 2026-07-18) — free, passive, no extra scanning.
+    if let h = hit { StateCache.appendCorrelation(rssi: h.rssi, mfr: h.mfr) }
     if a.contains("--json") {
         var obj: [String: Any] = ["present": hit != nil]
-        if let h = hit { obj["rssi"] = h.rssi; obj["name"] = h.name }
+        if let h = hit {
+            obj["rssi"] = h.rssi; obj["name"] = h.name
+            obj["mfr"] = h.mfr.map { String(format: "%02x", $0) }.joined()
+        }
         if let data = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]),
            let str = String(data: data, encoding: .utf8) { print(str) } else { print("{\"present\":false}") }
     } else if let h = hit {
@@ -870,8 +912,8 @@ func requireArg(_ name: String) -> String {
 }
 
 switch args[1].lowercased() {
-case "status", "s":            cmdStatus()
-case "info":                   args.contains("--json") ? cmdInfoJSON(forcePage: args.contains("--page")) : cmdInfo()
+case "status", "s":            cmdStatus(forcePage: args.contains("--page"))
+case "info":                   args.contains("--json") ? cmdInfoJSON(forcePage: args.contains("--page")) : cmdInfo(forcePage: args.contains("--page"))
 case "battery", "b":           cmdBattery()
 case "presence":               cmdPresence(args.count >= 3 ? Array(args[2...]) : [])
 case "anc":                    cmdAnc(args.count >= 3 ? args[2] : nil)
