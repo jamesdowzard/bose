@@ -27,8 +27,12 @@ struct Profile: Codable, Equatable {
     var eq: EqValues? = nil
     var multipoint: Bool? = nil
     var volume: Int? = nil          // 0-31
+    var pair: [String]? = nil       // optional multipoint pair [primary, secondary] (device
+                                    // names) — applied FIRST via the `pair` composite (evict
+                                    // others → secondary held → primary active), then any
+                                    // settings. e.g. tv = {pair: [audikast, phone]}
 
-    enum CodingKeys: String, CodingKey { case name, ancMode, noiseLevel, ancDepth, eq, multipoint, volume }
+    enum CodingKeys: String, CodingKey { case name, ancMode, noiseLevel, ancDepth, eq, multipoint, volume, pair }
 
     // Custom encode so unset fields are omitted (clean, human-editable JSON) rather
     // than written as nulls.
@@ -41,6 +45,13 @@ struct Profile: Codable, Equatable {
         try c.encodeIfPresent(eq, forKey: .eq)
         try c.encodeIfPresent(multipoint, forKey: .multipoint)
         try c.encodeIfPresent(volume, forKey: .volume)
+        try c.encodeIfPresent(pair, forKey: .pair)
+    }
+
+    /// True when the profile sets any on-device SETTING (vs a pair-only profile like
+    /// `tv`). Gates the `applyProfile` session so a pair-only profile isn't a failure.
+    var hasDeviceSettings: Bool {
+        ancMode != nil || noiseLevel != nil || eq != nil || multipoint != nil || volume != nil
     }
 
     /// One-line summary of the fields this profile sets (for `profile` listing).
@@ -51,6 +62,7 @@ struct Profile: Codable, Equatable {
         if let e = eq { parts.append("eq \(e.bass)/\(e.mid)/\(e.treble)") }
         if let mp = multipoint { parts.append("mp \(mp ? "on" : "off")") }
         if let v = volume { parts.append("vol \(v)") }
+        if let pr = pair, pr.count == 2 { parts.append("pair \(pr[0])+\(pr[1])") }
         return parts.isEmpty ? "" : " — " + parts.joined(separator: ", ")
     }
 
@@ -68,9 +80,9 @@ struct Profile: Codable, Equatable {
     }
 
     init(name: String, ancMode: String? = nil, noiseLevel: Int? = nil, ancDepth: Int? = nil,
-         eq: EqValues? = nil, multipoint: Bool? = nil, volume: Int? = nil) {
+         eq: EqValues? = nil, multipoint: Bool? = nil, volume: Int? = nil, pair: [String]? = nil) {
         self.name = name; self.ancMode = ancMode; self.noiseLevel = noiseLevel; self.ancDepth = ancDepth
-        self.eq = eq; self.multipoint = multipoint; self.volume = volume
+        self.eq = eq; self.multipoint = multipoint; self.volume = volume; self.pair = pair
     }
 }
 

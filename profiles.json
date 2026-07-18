@@ -1,29 +1,36 @@
 {
-  "profiles" : [
+  "profiles": [
     {
-      "ancMode" : "quiet",
-      "multipoint" : false,
-      "name" : "flight"
+      "ancMode": "quiet",
+      "multipoint": false,
+      "name": "flight"
     },
     {
-      "ancMode" : "aware",
-      "eq" : {
-        "bass" : 0,
-        "mid" : 0,
-        "treble" : 0
+      "ancMode": "aware",
+      "eq": {
+        "bass": 0,
+        "mid": 0,
+        "treble": 0
       },
-      "multipoint" : true,
-      "name" : "office"
+      "multipoint": true,
+      "name": "office"
     },
     {
-      "ancMode" : "quiet",
-      "eq" : {
-        "bass" : 3,
-        "mid" : 0,
-        "treble" : 2
+      "ancMode": "quiet",
+      "eq": {
+        "bass": 3,
+        "mid": 0,
+        "treble": 2
       },
-      "multipoint" : true,
-      "name" : "music"
+      "multipoint": true,
+      "name": "music"
+    },
+    {
+      "name": "tv",
+      "pair": [
+        "audikast",
+        "phone"
+      ]
     }
   ]
 }

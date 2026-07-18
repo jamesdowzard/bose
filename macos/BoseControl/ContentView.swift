@@ -104,6 +104,7 @@ struct ContentView: View {
         .preferredColorScheme(.light)
         .onAppear {
             manager.refreshState()
+            manager.loadProfiles()
             syncSliders()
             installShortcuts()
             // Load the saved multipoint priority order; append any devices missing from it
@@ -256,6 +257,24 @@ struct ContentView: View {
                         Image(systemName: "bolt.fill")
                             .font(.system(size: 10))
                             .foregroundColor(boseAccent)
+                    }
+                }
+            }
+
+            // Profiles — one-tap presets (`bose profile <name>`). A profile may carry a
+            // multipoint pair (tv = audikast+phone) and/or settings. Chip list loads from
+            // `bose profile --json` (a pure file read — no radio) on window open.
+            if !manager.profiles.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("PROFILES")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(secondaryColor)
+                        .tracking(1)
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 62), spacing: 4)],
+                              alignment: .leading, spacing: 4) {
+                        ForEach(manager.profiles, id: \.self) { name in
+                            profileChip(name)
+                        }
                     }
                 }
             }
@@ -418,6 +437,31 @@ struct ContentView: View {
             Spacer()
         }
         .padding(16)
+    }
+
+    /// A one-tap profile chip. Applying shows a spinner on the tapped chip and blocks
+    /// re-entry until it settles (a pair profile pages devices — seconds, not ms).
+    private func profileChip(_ name: String) -> some View {
+        Button(action: { manager.applyProfile(name) }) {
+            HStack(spacing: 4) {
+                if manager.applyingProfile == name {
+                    ProgressView().controlSize(.small).scaleEffect(0.6)
+                }
+                Text(name.uppercased())
+                    .font(.system(size: 10, weight: .semibold))
+                    .tracking(0.5)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity)
+            .background(cardColor)
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(hairColor, lineWidth: 1))
+            .cornerRadius(6)
+            .foregroundColor(inkColor)
+            .contentShape(RoundedRectangle(cornerRadius: 6))
+        }
+        .buttonStyle(.plain)
+        .disabled(manager.applyingProfile != nil)
     }
 
     /// Friendly name for a favourited AudioModes slot index (display-only).
