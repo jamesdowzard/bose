@@ -2,8 +2,8 @@
 # Max 20 lines. Updated by agent on Stop hook.
 
 ## Feature
-device sidebar 3-col drag-priority + connect reliability
-device sidebar 3-col drag-priority + connect reliability
+Cached-first info reads with ACL gate and state cache
+Cached-first info reads with ACL gate and state cache
 
 ## Current State
 Not started. No work has been done yet.

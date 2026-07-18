@@ -47,7 +47,17 @@ explicit user action.
   It is a **thin front-end that shells `bose`** — NO RFCOMM, NO IOBluetooth, NO
   protocol code — reading via `bose info --json` and writing via the verbs. It is
   **user-launched and event-driven**: reads on window-open, on app-focus, after each
-  write, and on ⌘R — never on a timer. Build `bash macos/build.sh [--install]`
+  write, and on ⌘R — never on a timer. Open/focus reads are **cached-first** (#148):
+  `info --json` checks ACL presence (free, zero radio) and with no link serves the
+  timestamped last-good snapshot (`~/.cache/bose/state-<MAC>.json`) stamped
+  `reachable:false` + `ageSeconds` instead of PAGING the headphones — so opening the
+  app while audio plays on another sink is instant and can't glitch it. The app shows
+  a staleness banner ("Not connected to this Mac — last known state (Xm ago)") over
+  the full last-known dashboard; **⌘R forces a live read** (`--page`), and every
+  post-write/connect confirm read is `--page` too (a settle loop must never confirm
+  against the cache). `reachable` = this Mac's link now; `connected` = we have real
+  headphone state to paint (the app no longer wipes to "Not Connected" on a mere
+  unreachable read — only when there's nothing known at all). Build `bash macos/build.sh [--install]`
   (Developer-ID signed → `/Applications`; no LaunchAgent). In-window keys: ⌘1-6
   ANC modes (slots 0-5), ⌘↑/⌘↓ volume, ⌘R refresh, ⌘M connect Mac. Global hotkeys stay in
   Hammerspoon. The `--json` read seam lives in `cli/main.swift` (`cmdInfoJSON`, pure
@@ -81,7 +91,8 @@ explicit user action.
 
 ### CLI (`cli/`) — regenerated on the shared layer
 - `cli/main.swift` -- `bose` command surface (status/battery/anc/anc-level/spatial/mode-name/devices/connect/disconnect/swap/pair/priority/volume/multipoint/auto-pause/auto-answer/favorites/play-pause-next-prev/eq/raw). `pair <primary> <secondary>` = the multipoint-pair composite (evict others → connect secondary held → primary active); `priority [--set n… | --clear]` shows/sets the runtime eviction order in `~/.config/bose/priority.json` (index 0 = primary). Pure order logic in `cli/Priority.swift` (`PriorityOrder` + `effectiveRank`, unit-tested); `evictLowestPriorityIfFull` ranks by it (runtime order overrides the compiled devices.toml priority, graceful fallback when absent). `mode-name [--slot 4|5] [name]` renames a custom mode via the 1F,06 RMW (name field, SET payload [3..34]) — custom slots only (`userConfigurable`; presets are locked, firmware ignores the write). Without `--slot` it targets the ACTIVE mode (`setActiveModeName`); with `--slot 4`/`5` it renames C1/C2 **in place without changing the active mode** (`setModeName`, used by the Mac app's right-click rename). Both share `renameModeSlot`. The name persists on-device and shows in the Bose app too. `info --json` emits `custom1Name`/`custom2Name` (slot 4/5 stored names) AND the active mode config (modeName/noiseLevel/spatial/adjustable) — all read in the SAME warm session as the bulk state, folded into `getAllStateWithDevices` (a separate `readModeInfo` call ran as a cold SECOND session and reliably came back empty, blanking the slider/spatial/C1-C2 names, #134). The Mac app labels the C1/C2 buttons with the names (falling back to "C1"/"C2" when unset = "None") and renames them via right-click → Rename… → `mode-name --slot`. The Android app does the same display on its mode selector — `Composites.readCustomModeNames()` (slots 4/5) → `BoseViewModel` `custom1Name`/`custom2Name` → `AncSection` label. (Display only on Android; renaming is Mac/CLI via `mode-name`.) **No inline byte parsing** — every command routes through the generated `BMAP.*` builders. `connect`/`swap` poll-confirm via `getConnectedDevices` (ACK is never success); volume uses the generated SET_GET builder.
-- `cli/Transport.swift` -- IOBluetooth RFCOMM transport (per-command open/drain-300ms/close, cold-start warm-up, serial queue).
+- `cli/Transport.swift` -- IOBluetooth RFCOMM transport (per-command open/drain-300ms/close, cold-start warm-up, serial queue). `isHeadphoneConnected()` = the free ACL-presence check (no channel, no page) gating the cached-first `info --json`.
+- `cli/StateCache.swift` -- timestamped last-good `info --json` snapshot (`~/.cache/bose/state-<MAC>.json`; `$BOSE_STATE_DIR` test override). Written on every successful live read; served with `reachable:false`/`cachedAt`/`ageSeconds` when the Mac has no ACL link (`--page` bypasses). Foundation-only, unit-tested.
 - `cli/Composites.swift` -- live-channel composites (cncLevel RMW, connectedDevices list, getAllState single-session).
 - `cli/Parsers.swift` -- pure, hardware-free response parsers; `cli/Tests/main.swift` + `cli/run-tests.sh` are the standalone unit tests (same captured-byte corpus as Android `Parsers.kt`).
 - `cli/build.sh` -- compiles the generated Swift + `cli/{Transport,Parsers,Composites}.swift` + `cli/main.swift` → `cli/build/bose`. Does NOT install over `~/bin/bose`.
@@ -435,6 +446,9 @@ event-driven, channel-free `blueutil` + a last-active-mac flag — was tried and
 **RFCOMM opens ACL.** Any RFCOMM connection (including state queries) establishes
 ACL to the headphones. Bose firmware may interpret this as "device wants audio".
 Don't probe/poll from a device that isn't supposed to be the active source.
+The cached-first `info --json` (#148) is the structural guard for the READ path:
+with no ACL it never opens RFCOMM at all (cache instead); only `--page`, writes,
+and explicit verbs touch the radio from a non-slot Mac.
 
 ## Rules
 

@@ -120,11 +120,35 @@ func cmdInfo() {
 /// is the read seam the windowed macOS app consumes — the app shells `bose` and
 /// never touches RFCOMM itself, so it can't reintroduce the polling/transport bugs.
 /// Pure formatting over existing composites — no protocol/spec change.
-func cmdInfoJSON() {
+///
+/// Cached-first (#148): a live read requires RFCOMM, and RFCOMM to a Mac that holds
+/// neither multipoint slot means a multi-second BT-Classic PAGE of the headphones —
+/// the exact probe-from-a-non-sink the transport rules warn about (it can glitch
+/// audio on the active sink; #69-era). So with no ACL link this emits the cached
+/// last-good snapshot stamped `reachable:false` + `cachedAt`/`ageSeconds` instead of
+/// paging — instant and radio-silent. `--page` forces the old live-read behaviour
+/// (an EXPLICIT user action, e.g. the app's ⌘R). With ACL up the read is live as
+/// ever and rewrites the cache. `connected` describes the headphone state a snapshot
+/// captured; `reachable` describes THIS Mac's link right now — the app keys off
+/// `reachable` for its staleness banner and never wipes known state over it.
+func cmdInfoJSON(forcePage: Bool = false) {
     func emit(_ obj: [String: Any]) {
         guard let data = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]),
               let str = String(data: data, encoding: .utf8) else { print("{\"connected\":false}"); return }
         print(str)
+    }
+
+    /// No usable live path (no ACL and not forced, or the live read failed):
+    /// cached snapshot if we have one, else the bare disconnected object.
+    func emitFallback() {
+        emit(StateCache.staleOutput() ?? ["connected": false, StateCache.reachableKey: false])
+    }
+
+    // The gate: ACL presence is a free, zero-radio local read (IOBluetooth device
+    // state — no channel, no page). Only a live read past this point touches radio.
+    if !forcePage && !transport.isHeadphoneConnected() {
+        emitFallback()
+        return
     }
 
     // Bulk state AND device grid from ONE warm RFCOMM session. The active sink comes from
@@ -136,7 +160,12 @@ func cmdInfoJSON() {
     // standalone session-1 read it's already warm, and it skips the bulk reads it doesn't need.
     guard let (s, idleDevices, modeInfo) = transport.getAllStateWithDevices(
         query: BoseDeviceMap.knownDevices.map { $0.mac }
-    ) else { emit(["connected": false]); return }
+    ) else {
+        // Live read failed (page refused / link blip). Serve the cache rather than a
+        // bare connected:false so one miss can't wipe a known-good dashboard.
+        emitFallback()
+        return
+    }
 
     // Per-device 3-state, resolved by NAME (same logic as cmdDevices, #81). Active wins
     // over idle when a device resolves to both.
@@ -172,6 +201,7 @@ func cmdInfoJSON() {
 
     var out: [String: Any] = [
         "connected": true,
+        StateCache.reachableKey: true,
         "deviceName": s.deviceName.isEmpty ? "verBosita" : s.deviceName,
         "firmware": s.firmware,
         "batteryLevel": s.batteryLevel,
@@ -189,6 +219,7 @@ func cmdInfoJSON() {
         "custom2Name": customName(5),
     ]
     out.merge(mode) { _, new in new }
+    StateCache.save(out)   // the shared last-good snapshot every front-end paints from
     emit(out)
 }
 
@@ -762,7 +793,8 @@ func usage() {
 
     Usage:
       bose status               Connection, battery, ANC, volume, EQ (one session)
-      bose info [--json]        Full state: identity, power, all audio config, devices (--json for the app)
+      bose info [--json]        Full state: identity, power, all audio config, devices (--json for the app;
+                                --json is cached-first with no ACL link — add --page to force a live read)
       bose battery              Battery level
       bose devices              Known devices: ● active / ○ connected / · offline
       bose connect <device>     Route audio to device (poll-confirmed)
@@ -799,7 +831,7 @@ func requireArg(_ name: String) -> String {
 
 switch args[1].lowercased() {
 case "status", "s":            cmdStatus()
-case "info":                   args.contains("--json") ? cmdInfoJSON() : cmdInfo()
+case "info":                   args.contains("--json") ? cmdInfoJSON(forcePage: args.contains("--page")) : cmdInfo()
 case "battery", "b":           cmdBattery()
 case "anc":                    cmdAnc(args.count >= 3 ? args[2] : nil)
 case "anc-level":              cmdAncLevel(args.count >= 3 ? args[2] : nil)

@@ -16,6 +16,18 @@ final class BoseManager: ObservableObject {
     // MARK: - Published State (bound by ContentView)
 
     @Published var isConnected: Bool = false
+
+    /// Whether THIS Mac currently has a link to the headphones (the `reachable` field
+    /// of `info --json`). False while painting a cached snapshot — the CLI's
+    /// cached-first read (#148) serves the last-good state instantly instead of
+    /// paging headphones the Mac isn't connected to (the probe class behind the
+    /// #69-era audio dropouts). Drives the staleness banner; `isConnected` keeps
+    /// meaning "we have real headphone state to show".
+    @Published var reachable: Bool = true
+
+    /// Age of the painted snapshot in seconds (nil when live). From `ageSeconds`.
+    @Published var stateAgeSeconds: Int? = nil
+
     @Published var batteryLevel: Int = 0
     @Published var batteryCharging: Bool = false
     @Published var ancMode: Int = 0          // hardware slot: 0=quiet 1=aware 2=immersion 3=cinema 4=custom1 5=custom2
@@ -153,11 +165,16 @@ final class BoseManager: ObservableObject {
     // MARK: - Read
 
     /// Read full state via `info --json` and publish it. Event-driven only.
-    func refreshState() {
+    ///
+    /// Default reads are CACHED-FIRST: with no ACL link the CLI serves the last-good
+    /// snapshot instantly (zero radio) instead of paging the headphones — so window
+    /// open / app focus can never stall on a multi-second page or glitch audio on
+    /// another sink. `forcePage: true` (⌘R) deliberately pages for a live read.
+    func refreshState(forcePage: Bool = false) {
         DispatchQueue.main.async { self.isRefreshing = true }
         queue.async { [weak self] in
             guard let self = self else { return }
-            let (_, out) = self.run(["info", "--json"])
+            let (_, out) = self.run(["info", "--json"] + (forcePage ? ["--page"] : []))
             let parsed = Self.parse(out)
             DispatchQueue.main.async {
                 self.apply(parsed)
@@ -178,7 +195,12 @@ final class BoseManager: ObservableObject {
     /// Apply a decoded snapshot to published properties. Must run on the main thread.
     private func apply(_ s: [String: Any]) {
         let connected = (s["connected"] as? Bool) ?? false
+        // `reachable` absent (pre-#148 output) == the old semantics: a connected
+        // snapshot was by definition a live read.
+        let reach = (s["reachable"] as? Bool) ?? connected
         guard connected else {
+            reachable = false
+            stateAgeSeconds = nil
             // One transient unreachable `info` read shouldn't wipe a known-good
             // dashboard to "Not Connected". The CLI does a single RFCOMM attempt per
             // command, so an occasional miss when the link is briefly busy is expected,
@@ -193,6 +215,8 @@ final class BoseManager: ObservableObject {
         }
         consecutiveFailures = 0
         isConnected = true
+        reachable = reach
+        stateAgeSeconds = reach ? nil : (s["ageSeconds"] as? Int)
         batteryLevel = (s["batteryLevel"] as? Int) ?? batteryLevel
         batteryCharging = (s["batteryCharging"] as? Bool) ?? false
         let snapAnc = (s["ancMode"] as? Int) ?? ancMode
@@ -329,7 +353,9 @@ final class BoseManager: ObservableObject {
             // multipoint kept audio on the previous device (ACL up, not the active sink).
             let ok = code == 0 && out.range(of: "connected", options: .caseInsensitive) != nil
             let idle = out.range(of: "(idle", options: .caseInsensitive) != nil
-            let snapshot = Self.parse(self.run(["info", "--json"]).out)
+            // --page: this read follows an explicit connect — it must reflect the
+            // device's REAL post-connect state, never the cached-first snapshot.
+            let snapshot = Self.parse(self.run(["info", "--json", "--page"]).out)
             DispatchQueue.main.async {
                 if ok { self.assertedActiveDevice = idle ? nil : name }
                 self.apply(snapshot)   // refresh battery/EQ/etc; honours the assertion above
@@ -409,7 +435,7 @@ final class BoseManager: ObservableObject {
         queue.async { [weak self] in
             guard let self = self else { return }
             _ = self.run(["pair", primary, secondary])
-            let snapshot = Self.parse(self.run(["info", "--json"]).out)
+            let snapshot = Self.parse(self.run(["info", "--json", "--page"]).out)   // real post-pair state
             DispatchQueue.main.async {
                 self.apply(snapshot)
                 self.connectingDevice = nil
@@ -435,7 +461,9 @@ final class BoseManager: ObservableObject {
             guard let self = self else { return }
             _ = self.run(verb)
             for i in 0..<attempts {
-                let parsed = Self.parse(self.run(["info", "--json"]).out)
+                // --page: a settle loop reading the cache would "confirm" stale data
+                // (or spin to timeout) — post-write reads are always live.
+                let parsed = Self.parse(self.run(["info", "--json", "--page"]).out)
                 let ok = confirm(parsed)
                 DispatchQueue.main.async {
                     self.apply(parsed)
