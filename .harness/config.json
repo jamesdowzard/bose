@@ -1,5 +1,6 @@
 {
   "base_branch": "main",
   "max_parallel": 3,
-  "worktree_parent": ".worktrees"
+  "worktree_parent": ".worktrees",
+  "brain_project_id": "01KNESEMSP7EF7QXNP52YBT2EY"
 }
