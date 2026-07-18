@@ -82,7 +82,9 @@ explicit user action.
 - `Parsers.kt` -- pure, hardware-free response parsers (JVM-unit-tested in `app/src/test/`, against the same captured bytes as macOS `Parsers.swift`)
 - `BoseProtocol.kt` -- thin command facade: builds non-composite frames via generated `BMAP.*`, decodes responses. NO hand-written frame builders
 - `A2dpReflection.kt` -- the ONE isolated home for the hidden-API `BluetoothA2dp.connect()` reflection (phone-only insurance; don't expand)
-- `BoseService` -- foreground service (RFCOMM commands; phone-only A2DP nudge; notification media controls play/pause/next/prev)
+- `SlotGate.kt` -- does THIS phone hold a multipoint slot? Public-API A2DP-proxy connected-list check (zero radio) — the Android sibling of the Mac's `isHeadphoneConnected()`. null = unknown → allow live (never worse than pre-gate).
+- `StateCache.kt` -- timestamped last-good snapshot (SharedPrefs) — Android sibling of the Mac state cache (#148). Saved on every successful live refresh (service AND ViewModel); served when the phone holds no slot. `ageText` pure + JVM-tested (`StateCacheTest`).
+- `BoseService` -- foreground service (RFCOMM commands; phone-only A2DP nudge; notification media controls play/pause/next/prev). `refreshStatus()` is **cached-first**: no slot → cached broadcast (`EXTRA_REACHABLE`/`EXTRA_AGE_SECONDS`) + widget repaint with a "· Xm" battery-age suffix, NO RFCOMM; `EXTRA_FORCE_LIVE` overrides. The widget's `onUpdate` refresh therefore never pages the headphones.
 - `BoseWidgetProvider` -- home screen widget (button set derives from `BoseDeviceMap.widgetDevices` — tv is macOS-only, never a widget button)
 - `BoseTileService` -- Quick Settings tile (shows active source)
 - `DevicePickerActivity` -- dialog launched from QS tile
@@ -184,6 +186,12 @@ Key actions: `ACTION_CONNECT_DEVICE`, `ACTION_REFRESH`.
 4. nudgeMediaPlayback() -- pause/play to force audio stream handover
 
 **Skip-if-active:** Tapping an already-active device is a no-op (checks SharedPrefs).
+
+**Cached-first reads (#148 parity):** `refreshStatus()` and the Compose app's
+`refreshAll()` both gate on `SlotGate` — phone holds neither slot → paint
+`StateCache` (widget battery gains a "· Xm" age suffix; the app shows the same
+staleness banner as the Mac with a **Read live** button = `forceLive`). Only
+`forceLive`, writes, and device switches touch the radio from a non-slot phone.
 
 ### Key Lessons (Don't Repeat These Mistakes)
 

@@ -312,6 +312,31 @@ fun BoseApp(vm: BoseViewModel = viewModel()) {
                 )
                 Spacer(modifier = Modifier.height(24.dp))
 
+                // Staleness banner — painting the cached snapshot because this phone
+                // holds neither multipoint slot (cached-first, #148 parity). Read live
+                // deliberately pages the headphones (may blip audio on the active sink).
+                if (!state.reachable) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(BoseCardBg, RoundedCornerShape(8.dp))
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "Not connected to this phone — last known state" +
+                                (state.stateAgeSeconds?.let { " (${StateCache.ageText(it)} ago)" } ?: ""),
+                            fontSize = 11.sp,
+                            color = BoseDim,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(onClick = { vm.refreshAll(forceLive = true) }) {
+                            Text("Read live", color = BoseAccent, fontSize = 11.sp)
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+
                 // Loading indicator
                 if (state.loading) {
                     CircularProgressIndicator(

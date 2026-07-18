@@ -45,7 +45,13 @@ class BoseWidgetProvider : AppWidgetProvider() {
         private const val COLOR_BATTERY_OK = 0xFF6E6A5E.toInt()   // secondary grey, healthy
         private const val PREFS_NAME = "bose_ctl"
 
-        fun updateAll(context: Context, activeDevice: String?, connectedDevices: Set<String> = emptySet()) {
+        fun updateAll(
+            context: Context,
+            activeDevice: String?,
+            connectedDevices: Set<String> = emptySet(),
+            batteryLevel: Int = -1,
+            staleAgeSeconds: Int? = null,   // non-null = painting a cached snapshot
+        ) {
             val manager = AppWidgetManager.getInstance(context)
             val component = ComponentName(context, BoseWidgetProvider::class.java)
             val ids = manager.getAppWidgetIds(component)
@@ -53,10 +59,13 @@ class BoseWidgetProvider : AppWidgetProvider() {
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
                 .putString("active_device", activeDevice)
                 .putStringSet("connected_devices", connectedDevices)
+                .apply {
+                    if (batteryLevel >= 0) putInt("battery_level", batteryLevel)
+                }
                 .apply()
 
             for (id in ids) {
-                updateWidget(context, manager, id, activeDevice, connectedDevices)
+                updateWidget(context, manager, id, activeDevice, connectedDevices, staleAgeSeconds)
             }
         }
 
@@ -66,6 +75,7 @@ class BoseWidgetProvider : AppWidgetProvider() {
             widgetId: Int,
             activeDevice: String?,
             connectedDevices: Set<String>,
+            staleAgeSeconds: Int? = null,
         ) {
             val views = RemoteViews(context.packageName, R.layout.widget_layout)
 

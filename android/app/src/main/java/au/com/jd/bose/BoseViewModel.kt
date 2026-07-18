@@ -71,6 +71,12 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
         val eqMid: Int = 0,
         val eqTreble: Int = 0,
 
+        // Cached-first (#148 parity): reachable = this phone holds a multipoint
+        // slot right now; false while painting the StateCache snapshot (drives the
+        // staleness banner). stateAgeSeconds = the painted snapshot's age.
+        val reachable: Boolean = true,
+        val stateAgeSeconds: Int? = null,
+
         // UI
         val loading: Boolean = false,
         val error: String? = null,
@@ -81,9 +87,33 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
 
-    fun refreshAll() {
+    fun refreshAll(forceLive: Boolean = false) {
         viewModelScope.launch {
             _state.value = _state.value.copy(loading = true, error = null)
+            // Cached-first: with neither slot held, an RFCOMM read would page the
+            // headphones — paint the cached snapshot instead (instant, zero radio).
+            // The banner's Read-live button passes forceLive; an unknown gate (null,
+            // proxy not bound) falls through to live, matching pre-gate behaviour.
+            if (!forceLive && SlotGate.awaitHoldsSlot(getApplication()) == false) {
+                val cached = StateCache.load(getApplication())
+                val cur = _state.value
+                _state.value = cur.copy(
+                    loading = false,
+                    reachable = false,
+                    stateAgeSeconds = cached?.ageSeconds(),
+                    batteryLevel = cached?.battery?.takeIf { it >= 0 } ?: cur.batteryLevel,
+                    batteryCharging = cached?.charging ?: cur.batteryCharging,
+                    deviceStates = if (cached == null) cur.deviceStates
+                    else BoseDeviceMap.knownDevices.associate { device ->
+                        device.name to when {
+                            device.name == cached.active -> DeviceState.ACTIVE
+                            cached.connected.contains(device.name) -> DeviceState.CONNECTED
+                            else -> DeviceState.OFFLINE
+                        }
+                    },
+                )
+                return@launch
+            }
             try {
                 BoseProtocol.withConnection {
                     // Collect all results into a local copy, emit once at end
@@ -132,8 +162,14 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
                     BoseProtocol.getEq()?.let { s = s.copy(eqBass = it.bass.value, eqMid = it.mid.value, eqTreble = it.treble.value) }
                     BoseProtocol.getImmersionLevel()?.let { s = s.copy(immersionLevel = it) }
 
+                    // Live read landed: persist the snapshot for the gated path
+                    // (widget + next no-slot open paint from it).
+                    val active = s.deviceStates.entries.firstOrNull { it.value == DeviceState.ACTIVE }?.key
+                    val held = s.deviceStates.filterValues { it == DeviceState.CONNECTED }.keys
+                    StateCache.save(getApplication(), active, held, s.batteryLevel, s.batteryCharging)
+
                     // Single emission — one recomposition instead of 18
-                    _state.value = s.copy(loading = false)
+                    _state.value = s.copy(loading = false, reachable = true, stateAgeSeconds = null)
                 }
             } catch (e: Exception) {
                 _state.value = _state.value.copy(

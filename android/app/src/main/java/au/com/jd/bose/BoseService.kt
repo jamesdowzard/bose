@@ -42,6 +42,9 @@ class BoseService : Service() {
         const val ACTION_CONNECT_DEVICE = "au.com.jd.bose.CONNECT_DEVICE"
         const val EXTRA_DEVICE_NAME = "device_name"
         const val ACTION_REFRESH = "au.com.jd.bose.REFRESH"
+        const val EXTRA_FORCE_LIVE = "force_live"
+        const val EXTRA_REACHABLE = "reachable"
+        const val EXTRA_AGE_SECONDS = "age_seconds"
 
         // Media transport sent to the headphones via BMAP mediaControl (05,03).
         const val ACTION_MEDIA = "au.com.jd.bose.MEDIA"
@@ -71,6 +74,7 @@ class BoseService : Service() {
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification("Bose Controller active"))
         setupA2dpProxy()
+        SlotGate.ensureInit(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -81,7 +85,8 @@ class BoseService : Service() {
                 executor.submit { switchDevice(deviceName) }
             }
             ACTION_REFRESH -> {
-                executor.submit { refreshStatus() }
+                val forceLive = intent.getBooleanExtra(EXTRA_FORCE_LIVE, false)
+                executor.submit { refreshStatus(forceLive) }
             }
             ACTION_MEDIA -> {
                 val actionValue = intent.getIntExtra(EXTRA_MEDIA_ACTION, -1)
@@ -330,7 +335,30 @@ class BoseService : Service() {
         }
     }
 
-    private fun refreshStatus() {
+    private fun refreshStatus(forceLive: Boolean = false) {
+        // Cached-first (#148 parity): with neither multipoint slot held, an RFCOMM
+        // read would PAGE the headphones (slow; the audio-glitch probe class the
+        // transport rules warn about). Serve the last-good snapshot instead — the
+        // widget/app paint instantly and the radio stays silent. forceLive (the
+        // app's Read-live button) and an unknown gate (null) fall through to live.
+        if (!forceLive && SlotGate.awaitHoldsSlot(this) == false) {
+            val cached = StateCache.load(this)
+            if (cached != null) {
+                val age = cached.ageSeconds()
+                updateNotification("Active: ${cached.active ?: "none"} (cached ${StateCache.ageText(age)})")
+                broadcastFullStatus(
+                    activeDevice = cached.active ?: "none",
+                    connectedDevices = cached.connected.toList(),
+                    batteryLevel = cached.battery,
+                    batteryCharging = cached.charging,
+                    reachable = false,
+                    ageSeconds = age,
+                )
+            } else {
+                broadcastError("Headphones not connected to this phone (no cached state)")
+            }
+            return
+        }
         try {
             if (!ensureConnected()) {
                 broadcastError("Cannot connect to headphones")
@@ -354,11 +382,15 @@ class BoseService : Service() {
                 battery?.let { append(" | ${it.level}%") }
             })
 
+            StateCache.save(this, activeName, connectedNames.toSet(),
+                battery?.level ?: -1, battery?.charging ?: false)
             broadcastFullStatus(
                 activeDevice = activeName,
                 connectedDevices = connectedNames,
                 batteryLevel = battery?.level ?: -1,
                 batteryCharging = battery?.charging ?: false,
+                reachable = true,
+                ageSeconds = null,
             )
         } catch (e: Exception) {
             Log.e(TAG, "Refresh error", e)
@@ -386,6 +418,8 @@ class BoseService : Service() {
         connectedDevices: List<String>,
         batteryLevel: Int,
         batteryCharging: Boolean,
+        reachable: Boolean = true,
+        ageSeconds: Int? = null,
     ) {
         val intent = Intent(BROADCAST_STATUS).apply {
             setPackage(packageName)
@@ -393,10 +427,13 @@ class BoseService : Service() {
             putExtra(EXTRA_CONNECTED_DEVICES, connectedDevices.toTypedArray())
             putExtra(EXTRA_BATTERY_LEVEL, batteryLevel)
             putExtra(EXTRA_BATTERY_CHARGING, batteryCharging)
+            putExtra(EXTRA_REACHABLE, reachable)
+            ageSeconds?.let { putExtra(EXTRA_AGE_SECONDS, it) }
             putExtra(EXTRA_SUCCESS, true)
         }
         sendBroadcast(intent)
-        BoseWidgetProvider.updateAll(this, activeDevice, connectedDevices.toSet())
+        BoseWidgetProvider.updateAll(this, activeDevice, connectedDevices.toSet(),
+            batteryLevel, if (reachable) null else ageSeconds)
     }
 
     private fun broadcastError(error: String) {
