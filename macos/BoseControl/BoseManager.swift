@@ -368,8 +368,43 @@ final class BoseManager: ObservableObject {
         }
     }
 
+    // MARK: - Profiles (one-tap chips)
+
+    /// Profile names for the chips row — from `bose profile --json`, a pure file read.
+    @Published var profiles: [String] = []
+
+    /// The profile currently applying (drives its chip's spinner); nil when idle.
+    @Published var applyingProfile: String? = nil
+
+    /// Load the profile list for the chips. No radio — reads profiles.json only.
+    func loadProfiles() {
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            let out = self.run(["profile", "--json"]).out
+            var names: [String] = []
+            if let data = out.data(using: .utf8),
+               let arr = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] {
+                names = arr.compactMap { $0["name"] as? String }
+            }
+            DispatchQueue.main.async { self.profiles = names }
+        }
+    }
+
+    /// Apply a profile (settings and/or multipoint pair). A pair profile pages devices —
+    /// seconds, not ms — so track it for the chip spinner, and confirm with a --page
+    /// read (the pair just changed the slots; the cache is by definition pre-change).
     func applyProfile(_ name: String) {
-        write(["profile", name])
+        guard applyingProfile == nil else { return }
+        applyingProfile = name
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            _ = self.run(["profile", name])
+            let snapshot = Self.parse(self.run(["info", "--json", "--page"]).out)
+            DispatchQueue.main.async {
+                self.apply(snapshot)
+                self.applyingProfile = nil
+            }
+        }
     }
 
     /// Rename a custom ANC slot (4 = C1, 5 = C2) in place via `mode-name --slot`, WITHOUT

@@ -387,6 +387,12 @@ func cmdProfile(_ a: [String]) {
     }
 
     switch a[0].lowercased() {
+    case "--json":
+        // Machine-readable list for the Mac app's profile chips. Pure file read —
+        // no radio.
+        let list = store.profiles.map { ["name": $0.name, "summary": $0.summary] }
+        if let data = try? JSONSerialization.data(withJSONObject: list, options: [.sortedKeys]),
+           let str = String(data: data, encoding: .utf8) { print(str) } else { print("[]") }
     case "save":
         guard a.count >= 2 else { fail("usage: bose profile save <name>") }
         let name = a[1...].joined(separator: " ")
@@ -408,7 +414,18 @@ func cmdProfile(_ a: [String]) {
         guard let p = store.profile(named: name) else {
             fail("unknown profile: \(name) (list: bose profile)")
         }
-        guard transport.applyProfile(p) else { fail("failed to apply '\(name)'") }
+        // Connection first: a profile's `pair` reroutes the multipoint slots via the
+        // same evict → secondary(held) → primary(active) composite as `bose pair`,
+        // BEFORE any settings land (settings write to the headphones regardless of
+        // which devices hold the slots). A pair-only profile (e.g. `tv`) then skips
+        // the settings session entirely — no settings is not a failure.
+        if let pr = p.pair {
+            guard pr.count == 2 else { fail("profile '\(name)': pair needs exactly [primary, secondary]") }
+            cmdPair(pr[0], pr[1])
+        }
+        if p.hasDeviceSettings {
+            guard transport.applyProfile(p) else { fail("failed to apply '\(name)'") }
+        }
         print("Applied '\(name)'\(p.summary)")
     }
 }

@@ -316,6 +316,20 @@ PriorityOrder.clear()
 check(PriorityOrder.load().order == [], "priority.json: clear reverts to empty (compiled default)")
 try? FileManager.default.removeItem(atPath: tmpPrio)
 
+// ── Profile pair (one-tap tv mode) ─────────────────────────────────────────────
+
+let tvJson = #"{"profiles":[{"name":"tv","pair":["audikast","phone"]}]}"#
+let tvStore = try? JSONDecoder().decode(ProfileStore.self, from: Data(tvJson.utf8))
+check(tvStore?.profiles.first?.pair == ["audikast", "phone"], "profile pair: decodes [primary, secondary]")
+check(tvStore?.profiles.first?.hasDeviceSettings == false, "profile pair: pair-only profile sets no device settings")
+check(tvStore?.profiles.first?.summary.contains("pair audikast+phone") == true, "profile pair: summary shows the pair")
+check(Profile(name: "x", ancMode: "quiet", pair: ["a", "b"]).hasDeviceSettings,
+      "profile pair: settings+pair profile still has device settings")
+let pairEnc = try? JSONEncoder().encode(ProfileStore(profiles: [Profile(name: "tv", pair: ["audikast", "phone"])]))
+let pairRT = pairEnc.flatMap { try? JSONDecoder().decode(ProfileStore.self, from: $0) }
+check(pairRT?.profiles.first?.pair == ["audikast", "phone"], "profile pair: encode/decode round-trip")
+check(Profile(name: "plain", ancMode: "quiet").pair == nil, "profile pair: absent stays nil (older profiles decode)")
+
 // ── StateCache (cached-first info --json, #148) ────────────────────────────────
 
 // Fresh temp dir (the priority tests above removed theirs; use our own regardless).
