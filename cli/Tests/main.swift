@@ -1,7 +1,7 @@
 /// ParserTests: standalone unit tests for the pure composite parsers.
 ///
 /// Compiled with `Parsers.swift` (Foundation-only — no IOBluetooth, no hardware)
-/// by `macos/run-tests.sh`. Feeds representative/captured BMAP response byte arrays
+/// by `cli/run-tests.sh`. Feeds representative/captured BMAP response byte arrays
 /// to `parseConnectedDevices`, `parseCncLevel`, `parseAllState` (+ buildCncSet) and
 /// asserts the decoded values. Exits non-zero on the first failure.
 

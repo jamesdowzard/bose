@@ -31,3 +31,7 @@ bosed
 .worktrees/
 .harness/state.json
 _re/
+
+# harness worktree scaffolding — never ship to main
+.agent-context
+.agent-progress
