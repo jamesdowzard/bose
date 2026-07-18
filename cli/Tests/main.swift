@@ -361,6 +361,15 @@ check((stamped[StateCache.ageSecondsKey] as? Int) == 0, "stateCache: stamp clamp
 
 try? FileManager.default.removeItem(atPath: tmpCache)
 
+// ── isBoseAdvert (passive BLE presence match) ──────────────────────────────────
+
+check(isBoseAdvert(name: "verBosita", mfr: []), "presence: exact name matches (no mfr needed)")
+check(isBoseAdvert(name: "", mfr: [0x9E, 0x00, 0x00, 0x2C]), "presence: Bose company ID 0x009E matches")
+check(!isBoseAdvert(name: "AirPods Pro", mfr: [0x4C, 0x00, 0x10]), "presence: Apple advert rejected")
+check(!isBoseAdvert(name: "verbosita", mfr: []), "presence: name match is exact (case-sensitive)")
+check(!isBoseAdvert(name: "", mfr: [0x9E]), "presence: 1-byte mfr rejected (needs both ID bytes)")
+check(!isBoseAdvert(name: "", mfr: []), "presence: empty advert rejected")
+
 // ── summary ─────────────────────────────────────────────────────────────────────
 
 if failures == 0 {

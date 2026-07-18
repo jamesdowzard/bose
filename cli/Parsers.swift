@@ -268,3 +268,16 @@ func parseAllState(_ provide: ResponseProvider) -> HeadphoneState {
     }
     return s
 }
+
+// MARK: - BLE advert match (presence)
+
+/// True when a BLE advert belongs to the headphones: exact local-name match
+/// ("verBosita" — NB a `bose name` rename must be mirrored here / in devices.toml),
+/// or Bose's company ID 0x009E leading the manufacturer data (bytes little-endian:
+/// 9E 00). The mfr fallback would also match another powered-on Bose product in
+/// range — acceptable for a presence hint, and the name match wins when available.
+/// Pure — unit-tested headless; the CoreBluetooth session lives in Presence.swift.
+func isBoseAdvert(name: String, mfr: [UInt8]) -> Bool {
+    if name == "verBosita" { return true }
+    return mfr.count >= 2 && mfr[0] == 0x9E && mfr[1] == 0x00
+}
