@@ -316,6 +316,37 @@ PriorityOrder.clear()
 check(PriorityOrder.load().order == [], "priority.json: clear reverts to empty (compiled default)")
 try? FileManager.default.removeItem(atPath: tmpPrio)
 
+// ── StateCache (cached-first info --json, #148) ────────────────────────────────
+
+// Fresh temp dir (the priority tests above removed theirs; use our own regardless).
+let tmpCache = NSTemporaryDirectory() + "bose-cache-test-\(ProcessInfo.processInfo.processIdentifier)"
+setenv("BOSE_STATE_DIR", tmpCache, 1)
+
+check(StateCache.staleOutput() == nil, "stateCache: empty dir -> no stale output (bare fallback)")
+
+let liveSnap: [String: Any] = ["connected": true, "reachable": true,
+                               "batteryLevel": 80, "ancMode": 1, "ageSeconds": 999]
+let t0 = Date(timeIntervalSince1970: 1_000_000)
+StateCache.save(liveSnap, now: t0)
+let loaded = StateCache.load()
+check(loaded != nil, "stateCache: save/load round-trip")
+check((loaded?.snapshot["batteryLevel"] as? Int) == 80, "stateCache: snapshot preserves values")
+check(loaded?.snapshot["reachable"] == nil && loaded?.snapshot["ageSeconds"] == nil,
+      "stateCache: cache-layer keys stripped on save (can't re-persist as live)")
+check(loaded?.savedAt == t0, "stateCache: savedAt stamp survives")
+
+let stale = StateCache.staleOutput(now: t0.addingTimeInterval(90))
+check((stale?["reachable"] as? Bool) == false, "stateCache: stale output -> reachable=false")
+check((stale?["ageSeconds"] as? Int) == 90, "stateCache: ageSeconds computed from savedAt")
+check((stale?["connected"] as? Bool) == true, "stateCache: connected keeps the cached headphone state")
+check((stale?["cachedAt"] as? Double) == 1_000_000, "stateCache: cachedAt = save epoch")
+
+// Pure stamp: age clamps at zero (a clock skew can't emit a negative age).
+let stamped = StateCache.stamp(["connected": true], savedAt: t0, now: t0.addingTimeInterval(-5))
+check((stamped[StateCache.ageSecondsKey] as? Int) == 0, "stateCache: stamp clamps negative age to 0")
+
+try? FileManager.default.removeItem(atPath: tmpCache)
+
 // ── summary ─────────────────────────────────────────────────────────────────────
 
 if failures == 0 {

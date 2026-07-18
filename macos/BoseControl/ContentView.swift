@@ -156,7 +156,7 @@ struct ContentView: View {
             case "4": manager.setAncMode(3); return nil
             case "5": manager.setAncMode(4); return nil
             case "6": manager.setAncMode(5); return nil
-            case "r": manager.refreshState(); return nil
+            case "r": manager.refreshState(forcePage: true); return nil   // ⌘R = deliberate live read
             case "m": manager.connectDevice("mac"); return nil
             default: break
             }
@@ -171,6 +171,41 @@ struct ContentView: View {
     // MARK: - Connected Layout
 
     private var connectedLayout: some View {
+        VStack(spacing: 0) {
+            // Staleness banner — painting the cached snapshot because this Mac has no
+            // link to the headphones (the CLI's cached-first read, #148). Honest about
+            // age; ⌘R deliberately pages for a live read (may blip audio on the sink).
+            if !manager.reachable {
+                HStack(spacing: 6) {
+                    Image(systemName: "wifi.slash")
+                        .font(.system(size: 10, weight: .medium))
+                    Text("Not connected to this Mac — last known state\(staleAgeText) · ⌘R reads live")
+                        .font(.system(size: 11, weight: .medium))
+                    Spacer()
+                }
+                .foregroundColor(secondaryColor)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 5)
+                .background(offlineColor.opacity(0.18))
+                .overlay(Rectangle().fill(dividerColor).frame(height: 1), alignment: .bottom)
+            }
+            connectedPanels
+        }
+    }
+
+    /// " (14m ago)" — the painted snapshot's age, humanised. Empty when unknown.
+    private var staleAgeText: String {
+        guard let s = manager.stateAgeSeconds else { return "" }
+        let text: String
+        switch s {
+        case ..<60: text = "just now"
+        case ..<3600: text = "\(s / 60)m ago"
+        default: text = "\(s / 3600)h \((s % 3600) / 60)m ago"
+        }
+        return " (\(text))"
+    }
+
+    private var connectedPanels: some View {
         HStack(spacing: 0) {
             // Left panel — status sidebar
             leftPanel

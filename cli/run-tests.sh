@@ -16,9 +16,11 @@ swiftc \
     -target arm64-apple-macos13.0 \
     -sdk "$(xcrun --show-sdk-path)" \
     "$GEN_DIR/BMAP.generated.swift" \
+    "$GEN_DIR/Devices.generated.swift" \
     "$SCRIPT_DIR/Parsers.swift" \
     "$SCRIPT_DIR/Profiles.swift" \
     "$SCRIPT_DIR/Priority.swift" \
+    "$SCRIPT_DIR/StateCache.swift" \
     "$SCRIPT_DIR/Tests/main.swift" \
     -o "$BIN"
 

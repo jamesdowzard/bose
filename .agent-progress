@@ -1,10 +1,10 @@
-# Agent Progress - device-sidebar
+# Agent Progress - cached-first-info
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-07-13T03:01:24Z
+# Created: 2026-07-18T04:18:41Z
 
-feature=device-sidebar
-name=device sidebar 3-col drag-priority + connect reliability
+feature=cached-first-info
+name=Cached-first info reads with ACL gate and state cache
 status=pending
 step=0
 step_name=Not started
-created=2026-07-13T03:01:24Z
+created=2026-07-18T04:18:41Z
