@@ -4,7 +4,7 @@
 /// the Hammerspoon module. It holds NO RFCOMM channel, imports NO IOBluetooth, and
 /// runs NO timer. Every read shells `bose info --json`; every write shells the
 /// matching verb. Reads happen only on explicit events (window open, window focus,
-/// after a write, manual ⌘R) — never on a poll. The v1 BoseManager's 10 s poll
+/// after a write, the banner's Read-live button) — never on a poll. The v1 BoseManager's 10 s poll
 /// timer was the audio-dropout root cause (#69-era); this design makes that class of
 /// bug structurally impossible here, and inherits every CLI fix (incl. #83) for free.
 
@@ -169,7 +169,7 @@ final class BoseManager: ObservableObject {
     /// Default reads are CACHED-FIRST: with no ACL link the CLI serves the last-good
     /// snapshot instantly (zero radio) instead of paging the headphones — so window
     /// open / app focus can never stall on a multi-second page or glitch audio on
-    /// another sink. `forcePage: true` (⌘R) deliberately pages for a live read.
+    /// another sink. `forcePage: true` (the staleness banner's Read-live button) deliberately pages for a live read.
     func refreshState(forcePage: Bool = false) {
         DispatchQueue.main.async { self.isRefreshing = true }
         queue.async { [weak self] in

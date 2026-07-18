@@ -145,7 +145,9 @@ struct ContentView: View {
     }
 
     /// In-window keyboard shortcuts (only while the app is focused — global hotkeys
-    /// stay in Hammerspoon). ⌘1-6 ANC modes (slots 0-5), ⌘↑/⌘↓ volume, ⌘R refresh, ⌘M Mac.
+    /// stay in Hammerspoon). ⌘1-6 ANC modes (slots 0-5), ⌘↑/⌘↓ volume. (⌘R/⌘M were
+    /// removed 2026-07-18 — unused; the live-read affordance is the staleness
+    /// banner's "Read live" button, and connecting the Mac is its device row.)
     private func installShortcuts() {
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             guard event.modifierFlags.contains(.command) else { return event }
@@ -156,8 +158,6 @@ struct ContentView: View {
             case "4": manager.setAncMode(3); return nil
             case "5": manager.setAncMode(4); return nil
             case "6": manager.setAncMode(5); return nil
-            case "r": manager.refreshState(forcePage: true); return nil   // ⌘R = deliberate live read
-            case "m": manager.connectDevice("mac"); return nil
             default: break
             }
             switch event.keyCode {
@@ -174,14 +174,23 @@ struct ContentView: View {
         VStack(spacing: 0) {
             // Staleness banner — painting the cached snapshot because this Mac has no
             // link to the headphones (the CLI's cached-first read, #148). Honest about
-            // age; ⌘R deliberately pages for a live read (may blip audio on the sink).
+            // age; its Read-live button deliberately pages for a live read (may blip audio).
             if !manager.reachable {
                 HStack(spacing: 6) {
                     Image(systemName: "wifi.slash")
                         .font(.system(size: 10, weight: .medium))
-                    Text("Not connected to this Mac — last known state\(staleAgeText) · ⌘R reads live")
+                    Text("Not connected to this Mac — last known state\(staleAgeText)")
                         .font(.system(size: 11, weight: .medium))
                     Spacer()
+                    // The deliberate live read (pages the headphones — may blip audio
+                    // on the active sink). Replaced ⌘R, removed 2026-07-18.
+                    Button(action: { manager.refreshState(forcePage: true) }) {
+                        Text(manager.isRefreshing ? "Reading…" : "Read live")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(boseAccent)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(manager.isRefreshing)
                 }
                 .foregroundColor(secondaryColor)
                 .padding(.horizontal, 12)
