@@ -370,6 +370,19 @@ check(!isBoseAdvert(name: "verbosita", mfr: []), "presence: name match is exact 
 check(!isBoseAdvert(name: "", mfr: [0x9E]), "presence: 1-byte mfr rejected (needs both ID bytes)")
 check(!isBoseAdvert(name: "", mfr: []), "presence: empty advert rejected")
 
+// ── correlationLine (BLE battery-decode dataset) ───────────────────────────────
+
+let corrNow = Date(timeIntervalSince1970: 2_000_000)
+let corr = StateCache.correlationLine(now: corrNow, rssi: -56, mfr: [0x9E, 0x00, 0x2C],
+                                      cachedBattery: 44, cacheAge: 120)
+check(corr == #"{"battery":44,"cacheAgeSeconds":120,"mfr":"9e002c","rssi":-56,"ts":2000000}"#,
+      "correlation: full line serialises deterministically (sorted keys)")
+check(StateCache.correlationLine(now: corrNow, rssi: -56, mfr: [0x9E], cachedBattery: nil, cacheAge: 5) == nil,
+      "correlation: no cached battery -> no line (nothing to correlate)")
+let corrNoAge = StateCache.correlationLine(now: corrNow, rssi: -40, mfr: [], cachedBattery: 80, cacheAge: nil)
+check(corrNoAge?.contains("cacheAgeSeconds") == false && corrNoAge?.contains("\"battery\":80") == true,
+      "correlation: age omitted when unknown, battery kept")
+
 // ── summary ─────────────────────────────────────────────────────────────────────
 
 if failures == 0 {

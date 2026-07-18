@@ -19,7 +19,7 @@ import CoreBluetooth
 
 final class PresenceScanner: NSObject, CBCentralManagerDelegate {
     private var central: CBCentralManager!
-    private(set) var found: (rssi: Int, name: String)? = nil
+    private(set) var found: (rssi: Int, name: String, mfr: [UInt8])? = nil
 
     func centralManagerDidUpdateState(_ c: CBCentralManager) {
         if c.state == .poweredOn {
@@ -31,21 +31,32 @@ final class PresenceScanner: NSObject, CBCentralManagerDelegate {
                         advertisementData ad: [String: Any], rssi RSSI: NSNumber) {
         let name = (ad[CBAdvertisementDataLocalNameKey] as? String) ?? p.name ?? ""
         let mfr = (ad[CBAdvertisementDataManufacturerDataKey] as? Data).map { [UInt8]($0) } ?? []
-        if isBoseAdvert(name: name, mfr: mfr) {
-            found = (RSSI.intValue, name)
+        guard isBoseAdvert(name: name, mfr: mfr) else { return }
+        // The headphones interleave advert frames: some carry only the local name,
+        // others the manufacturer payload (the correlation-log input). A name-only
+        // frame proves presence, so hold it as provisional — but keep listening
+        // briefly for a payload-carrying frame rather than stopping on the first hit
+        // (stopping early returned mfr:"" and starved the correlation log).
+        if !mfr.isEmpty {
+            found = (RSSI.intValue, name, mfr)
             c.stopScan()
+        } else if found == nil {
+            provisional = (RSSI.intValue, name, mfr)
         }
     }
 
-    /// Scan until the headphones' advert is heard or `timeout` elapses. With the
-    /// ~4/sec advert cadence a hit lands in well under a second when they're on.
-    func scan(timeout: TimeInterval) -> (rssi: Int, name: String)? {
+    private var provisional: (rssi: Int, name: String, mfr: [UInt8])? = nil
+
+    /// Scan until an mfr-payload advert is heard, or `timeout` elapses — falling
+    /// back to a name-only (provisional) hit for the presence verdict. With the
+    /// ~4/sec advert cadence a payload frame lands in well under a second when on.
+    func scan(timeout: TimeInterval) -> (rssi: Int, name: String, mfr: [UInt8])? {
         central = CBCentralManager(delegate: self, queue: nil)
         let deadline = Date().addingTimeInterval(timeout)
         while found == nil && Date() < deadline {
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         }
         central.stopScan()
-        return found
+        return found ?? provisional
     }
 }
