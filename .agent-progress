@@ -1,10 +1,10 @@
-# Agent Progress - cached-first-info
+# Agent Progress - remove-cmd-m-r
 # Format: KEY=VALUE, one per line. Agents append, last value wins.
-# Created: 2026-07-18T04:18:41Z
+# Created: 2026-07-18T04:30:34Z
 
-feature=cached-first-info
-name=Cached-first info reads with ACL gate and state cache
+feature=remove-cmd-m-r
+name=Remove unused cmd-M and cmd-R shortcuts; banner gets Read live button
 status=pending
 step=0
 step_name=Not started
-created=2026-07-18T04:18:41Z
+created=2026-07-18T04:30:34Z

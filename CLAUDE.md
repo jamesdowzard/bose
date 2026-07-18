@@ -47,19 +47,19 @@ explicit user action.
   It is a **thin front-end that shells `bose`** — NO RFCOMM, NO IOBluetooth, NO
   protocol code — reading via `bose info --json` and writing via the verbs. It is
   **user-launched and event-driven**: reads on window-open, on app-focus, after each
-  write, and on ⌘R — never on a timer. Open/focus reads are **cached-first** (#148):
+  write, and on the banner's Read-live button — never on a timer. Open/focus reads are **cached-first** (#148):
   `info --json` checks ACL presence (free, zero radio) and with no link serves the
   timestamped last-good snapshot (`~/.cache/bose/state-<MAC>.json`) stamped
   `reachable:false` + `ageSeconds` instead of PAGING the headphones — so opening the
   app while audio plays on another sink is instant and can't glitch it. The app shows
   a staleness banner ("Not connected to this Mac — last known state (Xm ago)") over
-  the full last-known dashboard; **⌘R forces a live read** (`--page`), and every
+  the full last-known dashboard with a **Read live** button (a forced `--page` read), and every
   post-write/connect confirm read is `--page` too (a settle loop must never confirm
   against the cache). `reachable` = this Mac's link now; `connected` = we have real
   headphone state to paint (the app no longer wipes to "Not Connected" on a mere
   unreachable read — only when there's nothing known at all). Build `bash macos/build.sh [--install]`
   (Developer-ID signed → `/Applications`; no LaunchAgent). In-window keys: ⌘1-6
-  ANC modes (slots 0-5), ⌘↑/⌘↓ volume, ⌘R refresh, ⌘M connect Mac. Global hotkeys stay in
+  ANC modes (slots 0-5), ⌘↑/⌘↓ volume (⌘R/⌘M removed 2026-07-18 — unused; live read = the banner button, connect Mac = its device row). Global hotkeys stay in
   Hammerspoon. The `--json` read seam lives in `cli/main.swift` (`cmdInfoJSON`, pure
   formatting over `getAllStateWithDevices` — bulk state + the device grid's active sink
   AND idle ACL probes in ONE warm session, so neither is lost to the cold-second-session

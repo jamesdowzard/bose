@@ -2,8 +2,8 @@
 # Max 20 lines. Updated by agent on Stop hook.
 
 ## Feature
-Cached-first info reads with ACL gate and state cache
-Cached-first info reads with ACL gate and state cache
+Remove unused cmd-M and cmd-R shortcuts; banner gets Read live button
+Remove unused cmd-M and cmd-R shortcuts; banner gets Read live button
 
 ## Current State
 Not started. No work has been done yet.
