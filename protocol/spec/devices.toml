@@ -2,7 +2,7 @@
 # Transcribed from the repo CLAUDE.md "Device Map" + "Cycle order" rows.
 # Do NOT invent MACs.
 
-headphone_mac = "E4:58:BC:C0:2F:72"
+headphone_mac = "E4:58:BC:C0:2F:72"          # verified 2026-07-18: macOS pairing registry + live BLE advert (name match)
 headphone_name = "verBosita"
 
 # Cycle order for the bose / hotkey device switch (CLAUDE.md):
@@ -10,37 +10,37 @@ headphone_name = "verBosita"
 cycle_order = ["mac", "quest", "ipad", "iphone", "tv", "appletv", "phone"]
 
 [devices.phone]
-mac = "A8:76:50:D3:B1:1B"
+mac = "A8:76:50:D3:B1:1B"          # verified 2026-07-18: read live off the S21 (adb settings get secure bluetooth_address)
 priority = 2
 widget = true
 notes = "Samsung S21 (local device)"
 
 [devices.mac]
-mac = "BC:D0:74:11:DB:27"
+mac = "BC:D0:74:11:DB:27"          # verified 2026-07-18: this Mac's BT controller address (system_profiler)
 priority = 1
 widget = true
 notes = "MacBook"
 
 [devices.ipad]
-mac = "F4:81:C4:B5:FA:AB"
+mac = "F4:81:C4:B5:FA:AB"          # verified 2026-07-18: macOS pairing registry ("iPad (2)")
 priority = 4
 widget = true
 notes = ""
 
 [devices.iphone]
-mac = "F8:4D:89:C4:B6:ED"
+mac = "F8:4D:89:C4:B6:ED"          # verified 2026-07-18: macOS pairing registry ("James's iPhone")
 priority = 7
 widget = true
 notes = ""
 
 [devices.tv]
-mac = "14:C1:4E:B7:CB:68"
+mac = "14:C1:4E:B7:CB:68"          # verified 2026-07-18: read live off the Chromecast itself (adb settings get secure bluetooth_address — exact match)
 priority = 6
 widget = false          # CLAUDE.md: "macOS only" — no Android widget button
 notes = "Chromecast (macOS only)"
 
 [devices.quest]
-mac = "78:C4:FA:C8:5C:3D"
+mac = "78:C4:FA:C8:5C:3D"          # OUI verified 2026-07-18: 78:C4:FA = Meta Platforms, Inc. (IEEE registry); full MAC unverified (Quest not adb-reachable)
 priority = 5
 widget = true
 notes = "Meta Quest 3"
