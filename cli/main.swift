@@ -228,6 +228,28 @@ func ancModeName(_ mode: Int) -> String {
         .map { "\($0)" } ?? "unknown(\(mode))"
 }
 
+/// presence [--timeout s] [--json] — PASSIVE BLE advert scan (receive-only, zero
+/// packets to the headphones — safe from a non-slot Mac, no audio-glitch risk).
+/// Distinguishes "on & nearby" from "off/away" without RFCOMM. Fast when present
+/// (~4 adverts/sec); the timeout only bounds the not-present case.
+func cmdPresence(_ a: [String]) {
+    var timeout = 4.0
+    if let i = a.firstIndex(of: "--timeout"), i + 1 < a.count, let t = Double(a[i + 1]) {
+        timeout = min(15, max(0.5, t))
+    }
+    let hit = PresenceScanner().scan(timeout: timeout)
+    if a.contains("--json") {
+        var obj: [String: Any] = ["present": hit != nil]
+        if let h = hit { obj["rssi"] = h.rssi; obj["name"] = h.name }
+        if let data = try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys]),
+           let str = String(data: data, encoding: .utf8) { print(str) } else { print("{\"present\":false}") }
+    } else if let h = hit {
+        print("present (\(h.name.isEmpty ? "bose mfr advert" : h.name), rssi \(h.rssi))")
+    } else {
+        print("not seen")
+    }
+}
+
 /// battery / b
 func cmdBattery() {
     guard let r = transport.oneShot(BMAP.getBattery()),
@@ -829,6 +851,7 @@ func usage() {
       bose auto-pause [on|off]  Get/set auto-pause when headphones are removed (01,18)
       bose auto-answer [on|off] Get/set auto-answer when headphones are donned (01,1B)
       bose favorites [m …]      List favourite mode slots; pass indices to set them (1F,08)
+      bose presence [--timeout s] [--json]  Passive BLE scan: are the headphones on & nearby? (receive-only)
       bose play|pause|next|prev Media transport
       bose eq [bass mid treble] Get/set EQ (each -10 to +10)
       bose profile [name]       Apply a preset (bare = list); save <name> / rm <name>
@@ -850,6 +873,7 @@ switch args[1].lowercased() {
 case "status", "s":            cmdStatus()
 case "info":                   args.contains("--json") ? cmdInfoJSON(forcePage: args.contains("--page")) : cmdInfo()
 case "battery", "b":           cmdBattery()
+case "presence":               cmdPresence(args.count >= 3 ? Array(args[2...]) : [])
 case "anc":                    cmdAnc(args.count >= 3 ? args[2] : nil)
 case "anc-level":              cmdAncLevel(args.count >= 3 ? args[2] : nil)
 case "spatial", "immersive":   cmdSpatial(args.count >= 3 ? args[2] : nil)

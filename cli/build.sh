@@ -42,6 +42,7 @@ swiftc -O \
     "$SCRIPT_DIR/Profiles.swift" \
     "$SCRIPT_DIR/Priority.swift" \
     "$SCRIPT_DIR/StateCache.swift" \
+    "$SCRIPT_DIR/Presence.swift" \
     "$SCRIPT_DIR/Composites.swift" \
     "$SCRIPT_DIR/main.swift" \
     -framework IOBluetooth \

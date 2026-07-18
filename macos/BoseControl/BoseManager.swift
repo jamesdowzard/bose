@@ -28,6 +28,14 @@ final class BoseManager: ObservableObject {
     /// Age of the painted snapshot in seconds (nil when live). From `ageSeconds`.
     @Published var stateAgeSeconds: Int? = nil
 
+    /// Passive-BLE presence while unreachable: true = headphones advertising nearby,
+    /// false = not seen, nil = unknown/not applicable (reachable, or check pending).
+    /// Fed by `bose presence` — receive-only, zero packets to the headphones.
+    @Published var nearbyPresence: Bool? = nil
+
+    /// One presence check at a time (each is a bounded ~3s scan on the serial queue).
+    private var presenceInFlight = false
+
     @Published var batteryLevel: Int = 0
     @Published var batteryCharging: Bool = false
     @Published var ancMode: Int = 0          // hardware slot: 0=quiet 1=aware 2=immersion 3=cinema 4=custom1 5=custom2
@@ -179,6 +187,26 @@ final class BoseManager: ObservableObject {
             DispatchQueue.main.async {
                 self.apply(parsed)
                 self.isRefreshing = false
+                // Painting a cached/unknown snapshot: enrich the banner with passive-BLE
+                // presence (receive-only — never touches the headphones). Event-driven:
+                // one bounded scan per unreachable refresh, never a poll. When reachable
+                // the question is moot — clear it.
+                if self.reachable { self.nearbyPresence = nil } else { self.checkPresence() }
+            }
+        }
+    }
+
+    /// Run one passive presence scan (`bose presence --json`, ~3s bound) and publish.
+    private func checkPresence() {
+        guard !presenceInFlight else { return }
+        presenceInFlight = true
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            let out = self.run(["presence", "--json", "--timeout", "3"]).out
+            let present = Self.parse(out)["present"] as? Bool
+            DispatchQueue.main.async {
+                self.nearbyPresence = present
+                self.presenceInFlight = false
             }
         }
     }

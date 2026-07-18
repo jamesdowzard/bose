@@ -180,7 +180,7 @@ struct ContentView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "wifi.slash")
                         .font(.system(size: 10, weight: .medium))
-                    Text("Not connected to this Mac — last known state\(staleAgeText)")
+                    Text("Not connected to this Mac — last known state\(staleAgeText)\(presenceText)")
                         .font(.system(size: 11, weight: .medium))
                     Spacer()
                     // The deliberate live read (pages the headphones — may blip audio
@@ -200,6 +200,16 @@ struct ContentView: View {
                 .overlay(Rectangle().fill(dividerColor).frame(height: 1), alignment: .bottom)
             }
             connectedPanels
+        }
+    }
+
+    /// " · headphones on & nearby" / " · not seen nearby" — from the passive-BLE
+    /// presence check (receive-only). Empty while unknown/pending.
+    private var presenceText: String {
+        switch manager.nearbyPresence {
+        case .some(true): return " · headphones on & nearby"
+        case .some(false): return " · headphones not seen nearby"
+        case .none: return ""
         }
     }
 
