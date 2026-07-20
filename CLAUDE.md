@@ -33,7 +33,9 @@ explicit user action.
   list of device rows — **drag up/down to rank priority**, index 0 = primary/① and 1 = secondary/② for the
   multipoint pair; **tap a row to connect** that device as the active sink; a rank badge + a state dot
   ● active / ● held / ○ offline per row (hollow ring + dimmed row when painting a cached snapshot — last-known, not live);
-  drag persists `priority.json` via `bose priority --set` and does NOT touch the radio — connecting is only ever
+  drag persists `priority.json` via `bose priority --set` **on each hover-swap, not on drop** (a release over the
+  EQ panel or outside the window cancels the drop, which used to leave the badges showing an order that was never
+  saved — no drop delegate can catch that), and does NOT touch the radio — connecting is only ever
   an explicit tap; right-click → Disconnect); right = EQ. The light
   theme (burnt-orange `#AF3A03` accent on warm paper, from the Midterm `paper-hc` palette)
   is shared with the Android app; macOS colours live in `ContentView.swift`, Android in
@@ -52,10 +54,26 @@ explicit user action.
   timestamped last-good snapshot (`~/.cache/bose/state-<MAC>.json`) stamped
   `reachable:false` + `ageSeconds` instead of PAGING the headphones — so opening the
   app while audio plays on another sink is instant and can't glitch it. The app shows
+  It also **surfaces CLI stderr in a transient error banner** (tap to dismiss, auto-clears
+  after 6s): every write path reports through it, so a precise CLI diagnosis like
+  "appletv is not in verBosita's paired list" reaches the user instead of a spinner that
+  silently reverts. `run()` drains stdout and stderr concurrently, which also closes a
+  latent deadlock (a child writing >64KB to stderr would have wedged the serial queue).
+  Reads stay silent by design — they already degrade to the cached view. The app shows
   a staleness banner ("Not connected to this Mac — last known state (Xm ago)") over
   the full last-known dashboard with a **Read live** button (a forced `--page` read), and every
   post-write/connect confirm read is `--page` too (a settle loop must never confirm
-  against the cache). `reachable` = this Mac's link now; `connected` = we have real
+  against the cache). **Enforced, not aspirational** — `write()` alone was still
+  confirming against the cache (fixed 2026-07-20), and that was not a race but a
+  guarantee: after a write that drops the link (`disconnect mac`) there is no ACL, so the
+  cache is the ONLY thing that can be served and the app repainted pre-write state every
+  time. **Corollary, and the thing a future change is most likely to get wrong again: any
+  guard that reads `deviceStates` must also check `reachable`** — the painted state is
+  last-known, not live. Both HIGH findings here were that mistake: the skip-if-active
+  guard made the Mac row un-tappable exactly when you needed it (cached state said
+  "active" while the link was down, and `disconnectedView`'s Connect button was
+  unreachable because `isConnected` was true), and `assertedActiveDevice` was never
+  cleared on disconnect, so the row you just disconnected repainted as the active sink. `reachable` = this Mac's link now; `connected` = we have real
   headphone state to paint (the app no longer wipes to "Not Connected" on a mere
   unreachable read — only when there's nothing known at all). Build `bash macos/build.sh [--install]`
   (Developer-ID signed → `/Applications`; no LaunchAgent). In-window keys: ⌘1-6
@@ -73,6 +91,7 @@ explicit user action.
 - `profiles.json` (repo root) -- presets ({ANC mode, noise level, EQ, multipoint, volume} **+ optional `pair: [primary, secondary]`**) applied by `bose profile`; versioned + hand-editable, ships flight/office/music/**tv** (tv = pair audikast+phone, the one-tap watch-TV setup). A profile's `pair` applies FIRST via the same evict→held→active composite as `bose pair`, then any settings; a pair-only profile skips the settings session (`hasDeviceSettings`). The Mac app shows a **PROFILES chips row** (top of the left panel; list via `bose profile --json`, a pure file read). A profile's `noiseLevel` is applied via the `anc-level` (1F,06) RMW and ONLY takes effect on the adjustable custom modes (4/5, `cncMutable`) — named modes set the mode only (a level over quiet/aware/spatial is a no-op; the old 1F,0A depth write disabled ANC, #83). flight = {quiet, multipoint off}. Runtime JSON (not codegen'd TOML) because `profile save` writes it; loader resolves `$BOSE_PROFILES` → repo path → `~/.config/bose/`. Pure logic in `cli/Profiles.swift`, live apply in `cli/Composites.swift` (`applyProfile`).
 - `hammerspoon/bose.lua` -- Hammerspoon module, all **event-driven** (no timers). **Only Opt+B is bound now** (2026-06-20): **Opt+B shows/hides the Bose app** (the windowed control surface — press once to open/focus, again to hide; switch devices/ANC/EQ from its tiles). The other four hotkeys are **commented out in `start()`** — James drives everything else from the Bose app (Opt+I was cycling spatial audio unexpectedly). Their binds + `_MODS`/`_KEY` defaults remain in the file, so re-enabling any is a one-line uncomment + reload: **Opt+⇧B toggles Mac ↔ phone** (+ one-shot low-battery warn piggybacked on the press), **Opt+N cycles ANC** (quiet→aware→immersion), **Opt+I cycles Immersive Audio** (off→still→motion; custom modes only — shows a hint on a fixed named mode), **Opt+J connects the headphones to this Mac** (unconditional, no toggle direction-guessing; `CONNECT_TARGET` retargets it). Plus two **OS-event** behaviours (no hotkey, no poll — driven by `hs.audiodevice`/`hs.application` watchers): **battery announce** — `say`s the battery through the headphones when they become the Mac output (a stand-in for the power-on announcement Bose removed in fw 8.2.20; `ANNOUNCE_BATTERY`), and **auto-route on call** — a call app (Teams/Zoom/FaceTime/Slack/Webex) launching routes the Mac's *input* to the MacBook mic, and the audiodevice guard never lets the Bose be the system input (its over-ear mics make callers hear the room); input **stays** on the MacBook mic after calls — no restore, because `hs.application.watcher` doesn't reliably deliver `terminated` (verified 2026-06-20) and the MacBook mic is the right default. `AUTO_ROUTE_ON_CALL` + `CALL_APPS`. NB Teams can override the system input with its own setting — set its in-app mic once. Returns a table with `.start()`/`.stop()`. Wired in `init.lua` via `BoseCtl = dofile(os.getenv("HOME").."/code/personal/bose/hammerspoon/bose.lua"); BoseCtl.start()`. Edits apply on Hammerspoon reload.
 - The Swift core that does the actual RFCOMM work lives in `cli/` (see below). The macOS app target (`macos/BoseControl/`) is pure SwiftUI/Foundation and does NO RFCOMM — it shells `bose`, so the two never drift and the app can't reintroduce a transport/poll bug.
+- **`macos/build.sh` compiles ONLY the four SwiftUI files** — `BoseDeviceMap`/`Headphone` are NOT linked into the app. Any device or protocol constant the UI needs is therefore **mirrored locally** in `ContentView.swift` (the device labels, and `DeviceButton.priority` which seeds the sidebar's default rank). Real drift risk: **adding or re-prioritising a device in `devices.toml` needs a matching edit there**, or the sidebar's rank badges silently misstate the eviction order the CLI will actually use. Display-only — the CLI owns real victim selection and a saved `priority.json` overrides it — but the badges lie until it's updated.
 
 ### Android (`android/`) — regenerated protocol on the kept architecture
 - `android/` -- Jetpack Compose app (package: `au.com.jd.bose`)
