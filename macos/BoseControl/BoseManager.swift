@@ -50,6 +50,14 @@ final class BoseManager: ObservableObject {
     @Published var eq: (bass: Int, mid: Int, treble: Int) = (0, 0, 0)
     @Published var isRefreshing: Bool = false
 
+    /// Last failed `bose` invocation's diagnosis (first stderr line), or nil. Drives a
+    /// transient inline banner — see `publishError`. The CLI's messages are precise and
+    /// actionable, so surfacing them beats a spinner that silently reverts.
+    @Published var lastError: String? = nil
+
+    /// Generation counter so a stale auto-dismiss can't clear a NEWER error.
+    private var errorToken: UInt64 = 0
+
     // Active mode's noise level (1F,06): 0 = max cancellation … 10 = transparency.
     // `noiseAdjustable` (the firmware cncMutable bit) gates the slider — only custom
     // modes are tunable; Quiet/Aware/spatial modes are fixed. Writing is via the CLI
@@ -151,23 +159,76 @@ final class BoseManager: ObservableObject {
     // MARK: - Process runner
 
     /// Run `bose <args>` synchronously (caller is already off the main thread).
-    /// Returns (exitCode, stdout). A spawn failure returns (-1, "").
+    /// Returns (exitCode, stdout, stderr). A spawn failure returns (-1, "", reason).
+    ///
+    /// BOTH pipes are drained concurrently. Reading one to EOF while the other fills
+    /// its ~64KB kernel buffer deadlocks the child — and, because every invocation runs
+    /// on `queue`, would wedge the whole serial queue with it. (The old version created
+    /// a stderr `Pipe()` and never read it, so that deadlock was latent.)
     @discardableResult
-    private func run(_ args: [String]) -> (code: Int32, out: String) {
+    private func run(_ args: [String]) -> (code: Int32, out: String, err: String) {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: binary)
         proc.arguments = args
-        let pipe = Pipe()
-        proc.standardOutput = pipe
-        proc.standardError = Pipe()
+        let outPipe = Pipe()
+        let errPipe = Pipe()
+        proc.standardOutput = outPipe
+        proc.standardError = errPipe
         do {
             try proc.run()
         } catch {
-            return (-1, "")
+            return (-1, "", "Couldn't run \(binary)")
         }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        var outData = Data()
+        var errData = Data()
+        let group = DispatchGroup()
+        DispatchQueue.global().async(group: group) {
+            outData = outPipe.fileHandleForReading.readDataToEndOfFile()
+        }
+        DispatchQueue.global().async(group: group) {
+            errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+        }
+        group.wait()
         proc.waitUntilExit()
-        return (proc.terminationStatus, String(data: data, encoding: .utf8) ?? "")
+        return (proc.terminationStatus,
+                String(data: outData, encoding: .utf8) ?? "",
+                String(data: errData, encoding: .utf8) ?? "")
+    }
+
+    /// Run a verb and, on a non-zero exit, surface the CLI's own diagnosis in the app.
+    /// The CLI emits precise, actionable stderr ("<x> is not in verBosita's paired list —
+    /// pair it from the device itself first"); discarding it made a failed tap look like a
+    /// silent no-op — the tile just span and reverted with no explanation.
+    @discardableResult
+    private func runReporting(_ args: [String]) -> (code: Int32, out: String) {
+        let (code, out, err) = run(args)
+        if code != 0 { publishError(err, verb: args.first ?? "bose") }
+        return (code, out)
+    }
+
+    /// Publish the first stderr line as a transient inline banner. NOT a poller — a
+    /// single one-shot dismissal of a UI string that touches nothing but `lastError`.
+    private func publishError(_ err: String, verb: String) {
+        let first = err.split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { !$0.isEmpty }
+        let message = first ?? "`bose \(verb)` failed"
+        DispatchQueue.main.async {
+            self.lastError = message
+            self.errorToken &+= 1
+            let token = self.errorToken
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
+                if self.errorToken == token { self.lastError = nil }
+            }
+        }
+    }
+
+    /// Clear any surfaced error (a new user action supersedes the last failure).
+    private func clearError() {
+        DispatchQueue.main.async {
+            self.errorToken &+= 1
+            self.lastError = nil
+        }
     }
 
     // MARK: - Read
@@ -182,7 +243,10 @@ final class BoseManager: ObservableObject {
         DispatchQueue.main.async { self.isRefreshing = true }
         queue.async { [weak self] in
             guard let self = self else { return }
-            let (_, out) = self.run(["info", "--json"] + (forcePage ? ["--page"] : []))
+            // Reads stay silent: `parse` already degrades to the disconnected/cached view,
+            // and a banner on every transient read miss would be noise. Errors are surfaced
+            // for WRITES, where the CLI's diagnosis is the only feedback the user gets.
+            let (_, out, _) = self.run(["info", "--json"] + (forcePage ? ["--page"] : []))
             let parsed = Self.parse(out)
             DispatchQueue.main.async {
                 self.apply(parsed)
@@ -310,6 +374,11 @@ final class BoseManager: ObservableObject {
                          // Write never confirmed (rare — a genuinely failed set). Drop the
                          // pending guard so the next refresh can show the real mode.
                          if self?.pendingAncMode == mode { self?.pendingAncMode = nil }
+                         // …and actually go get that real mode. Nothing else reschedules a
+                         // read here, so the optimistic highlight would otherwise sit lit on
+                         // a mode the device never entered — the visible case being ANC 255
+                         // (= off), which never satisfies `confirm` and always times out.
+                         self?.refreshState(forcePage: true)
                      })
     }
 
@@ -371,12 +440,20 @@ final class BoseManager: ObservableObject {
         // re-run the whole connect sequence (or spin the tile) for a device that's already
         // here. Mirrors Android's BoseService skip-if-active (CLAUDE.md). The CLI connect
         // would settle near-instantly anyway, but this avoids the needless RFCOMM round-trips.
-        guard deviceStates[name] != "active" else { return }
+        //
+        // `reachable` is load-bearing: under cached-first (#148) `deviceStates` is the PAINTED
+        // state, which on an unreachable read is last-known, not live. If the headphones drop
+        // the Mac, the cache still records mac:"active" — so this guard would swallow the tap
+        // that reconnects it, with no command and no feedback, and `disconnectedView`'s Connect
+        // button is unreachable because `isConnected` is true. Net effect: no way to reconnect
+        // the Mac at all. Only skip when the "active" came from a LIVE read.
+        guard !(reachable && deviceStates[name] == "active") else { return }
+        clearError()
         connectingDevice = name
         DispatchQueue.main.async { self.isRefreshing = true }
         queue.async { [weak self] in
             guard let self = self else { return }
-            let (code, out) = self.run(["connect", name])
+            let (code, out) = self.runReporting(["connect", name])
             // The CLI prints "Connected <name>" on success, with "(idle …)" when
             // multipoint kept audio on the previous device (ACL up, not the active sink).
             let ok = code == 0 && out.range(of: "connected", options: .caseInsensitive) != nil
@@ -426,7 +503,7 @@ final class BoseManager: ObservableObject {
         applyingProfile = name
         queue.async { [weak self] in
             guard let self = self else { return }
-            _ = self.run(["profile", name])
+            _ = self.runReporting(["profile", name])
             let snapshot = Self.parse(self.run(["info", "--json", "--page"]).out)
             DispatchQueue.main.async {
                 self.apply(snapshot)
@@ -452,10 +529,18 @@ final class BoseManager: ObservableObject {
     /// Run a write verb off the main thread, then refresh to reflect the device's
     /// real post-write state (the optimistic update above is just for snappiness).
     private func write(_ args: [String]) {
+        clearError()
         queue.async { [weak self] in
             guard let self = self else { return }
-            _ = self.run(args)
-            self.refreshState()
+            _ = self.runReporting(args)
+            // --page: a post-write confirm read must reflect the device's REAL state.
+            // Defaulting to the cached-first read repainted this write from a snapshot
+            // taken BEFORE it — and after a `disconnect` the Mac has no ACL at all, so
+            // the cache is guaranteed to be what gets served. Every other confirm path
+            // (confirmWrite / connectDevice / applyProfile / applyPair) already forces
+            // `--page`; this one was the hole. See CLAUDE.md: "a settle loop must never
+            // confirm against the cache".
+            self.refreshState(forcePage: true)
         }
     }
 
@@ -481,11 +566,18 @@ final class BoseManager: ObservableObject {
     /// Persist the runtime eviction order (index 0 = primary). Writes priority.json only —
     /// no device I/O, so no refresh.
     func setPriority(_ order: [String]) {
-        queue.async { [weak self] in _ = self?.run(["priority", "--set"] + order) }
+        queue.async { [weak self] in _ = self?.runReporting(["priority", "--set"] + order) }
     }
 
     /// Disconnect a single device (right-click → Disconnect). Refreshes state after.
+    ///
+    /// Clearing the assertion first is essential. `apply()` re-applies `assertedActiveDevice`
+    /// on every read (the #81 off-head guard), so without this the post-disconnect read —
+    /// which correctly reports the device offline and no other device active — gets
+    /// overridden straight back to "active". The row you just disconnected stays lit as the
+    /// active sink until something else positively claims the slot.
     func disconnectDevice(_ name: String) {
+        if assertedActiveDevice == name { assertedActiveDevice = nil }
         write(["disconnect", name])
     }
 
@@ -497,7 +589,7 @@ final class BoseManager: ObservableObject {
         isRefreshing = true
         queue.async { [weak self] in
             guard let self = self else { return }
-            _ = self.run(["pair", primary, secondary])
+            _ = self.runReporting(["pair", primary, secondary])
             let snapshot = Self.parse(self.run(["info", "--json", "--page"]).out)   // real post-pair state
             DispatchQueue.main.async {
                 self.apply(snapshot)
@@ -519,10 +611,11 @@ final class BoseManager: ObservableObject {
                               confirm: @escaping ([String: Any]) -> Bool,
                               attempts: Int = 5, gap: TimeInterval = 0.3,
                               onTimeout: @escaping () -> Void) {
+        clearError()
         DispatchQueue.main.async { self.isRefreshing = true }
         queue.async { [weak self] in
             guard let self = self else { return }
-            _ = self.run(verb)
+            _ = self.runReporting(verb)
             for i in 0..<attempts {
                 // --page: a settle loop reading the cache would "confirm" stale data
                 // (or spin to timeout) — post-write reads are always live.
