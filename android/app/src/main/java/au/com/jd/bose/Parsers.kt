@@ -19,7 +19,7 @@ object Parsers {
     data class HeadphoneState(
         var batteryLevel: Int = 0,
         var batteryCharging: Boolean = false,
-        var ancMode: Int = 0, // 0=quiet 1=aware 2=custom1 3=custom2
+        var ancMode: Int = 0, // 0=quiet 1=aware 2=immersion 3=cinema 4/5=custom; 255=off
         var volume: Int = 0,
         var volumeMax: Int = 31,
         var connectedDevices: List<IntArray> = emptyList(), // audio-active (05,01)
@@ -67,6 +67,15 @@ object Parsers {
                 return String(ByteArray(end) { name[it].toByte() }, Charsets.UTF_8)
             }
     }
+
+    /**
+     * Multipoint enable from the 01,0A state byte. Bit 0 is the live enable flag; the
+     * higher bits are slot/capability bits the firmware retains across toggles, so a
+     * disabled-but-paired device reads 0x06, not 0x00 (#83). Mask the enable bit — the
+     * old `!= 0` was the bug (0x06 != 0 misread "off" as "on"). Verified live on
+     * fw 8.2.20: multipoint on -> 0x07, off -> 0x06. Mirrors macOS `parseMultipointEnabled`.
+     */
+    fun parseMultipointEnabled(stateByte: Int): Boolean = (stateByte and 0x01) != 0
 
     /**
      * Parse the connected-devices RESPONSE (05,01). Layout:
@@ -193,8 +202,12 @@ object Parsers {
         val s = HeadphoneState()
 
         fun resp(b: Int, f: Int): IntArray? {
+            // Require the frame to be the RESPONSE to THIS command: BMAP echoes the
+            // queried block/func at r[0],r[1]. Without this, a leftover/late frame from a
+            // prior command in the bulk session gets misread as the current field.
+            // Matching block/func keeps every field bound to its own response.
             val r = provide.response(b, f) ?: return null
-            return if (r.size >= 5 && r[2] == OP_RESP) r else null
+            return if (r.size >= 5 && r[0] == b && r[1] == f && r[2] == OP_RESP) r else null
         }
 
         resp(0x02, 0x02)?.let {
@@ -219,7 +232,7 @@ object Parsers {
             else it.copyOfRange(4, it.size).joinToString(" ") { b -> "%02X".format(b) }
         }
 
-        resp(0x01, 0x0A)?.let { s.multipointEnabled = it[4] != 0 }
+        resp(0x01, 0x0A)?.let { s.multipointEnabled = parseMultipointEnabled(it[4]) }
         resp(0x01, 0x18)?.let { if (it.size >= 5) s.autoPlayPause = (it[4] and 0x01) != 0 }
         resp(0x01, 0x1B)?.let { if (it.size >= 5) s.autoAnswer = (it[4] and 0x01) != 0 }
         provide.response(0x1F, 0x08)?.let { r -> parseFavorites(r)?.let { s.favorites = it } }

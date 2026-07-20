@@ -48,7 +48,7 @@ class BoseService : Service() {
 
         // Media transport sent to the headphones via BMAP mediaControl (05,03).
         const val ACTION_MEDIA = "au.com.jd.bose.MEDIA"
-        const val EXTRA_MEDIA_ACTION = "media_action" // BoseProtocol.MediaAction.value
+        const val EXTRA_MEDIA_ACTION = "media_action" // MediaAction.v
 
         const val BROADCAST_STATUS = "au.com.jd.bose.STATUS_UPDATE"
         const val EXTRA_ACTIVE_DEVICE = "active_device"
@@ -90,7 +90,7 @@ class BoseService : Service() {
             }
             ACTION_MEDIA -> {
                 val actionValue = intent.getIntExtra(EXTRA_MEDIA_ACTION, -1)
-                val mediaAction = BoseProtocol.MediaAction.entries.find { it.value == actionValue }
+                val mediaAction = BoseProtocol.mediaActionFromInt(actionValue)
                 if (mediaAction != null) executor.submit { sendMedia(mediaAction) }
             }
         }
@@ -126,22 +126,22 @@ class BoseService : Service() {
             .setContentIntent(pi)
             .setOngoing(true)
             // Media transport — sends BMAP mediaControl (05,03) to the headphones.
-            .addAction(mediaAction(android.R.drawable.ic_media_previous, "Prev", BoseProtocol.MediaAction.PREV))
-            .addAction(mediaAction(android.R.drawable.ic_media_play, "Play", BoseProtocol.MediaAction.PLAY))
-            .addAction(mediaAction(android.R.drawable.ic_media_pause, "Pause", BoseProtocol.MediaAction.PAUSE))
-            .addAction(mediaAction(android.R.drawable.ic_media_next, "Next", BoseProtocol.MediaAction.NEXT))
+            .addAction(mediaAction(android.R.drawable.ic_media_previous, "Prev", MediaAction.PREV))
+            .addAction(mediaAction(android.R.drawable.ic_media_play, "Play", MediaAction.PLAY))
+            .addAction(mediaAction(android.R.drawable.ic_media_pause, "Pause", MediaAction.PAUSE))
+            .addAction(mediaAction(android.R.drawable.ic_media_next, "Next", MediaAction.NEXT))
             .build()
     }
 
     /** A notification action that fires the headphone media command via the service. */
-    private fun mediaAction(icon: Int, title: String, action: BoseProtocol.MediaAction): Notification.Action {
+    private fun mediaAction(icon: Int, title: String, action: MediaAction): Notification.Action {
         val intent = Intent(this, BoseService::class.java).apply {
             this.action = ACTION_MEDIA
-            putExtra(EXTRA_MEDIA_ACTION, action.value)
+            putExtra(EXTRA_MEDIA_ACTION, action.v)
         }
         // Distinct requestCode per action so PendingIntents don't collide.
         val pi = PendingIntent.getForegroundService(
-            this, 100 + action.value, intent,
+            this, 100 + action.v, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         return Notification.Action.Builder(Icon.createWithResource(this, icon), title, pi).build()
@@ -320,7 +320,7 @@ class BoseService : Service() {
     }
 
     /** Send a media transport command (play/pause/next/prev) to the headphones. */
-    private fun sendMedia(action: BoseProtocol.MediaAction) {
+    private fun sendMedia(action: MediaAction) {
         try {
             if (!ensureConnected()) {
                 broadcastError("Cannot connect to headphones")

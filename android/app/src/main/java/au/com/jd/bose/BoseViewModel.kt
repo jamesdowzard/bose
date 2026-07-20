@@ -21,7 +21,9 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
         // Dashboard
         val batteryLevel: Int = -1,
         val batteryCharging: Boolean = false,
-        val ancMode: BoseProtocol.AncMode = BoseProtocol.AncMode.QUIET,
+        // null = not read yet / firmware reported a slot we don't know. Never defaulted to
+        // QUIET: that made "ANC off" (255) and "never read" both light the Quiet button.
+        val ancMode: AncMode? = null,
         val firmwareVersion: String = "",
         val deviceName: String = "",
 
@@ -231,7 +233,7 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
      * slider stayed stale until a manual Refresh (#96). Falls back to the optimistic
      * `ancMode` copy if the config read is unreachable.
      */
-    fun setAncMode(mode: BoseProtocol.AncMode) {
+    fun setAncMode(mode: AncMode) {
         viewModelScope.launch {
             try {
                 val cfg = BoseProtocol.withConnection {

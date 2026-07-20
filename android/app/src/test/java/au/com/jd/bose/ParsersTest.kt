@@ -178,6 +178,20 @@ class ParsersTest {
         assertNull(Parsers.parseFavorites(intArrayOf(0x1F, 0x06, 0x03, 0x03, 0x0B, 0x00, 0x07))) // wrong func
     }
 
+    // ── parseMultipointEnabled (01,0A state byte) ─────────────────────────────
+    //
+    // Same corpus as macOS cli/Tests/main.swift. The 0x06 case is the one that matters:
+    // fw 8.2.20 reports multipoint OFF as 0x06 (bit 0 clear, slot bits retained), so the
+    // old `!= 0` decode reported it as ON (#83).
+
+    @Test
+    fun multipoint_masksTheEnableBit() {
+        assertTrue(Parsers.parseMultipointEnabled(0x07))  // on
+        assertFalse(Parsers.parseMultipointEnabled(0x06)) // off, slot bits retained
+        assertFalse(Parsers.parseMultipointEnabled(0x00)) // off, bare
+        assertTrue(Parsers.parseMultipointEnabled(0x01))  // on, bare enable bit
+    }
+
     // ── parseAllState (bulk session) ──────────────────────────────────────────
 
     @Test
@@ -215,6 +229,29 @@ class ParsersTest {
         assertEquals(3, s.eqBass)
         assertEquals(0, s.eqMid)
         assertEquals(-3, s.eqTreble)
+    }
+
+    @Test
+    fun allState_multipointOffWithSlotBitsDecodesOff() {
+        // The live off value (0x06) must not read as enabled — the #83 misread, end to end.
+        val s = Parsers.parseAllState { block, function ->
+            if (block == 0x01 && function == 0x0A) intArrayOf(0x01, 0x0A, 0x03, 0x01, 0x06) else null
+        }
+        assertFalse(s.multipointEnabled)
+    }
+
+    @Test
+    fun allState_rejectsResponseFromAWrongCommand() {
+        // A late/leftover frame in the ~18-GET bulk session: the provider hands back a
+        // well-formed RESP whose block/func belong to a DIFFERENT command. Without the
+        // header check it would be decoded as the queried field (here: a volume frame read
+        // as the battery level, 0x1F = 31%). Matching r[0]/r[1] keeps every field bound to
+        // its own response — parity with macOS parseAllState's `resp` guard.
+        val volumeFrame = intArrayOf(0x05, 0x05, 0x03, 0x02, 0x1F, 0x14)
+        val s = Parsers.parseAllState { block, function ->
+            if (block == 0x02 && function == 0x02) volumeFrame else null
+        }
+        assertEquals(0, s.batteryLevel) // default kept, not 31
     }
 
     @Test

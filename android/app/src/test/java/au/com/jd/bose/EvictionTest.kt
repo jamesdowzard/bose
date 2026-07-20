@@ -15,12 +15,35 @@ class EvictionTest {
 
     @Test
     fun bothSlotsFull_targetNotHeld_evictsLowestPriority() {
-        // mac (prio 1) + phone (prio 2) held; switching to ipad -> evict phone (higher number).
-        assertEquals("phone", evictionVictim(listOf(mac("mac"), mac("phone")), mac("ipad"))?.name)
-        // mac (prio 1) + ipad (prio 4) held; switching to phone -> evict ipad.
-        assertEquals("ipad", evictionVictim(listOf(mac("mac"), mac("ipad")), mac("phone"))?.name)
+        // mac (prio 1) + ipad (prio 4) held; switching to quest -> evict ipad (higher number).
+        assertEquals("ipad", evictionVictim(listOf(mac("mac"), mac("ipad")), mac("quest"))?.name)
+        // ipad (prio 4) + quest (prio 5) held; switching to iphone -> evict quest.
+        assertEquals("quest", evictionVictim(listOf(mac("ipad"), mac("quest")), mac("iphone"))?.name)
         // Order of the held list must not matter — selection is by priority, not position.
-        assertEquals("ipad", evictionVictim(listOf(mac("ipad"), mac("mac")), mac("phone"))?.name)
+        assertEquals("quest", evictionVictim(listOf(mac("quest"), mac("ipad")), mac("iphone"))?.name)
+    }
+
+    /**
+     * The regression this file previously enshrined: with the everyday {mac, phone} pair
+     * held, `phone` (prio 2) is the lowest-priority held device, so plain victim selection
+     * chose THIS PHONE for any third target. BMAP-disconnecting the phone drops the ACL its
+     * own RFCOMM socket rides on — the switch kills its own transport mid-flight. The local
+     * device must never be a victim; the Mac (prio 1) goes instead.
+     */
+    @Test
+    fun localPhoneIsNeverTheVictim() {
+        assertEquals("mac", evictionVictim(listOf(mac("mac"), mac("phone")), mac("ipad"))?.name)
+        assertEquals("mac", evictionVictim(listOf(mac("phone"), mac("mac")), mac("appletv"))?.name)
+        // Even against a lower-priority partner, the phone is skipped and the partner goes.
+        assertEquals("audikast", evictionVictim(listOf(mac("phone"), mac("audikast")), mac("ipad"))?.name)
+    }
+
+    @Test
+    fun phoneIsOnlyEvictableHeldDevice_noVictim() {
+        val unknown = intArrayOf(0x00, 0x11, 0x22, 0x33, 0x44, 0x55)
+        // Slots full with {phone, something we don't know}: the phone is off-limits and the
+        // other isn't ours to rank -> no victim, let the firmware's LRU decide.
+        assertNull(evictionVictim(listOf(mac("phone"), unknown), mac("ipad")))
     }
 
     @Test
