@@ -20,7 +20,6 @@ object BoseProtocol {
 
     // ── Transport delegation (kept for call-site compatibility) ─────────────────
 
-    val isConnected: Boolean get() = Transport.isConnected
     fun connect(): Boolean = Transport.connect()
     fun disconnect() = Transport.disconnect()
     suspend fun <T> withConnection(block: suspend () -> T): T = Transport.withConnection(block)

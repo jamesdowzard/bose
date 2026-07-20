@@ -221,9 +221,23 @@ class BoseService : Service() {
     // Protocol operations
     // ======================================================================
 
+    /**
+     * Acquire the RFCOMM channel for this operation. ALWAYS goes through
+     * `Transport.connect()`, which takes `rfcommLock` and holds it until the matching
+     * `disconnect()` — never short-circuit on `BoseProtocol.isConnected`.
+     *
+     * `isConnected` only says "a socket is open", not "this thread owns it". The app's
+     * `refreshAll` holds the channel for ~18 sequential GETs (seconds); a widget
+     * `onUpdate` firing ACTION_REFRESH in that window would see isConnected == true, skip
+     * the lock, interleave its frames onto the ViewModel's socket, and then close it in
+     * its own `finally` — surfacing as "Connection failed" in the app. Blocking on the
+     * lock instead makes the two operations queue.
+     *
+     * Every caller here is bracketed connect/`finally disconnect()` with no nesting, so the
+     * reentrant hold count stays 1 and the single `disconnect()` always releases it.
+     */
     private fun ensureConnected(): Boolean {
-        if (BoseProtocol.isConnected) return true
-        Log.d(TAG, "Connecting to headphones...")
+        Log.d(TAG, "Acquiring RFCOMM channel...")
         return BoseProtocol.connect()
     }
 
@@ -284,7 +298,13 @@ class BoseService : Service() {
                         nudgeMediaPlayback()
                     }
 
-                    BoseWidgetProvider.updateAll(this, deviceName, setOf(deviceName))
+                    // The OTHER multipoint slot survives this switch — paint it as still
+                    // held. Passing just setOf(deviceName) greyed its chip out until the
+                    // next refresh, which is a lie about the headset's actual pair.
+                    val heldAfterSwitch = (active + connected)
+                        .map { BoseDeviceMap.nameForMac(it.toByteArray()) }
+                        .toSet() - setOfNotNull(victim?.name) + deviceName
+                    BoseWidgetProvider.updateAll(this, deviceName, heldAfterSwitch)
                     broadcastStatus(deviceName, true)
                 }
 
