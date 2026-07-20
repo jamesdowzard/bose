@@ -1,6 +1,6 @@
 /// BoseManager: Observable state for the windowed Bose app.
 ///
-/// This is a THIN FRONT-END over `bose` — exactly like the Raycast commands and
+/// This is a THIN FRONT-END over `bose` — exactly like the Hammerspoon module and
 /// the Hammerspoon module. It holds NO RFCOMM channel, imports NO IOBluetooth, and
 /// runs NO timer. Every read shells `bose info --json`; every write shells the
 /// matching verb. Reads happen only on explicit events (window open, window focus,

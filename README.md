@@ -13,13 +13,12 @@ See `CLAUDE.md` for the protocol tables, device map, and hard-won lessons.
 |------|------|
 | `protocol/` | `bmap.toml` + `devices.toml` spec, Python codegen, golden byte tests. `make gen` regenerates `protocol/generated/{BMAP,Devices}.generated.{swift,kt}`. |
 | `cli/` | `bose` CLI + the Swift core (`Transport`/`Parsers`/`Composites`) + generated Swift. The on-demand RFCOMM engine the Mac front-ends call. |
-| `raycast/` | Raycast script commands (connect / disconnect / status / full-status / anc-level / profile) → `bose`. |
 | `macos/` | **Bose.app** — windowed SwiftUI control surface (three-panel: settings / draggable device sidebar / EQ). Thin front-end that shells `bose`; cached-first reads (never pages when the Mac holds no slot), staleness banner with a Read-live button. `bash macos/build.sh --install`. |
 | `hammerspoon/` | `bose.lua` — Opt+B shows/hides Bose.app (the only bound hotkey since 2026-06-20; the others are commented out in `start()`), plus event-driven battery announce + call-app mic routing. No timers. |
 | `profiles.json` | Settings presets ({ANC mode, noise level, EQ, multipoint, volume}) applied via `bose profile`. Versioned + editable. |
 | `android/` | Jetpack Compose app + foreground service (package `au.com.jd.bose`). |
 
-The Mac has **no resident poller** — Bose.app is user-launched and event-driven, and Raycast + Hammerspoon shell out to `bose` on demand (a background poll timer was the original audio-dropout cause). Reads with no ACL link are served from the timestamped state cache instead of paging the headphones (#148).
+The Mac has **no resident poller** — Bose.app is user-launched and event-driven, and Hammerspoon shells out to `bose` on demand (a background poll timer was the original audio-dropout cause). Reads with no ACL link are served from the timestamped state cache instead of paging the headphones (#148).
 
 ## Build
 
@@ -27,7 +26,6 @@ The Mac has **no resident poller** — Bose.app is user-launched and event-drive
 # bose (CLI) → cli/build/bose
 bash cli/build.sh
 cp cli/build/bose ~/bin/bose                      # the engine
-cp raycast/*.sh ~/.config/raycast/script-commands/        # Raycast commands
 # hammerspoon/bose.lua is dofile'd from this repo path by init.lua (Opt+B)
 
 # Android app (deploy to S21 via ADB)
