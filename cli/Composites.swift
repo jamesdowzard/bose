@@ -227,7 +227,7 @@ extension Transport {
               let r1 = send([0x1F, 0x06, 0x01, 0x01, cur[4]]),
               let cfg = parseModeConfig(r1) else { return .unreachable }
         guard cfg.cncMutable else { return .fixed(name: cfg.displayName) }
-        _ = send(buildModeConfigSet(cfg, newLevel: level))
+        _ = send(buildModeConfigSet(cfg, newLevel: level, forceAncOn: true))   // level path asserts ANC on
         let after = send([0x1F, 0x06, 0x01, 0x01, cur[4]]).flatMap(parseModeConfig)
         return .ok(name: cfg.displayName, level: Int(after?.cncLevel ?? cfg.cncLevel))
     }

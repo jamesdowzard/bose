@@ -100,12 +100,26 @@ struct ProfileStore: Codable {
     }
 
     /// Load, returning an empty store for a missing/unreadable/invalid file.
+    /// Load `profiles.json`. A MISSING file is a normal empty store; a MALFORMED one is
+    /// not — it gets a diagnostic on stderr before the empty fallback.
+    ///
+    /// Codable array decode is all-or-nothing, so one typo or wrong-typed field anywhere
+    /// in this hand-editable file blanks EVERY profile. Swallowing the error made that
+    /// indistinguishable from "no profiles configured": `bose profile` printed the same
+    /// empty list either way, with nothing pointing at the JSON. Still returns the empty
+    /// store rather than failing hard, so a broken profiles file can't take down the
+    /// unrelated verbs.
     static func load(_ path: String) -> ProfileStore {
-        guard let data = FileManager.default.contents(atPath: path),
-              let store = try? JSONDecoder().decode(ProfileStore.self, from: data) else {
+        guard let data = FileManager.default.contents(atPath: path) else {
+            return ProfileStore(profiles: [])      // no file = no profiles, not an error
+        }
+        do {
+            return try JSONDecoder().decode(ProfileStore.self, from: data)
+        } catch {
+            FileHandle.standardError.write(Data(
+                "Warning: \(path) could not be parsed — ALL profiles ignored: \(error)\n".utf8))
             return ProfileStore(profiles: [])
         }
-        return store
     }
 
     func save(_ path: String) throws {

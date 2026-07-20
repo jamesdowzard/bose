@@ -294,7 +294,13 @@ function M.start()
   -- M.ancHotkey = hs.hotkey.bind(ANC_MODS, ANC_KEY, cycleAnc)
   -- M.spatialHotkey = hs.hotkey.bind(SPATIAL_MODS, SPATIAL_KEY, cycleSpatial)
   -- M.connectHotkey = hs.hotkey.bind(CONNECT_MODS, CONNECT_KEY, connectHere)
-  if ANNOUNCE_BATTERY then
+  -- The audiodevice watcher serves BOTH features: the battery announce AND the
+  -- "never let the Bose be the system input" guard inside onAudioChange (its over-ear
+  -- mics make callers hear the room). Gating it on ANNOUNCE_BATTERY alone meant turning
+  -- OFF the spoken battery — a cosmetic preference — silently disabled the mic guard
+  -- too, with no error. They're documented as independent toggles, so start the watcher
+  -- if EITHER wants it.
+  if ANNOUNCE_BATTERY or AUTO_ROUTE_ON_CALL then
     lastBoseOut = boseIsMacOutput()   -- seed so (re)starting doesn't announce
     hs.audiodevice.watcher.setCallback(onAudioChange)
     hs.audiodevice.watcher.start()
@@ -315,7 +321,7 @@ function M.stop()
   if M.ancHotkey then M.ancHotkey:delete(); M.ancHotkey = nil end
   if M.spatialHotkey then M.spatialHotkey:delete(); M.spatialHotkey = nil end
   if M.connectHotkey then M.connectHotkey:delete(); M.connectHotkey = nil end
-  if ANNOUNCE_BATTERY then hs.audiodevice.watcher.stop() end
+  if ANNOUNCE_BATTERY or AUTO_ROUTE_ON_CALL then hs.audiodevice.watcher.stop() end
   if M.appWatcher then M.appWatcher:stop(); M.appWatcher = nil end
 end
 

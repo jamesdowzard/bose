@@ -154,14 +154,24 @@ func parseModeConfig(_ resp: [UInt8]) -> ModeConfig? {
 /// `newLevel`/`newSpatial`/`newName = nil` to leave that field unchanged (a no-op
 /// round-trip when all are nil). `newSpatial`: 0 = off, 1 = Still, 2 = Motion. `newName`
 /// is UTF-8, truncated to 32 bytes and null-padded — used to rename a custom mode slot.
-func buildModeConfigSet(_ cfg: ModeConfig, newLevel: Int?, newSpatial: Int? = nil, newName: String? = nil) -> [UInt8] {
+///
+/// `forceAncOn` writes `ancToggle = 1` instead of carrying the mode's current value.
+/// That guard belongs to the LEVEL path only: `anc-level` must never be able to leave
+/// ANC disabled, so it asserts it on. It must NOT fire for the other two callers —
+/// forcing it unconditionally meant renaming a slot, or changing its Immersive Audio,
+/// silently switched ANC ON for a mode the user had deliberately configured with
+/// `ancToggle = 0`. Same class as #83 (an RMW clobbering a field outside its remit),
+/// just in the opposite direction. Default off so a new caller can't inherit it by
+/// accident — opt in explicitly.
+func buildModeConfigSet(_ cfg: ModeConfig, newLevel: Int?, newSpatial: Int? = nil,
+                        newName: String? = nil, forceAncOn: Bool = false) -> [UInt8] {
     let level = newLevel.map { UInt8(max(0, min(10, $0))) } ?? cfg.cncLevel
     let spatial = newSpatial.map { UInt8(max(0, min(2, $0))) } ?? cfg.spatial
     var name = newName.map { Array($0.utf8.prefix(32)) } ?? Array(cfg.name.prefix(32))
     while name.count < 32 { name.append(0) }
     var payload: [UInt8] = [cfg.index, cfg.promptB1, cfg.promptB2]
     payload += name
-    payload += [level, cfg.autoCNC, spatial, cfg.windBlock, 0x01]  // ancToggle forced on
+    payload += [level, cfg.autoCNC, spatial, cfg.windBlock, forceAncOn ? 0x01 : cfg.ancToggle]
     return [0x1F, 0x06, 0x02, UInt8(payload.count)] + payload
 }
 

@@ -114,13 +114,26 @@ let fixed = parseModeConfig(mc(index: 0, name: "Quiet", mutability: 0x00, level:
 check(!fixed.cncMutable, "modeConfig: 0x00 mutability -> fixed (Quiet/Aware/spatial)")
 check(parseModeConfig([0x1F, 0x06, 0x03, 0x05, 0, 0]) == nil, "modeConfig: short -> nil")
 // buildModeConfigSet: SET layout differs from response — name@3, level@35, anc@39.
-let setF = buildModeConfigSet(custom, newLevel: 3)
+let setF = buildModeConfigSet(custom, newLevel: 3, forceAncOn: true)
 check(Array(setF[0...3]) == [0x1F, 0x06, 0x02, 0x28], "modeConfigSet: header SET_GET len 40")
 let sp = Array(setF[4...])
 check(sp[0] == 5, "modeConfigSet: modeIndex @0")
 check(Array(sp[3..<7]) == Array("None".utf8), "modeConfigSet: name @3")
 check(sp[35] == 3, "modeConfigSet: new cncLevel @35")
 check(sp[39] == 1, "modeConfigSet: ancToggle forced ON @39 (level change can't disable ANC)")
+// ancToggle is asserted ON only on the LEVEL path. Forcing it unconditionally meant a
+// rename or a spatial change silently switched ANC on for a mode deliberately configured
+// with ancToggle = 0 — an RMW clobbering a field outside its remit, same class as #83.
+let ancOff = parseModeConfig(mc(index: 5, name: "Night", mutability: 0x1D, level: 4, anc: 0))!
+check(buildModeConfigSet(ancOff, newLevel: nil, newName: "Night2")[4 + 39] == 0,
+      "modeConfigSet: rename PRESERVES ancToggle=0 (must not switch ANC on)")
+check(buildModeConfigSet(ancOff, newLevel: nil, newSpatial: 1)[4 + 39] == 0,
+      "modeConfigSet: spatial change PRESERVES ancToggle=0")
+check(buildModeConfigSet(ancOff, newLevel: 2, forceAncOn: true)[4 + 39] == 1,
+      "modeConfigSet: level path still forces ancToggle ON (can't disable ANC)")
+check(buildModeConfigSet(custom, newLevel: nil, newName: "x")[4 + 39] == 1,
+      "modeConfigSet: rename preserves an already-ON ancToggle too")
+
 check(buildModeConfigSet(custom, newLevel: nil)[4 + 35] == 7, "modeConfigSet: nil keeps current level")
 check(buildModeConfigSet(custom, newLevel: 99)[4 + 35] == 10, "modeConfigSet: clamps to 10")
 

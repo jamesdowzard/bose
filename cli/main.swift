@@ -885,10 +885,18 @@ func cmdFavorites(_ favArgs: [String]) {
         print(current.isEmpty ? "(none)" : fmt(current))
         return
     }
-    let modes = favArgs.flatMap { $0.split(whereSeparator: { $0 == "," || $0 == " " }) }
-        .compactMap { Int($0) }
-    guard !modes.isEmpty, modes.allSatisfy({ $0 >= 0 && $0 < slotCount }) else {
-        fail("usage: bose favorites <mode indices 0-\(slotCount - 1)>")
+    // map, NOT compactMap: this is a full REPLACEMENT write, so silently dropping an
+    // unparseable token deletes that favourite instead of rejecting the command —
+    // `bose favorites 0 1 x` used to succeed and set {0,1}, quietly losing the typo'd one.
+    let tokens = favArgs.flatMap { $0.split(whereSeparator: { $0 == "," || $0 == " " }) }
+    let parsed = tokens.map { Int($0) }
+    guard !parsed.isEmpty, !parsed.contains(where: { $0 == nil }) else {
+        fail("favorites: non-numeric mode index in \(tokens.joined(separator: " ")) "
+           + "— usage: bose favorites <mode indices 0-\(max(0, slotCount - 1))>")
+    }
+    let modes = parsed.compactMap { $0 }
+    guard modes.allSatisfy({ $0 >= 0 && $0 < slotCount }) else {
+        fail("usage: bose favorites <mode indices 0-\(max(0, slotCount - 1))>")
     }
     guard let r = transport.oneShot(buildFavoritesSetGet(modes: modes, slotCount: slotCount)),
           let updated = parseFavorites(r) else { fail("favorites set failed") }
@@ -897,7 +905,11 @@ func cmdFavorites(_ favArgs: [String]) {
 
 /// play / pause / next / prev — generated mediaControl builder.
 func cmdMedia(_ action: MediaAction) {
-    _ = transport.oneShot(BMAP.mediaControl(action: action.rawValue))
+    // Don't print success for a command that never reached the headphones — the Mac app
+    // and any script have no other signal, so a silent no-op read as "it worked".
+    guard transport.oneShot(BMAP.mediaControl(action: action.rawValue)) != nil else {
+        fail("\(action) failed — headphones not reachable")
+    }
     print("\(action)")
 }
 
