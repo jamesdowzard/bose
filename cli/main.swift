@@ -64,6 +64,20 @@ func dropMacHostLink(_ mac: [UInt8]) {
     runBlueutil(["--disconnect", Headphone.mac])
 }
 
+/// Undo `dropMacHostLink` on a failure path — restore ONLY what we deliberately tore down.
+///
+/// This is NOT the host-side `--connect` that #147 removed, and must not be reused as one.
+/// That one sat on the normal connect path (with a 1.5s settle) and caused the timing
+/// flakiness; the way IN stays BMAP-only. This exists solely because `dropMacHostLink`
+/// takes a deliberate host-side action, and an abort path has to be symmetric with it:
+/// re-paging the Mac over BMAP alone cannot bring back a link we ourselves killed on the
+/// host side, so without this an aborted `connect`/`pair` leaves the Mac silently off for
+/// the 40-60s the host-side drop holds — worse than if we'd never tried.
+func restoreMacHostLink(_ mac: [UInt8]) {
+    guard isMacDevice(mac) else { return }
+    runBlueutil(["--connect", Headphone.mac])
+}
+
 /// Preflight: refuse to page a device the HEADPHONES have never been paired with.
 ///
 /// `devices.toml` is a host-side convenience map and drifts from the headset's own
@@ -589,9 +603,22 @@ func evictLowestPriorityIfFull(target: [UInt8]) -> BoseDevice? {
 }
 
 /// Re-page a device we evicted, after the target connect failed — restores the prior pair.
+///
+/// Must undo BOTH halves of the eviction: the BMAP disconnect AND, for the Mac, the
+/// host-side link drop. Restoring only the BMAP half would leave the Mac off for the
+/// 40-60s `blueutil --disconnect` holds, which is the failure this whole path exists to
+/// avoid. Reports the real outcome — an ACK is not a restore (the device may have gone to
+/// sleep during the ~20s the failed target burned).
 func restoreEvicted(_ victim: BoseDevice, failedTarget: String) {
+    restoreMacHostLink(victim.mac)
     _ = transport.oneShot(BMAP.connectDevice(mac: victim.mac))
-    print("Restored \(victim.name) (target \(failedTarget) was unreachable)")
+    switch confirmConnect(victim.mac) {
+    case .active, .idle:
+        print("Restored \(victim.name) (target \(failedTarget) was unreachable)")
+    case .none:
+        print("Re-paged \(victim.name) after \(failedTarget) failed, but it did not come back "
+            + "— reconnect it with `bose connect \(victim.name)`")
+    }
 }
 
 /// connect / c <device> — poll-confirm via getConnectedDevices (ACK is NOT success).
@@ -727,16 +754,30 @@ func cmdPair(_ primary: String, _ secondary: String) {
     let keep = Set([macString(pMac), macString(sMac)])
 
     // Evict everything that isn't the intended pair so both slots are free for them.
+    // Remember what we dropped: if the pair fails to land we MUST put it back, exactly as
+    // cmdConnect/cmdSwap do via restoreEvicted. Without this a failed `pair` left BOTH
+    // slots empty — and since dropMacHostLink also kills the Mac's host link for 40-60s,
+    // `bose profile tv` (pair audikast+phone, and the Audikast can't be paged at all)
+    // silently took the user's audio away on every single invocation.
+    var evicted: [[UInt8]] = []
     if let st = transport.getDeviceStates(query: BoseDeviceMap.knownDevices.map { $0.mac }) {
         let held = st.active + st.connected
-        var evictedAny = false
         for m in held where !keep.contains(macString(m)) {
             _ = transport.oneShot(BMAP.disconnectDevice(mac: m))
             dropMacHostLink(m)      // the Mac is the usual occupant here — must drop host-side too
+            evicted.append(m)
             print("Evicted \(displayName(forMac: m)) to free a slot for the pair")
-            evictedAny = true
         }
-        if evictedAny { Thread.sleep(forTimeInterval: 0.8) }   // let the slots clear
+        if !evicted.isEmpty { Thread.sleep(forTimeInterval: 0.8) }   // let the slots clear
+    }
+
+    /// Put back everything we evicted, after the pair failed to land.
+    func restorePairEvicted() {
+        for m in evicted {
+            restoreMacHostLink(m)       // undo our own host-side drop before re-paging
+            _ = transport.oneShot(BMAP.connectDevice(mac: m))
+            print("Restored \(displayName(forMac: m)) (pair did not land)")
+        }
     }
 
     // Page the secondary first (settles held), then the primary (should become active).
@@ -751,9 +792,11 @@ func cmdPair(_ primary: String, _ secondary: String) {
     switch pOut {
     case .active: print("Paired: \(primary) (active) + \(secondary) (\(secNote))")
     case .idle:   print("Paired: \(primary) (connected, idle) + \(secondary) (\(secNote))")
-    case .none:   fail("pair: \(primary) did not connect (target asleep or off — and note a "
-                     + "transmitter like the Audikast is the INITIATOR: it may not answer an "
-                     + "inbound page at all, in which case free a slot and let it connect itself)")
+    case .none:
+        restorePairEvicted()
+        fail("pair: \(primary) did not connect (target asleep or off — and note a "
+           + "transmitter like the Audikast is the INITIATOR: it may not answer an "
+           + "inbound page at all, in which case free a slot and let it connect itself)")
     }
 }
 
