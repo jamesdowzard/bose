@@ -94,6 +94,10 @@ enum BMAP {
         return [0x04, 0x02, 0x05, 0x06] + mac
     }
 
+    static func getListDevices() -> [UInt8] {
+        return [0x04, 0x04, 0x01, 0x00]
+    }
+
     static func getDeviceInfo(mac: [UInt8]) -> [UInt8] {
         return [0x04, 0x05, 0x01, 0x06] + mac
     }

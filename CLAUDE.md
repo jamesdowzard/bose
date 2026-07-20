@@ -228,12 +228,29 @@ own MAC. Use `getConnectedDevices` (05,01) for audio-active devices and
 | mac | BC:D0:74:11:DB:27 | yes | MacBook |
 | ipad | F4:81:C4:B5:FA:AB | yes | |
 | iphone | F8:4D:89:C4:B6:ED | yes | |
-| tv | 14:C1:4E:B7:CB:68 | macOS only | Chromecast |
-| appletv | 48:E1:5C:5D:33:B6 | macOS + S21 in-app | Katrina's Apple TV 4K (label "Katrina's Apple TV"; `widget=false` → no home-screen widget) |
+| tv | 14:C1:4E:B7:CB:68 | macOS only | Chromecast. **⚠ NOT in the headphones' paired list** (04,04, verified 2026-07-20) — connects can only time out until it's paired |
+| appletv | 48:E1:5C:5D:33:B6 | macOS + S21 in-app | Katrina's Apple TV 4K (label "Katrina's Apple TV"; `widget=false` → no home-screen widget). **⚠ NOT in the headphones' paired list** (04,04, verified 2026-07-20) |
 | quest | 78:C4:FA:C8:5C:3D | yes | Meta Quest 3 |
 | audikast | 00:1D:43:B8:03:01 | macOS tile only | Avantree Audikast Plus BT transmitter (TV → headphones), Shenzhen G-link OUI. Lowest priority (evicted first); deliberately NOT in cycle_order (never cycle audio to a transmitter) |
 
 A device's optional `label` (devices.toml) is the friendly display name shared by the Mac app + S21 in-app tile; absent → fall back to the key.
+
+**`devices.toml` is a host-side map, NOT the headphones' pairing table — they drift.**
+The 04,04 ListDevices read on 2026-07-20 (fw 8.2.20) returned exactly 6 MACs — `phone`,
+`quest`, `audikast`, `ipad`, `mac`, `iphone` — with **`tv` and `appletv` absent**. Paging an
+unpaired device ACKs (op 0x07) and then silently never connects, which used to surface as an
+indistinguishable 20s timeout. `preflightPaired` now checks 04,04 BEFORE evicting or paging,
+so an unpaired target fails in ~1.5s with the real reason. It's a **preflight, not a post-hoc
+diagnosis**, deliberately: after a failed page the headphones stay busy and a fresh RFCOMM
+session reliably returns nil (the #132/#134 cold-second-session quirk), so the check has to
+run while the radio is quiet. It never blocks a connect when the list can't be read.
+
+**A transmitter (audikast) is the INITIATOR — you generally cannot page it.** Verified
+2026-07-20: the Audikast is correctly paired and its MAC is right, the headphones ACK the
+04,01 page (`04 01 07 06 001d43b80301`), and it then never appears in 05,01. `bose connect
+audikast` / a `pair` with it as primary therefore can't be relied on. The working shape is to
+**free a slot and let the transmitter connect itself**. (If it won't self-connect either, its
+side of the pairing is gone — re-pair from the transmitter.)
 
 **Connection priority** (`priority` in devices.toml; 1 = highest):
 `1 mac → 2 phone → 3 appletv → 4 ipad → 5 quest → 6 tv → 7 iphone → 8 audikast`.
@@ -258,13 +275,28 @@ it too**: pure victim selection in `android/.../Eviction.kt` (`evictionVictim`, 
 tested), held-state read via `Composites.getDeviceStates`, wired into `BoseService.switchDevice`
 (evict-then-page, restore on failure).
 
-**The Mac is a plain device — no host-side A2DP dance (2026-07-13).** `connect`/`swap`/
-`disconnect`/`pair`/eviction previously special-cased the Mac with a `blueutil --connect/
---disconnect` step (+ a 1.5s settle) to bring up the macOS-side A2DP link. That was removed —
-the Mac now goes through the exact same BMAP connect/disconnect as any other device (the
-headphones page it; macOS establishes A2DP on its side). This kills the blueutil-timing
-flakiness that made "connect Mac" unreliable, at the cost of relying on macOS to accept the
-page (verify on hardware). `isMacDevice`/`runBlueutil` are gone from the CLI.
+**The Mac is a plain device on the way IN, a special case on the way OUT (2026-07-20).**
+#147 stripped ALL Mac special-casing — both the `blueutil --connect` (+1.5s settle) and the
+`blueutil --disconnect` — on the theory that the headphones page the Mac and macOS brings up
+A2DP on its side. **That is true for connect and false for disconnect**, and the disconnect
+half was a regression (#157):
+
+- **Connect: BMAP only.** Dropping `--connect` genuinely fixed the blueutil-timing flakiness
+  that made "connect Mac" unreliable. Verified 2026-07-20 (`connect mac` = 3.8s). **Do not
+  reintroduce a host-side connect.**
+- **Disconnect: BMAP *plus* `blueutil --disconnect`.** A 04,02 only tells the HEADPHONES to
+  drop the Mac. macOS still holds them as a connected audio device and re-pages within
+  seconds, so the freed slot is reclaimed and anything that needed it (`pair`, `profile tv`,
+  eviction) races and loses. Measured on fw 8.2.20:
+
+  | after freeing the slot | result |
+  |---|---|
+  | `bose disconnect mac` (BMAP only) | Mac back as **ACTIVE sink within 30s** |
+  | + `blueutil --disconnect` (the fix) | Mac **stays off** (40-60s observed) |
+
+`isMacDevice` + `runBlueutil` are back, used ONLY on the disconnect/evict paths via
+`dropMacHostLink()` (`cmdDisconnect`, `evictLowestPriorityIfFull`, `cmdPair`'s evict loop).
+The asymmetry is deliberate — don't "tidy" it into symmetry in either direction.
 
 **Cycle order** (bose): `mac → quest → ipad → iphone → tv → appletv → phone`
 
@@ -275,7 +307,7 @@ page (verify on hardware). `isMacDevice`/`runBlueutil` are gone from the CLI.
 | Connect | **0x01** | Payload: `00` + 6-byte MAC = 7 bytes. Pages offline devices + routes audio. |
 | Disconnect | **0x02** | Payload: 6-byte MAC |
 | RemoveDevice | 0x03 | NEVER use — removes from paired list |
-| ListDevices | 0x04 | |
+| ListDevices | **0x04** | GET `04,04,01,00` → the headphones' OWN paired table: `04,04,03,<len>,<capacity=0x10>,{6-byte MAC}*`. **Ground truth for "is this device even paired?"** — `devices.toml` is a host-side map and drifts from it. `parsePairedDevices` (hand-written, variable-length) + `preflightPaired` in the connect path. |
 | Info | 0x05 | Status byte unreliable — cross-ref with getConnectedDevices |
 | PairingMode | 0x08 | |
 | ActiveDevice | 0x09 | Returns querying device, not necessarily streaming device |

@@ -20,6 +20,41 @@ import CoreBluetooth
 
 let RFCOMM_CHANNEL: BluetoothRFCOMMChannelID = 2  // SPP (BMAP) — resolved via SDP
 
+/// Run the blueutil CLI (IOBluetooth doesn't expose host-side A2DP link control).
+///
+/// **DISCONNECT DIRECTION ONLY.** #147 removed the full blueutil connect/disconnect
+/// "dance" on the theory that the Mac is a plain device — the headphones page it and
+/// macOS establishes A2DP on its side. That is TRUE for connect (and dropping the
+/// `--connect` + 1.5s settle genuinely fixed the "connect Mac" flakiness — do NOT
+/// reintroduce it). It is FALSE for disconnect: a BMAP 04,02 only tells the HEADPHONES
+/// to drop the Mac. macOS still has the headphones as a connected audio device and
+/// re-pages them within seconds, so the Mac reclaims the multipoint slot and any
+/// composite that needed that slot freed (`pair`, `profile tv`, eviction) loses the race.
+///
+/// Measured 2026-07-20 on fw 8.2.20 — after freeing the slot:
+///   `bose disconnect mac` (BMAP only)  → Mac back as ACTIVE sink within 30s
+///   `blueutil --disconnect`            → Mac stays off (60s observed)
+///
+/// So the host-side drop is restored for the Mac on the disconnect/evict paths only.
+@discardableResult
+func runBlueutil(_ args: [String], path: String = "/opt/homebrew/bin/blueutil") -> (Int32, String) {
+    let proc = Process()
+    proc.executableURL = URL(fileURLWithPath: path)
+    proc.arguments = args
+    let pipe = Pipe()
+    proc.standardOutput = pipe
+    proc.standardError = pipe
+    do {
+        try proc.run()
+        proc.waitUntilExit()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let out = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return (proc.terminationStatus, out)
+    } catch {
+        return (1, "")      // blueutil absent — BMAP-only disconnect is the graceful fallback
+    }
+}
+
 enum TransportError: Error, CustomStringConvertible {
     case deviceNotFound
     case connectionFailed(IOReturn)

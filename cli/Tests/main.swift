@@ -31,6 +31,38 @@ check(cd.count == 2, "connectedDevices: parses 2 MACs")
 check(cd.first ?? [] == [0xBC, 0xD0, 0x74, 0x11, 0xDB, 0x27], "connectedDevices: first MAC is mac")
 check(cd.last ?? [] == [0xA8, 0x76, 0x50, 0xD3, 0xB1, 0x1B], "connectedDevices: second MAC is phone")
 
+// ── parsePairedDevices (04,04) ──────────────────────────────────────────────────
+
+// EXACT live capture, fw 8.2.20, 2026-07-20. Header [04 04 RESP len], capacity byte
+// 0x10 at [4], then 6 MACs: phone, quest, audikast, ipad, mac, iphone.
+// NB tv (14:C1:4E:..) and appletv (48:E1:5C:..) are ABSENT — they're in devices.toml
+// but the headphones have never paired with them, which is what unpairedHint reports.
+let pairedList: [UInt8] = [
+    0x04, 0x04, 0x03, 0x25, 0x10,
+    0xA8, 0x76, 0x50, 0xD3, 0xB1, 0x1B,     // phone
+    0x78, 0xC4, 0xFA, 0xC8, 0x5C, 0x3D,     // quest
+    0x00, 0x1D, 0x43, 0xB8, 0x03, 0x01,     // audikast
+    0xF4, 0x81, 0xC4, 0xB5, 0xFA, 0xAB,     // ipad
+    0xBC, 0xD0, 0x74, 0x11, 0xDB, 0x27,     // mac
+    0xF8, 0x4D, 0x89, 0xC4, 0xB6, 0xED,     // iphone
+]
+let pd = parsePairedDevices(pairedList)
+check(pd.count == 6, "pairedDevices: parses all 6 MACs from the live capture")
+check(pd.first ?? [] == [0xA8, 0x76, 0x50, 0xD3, 0xB1, 0x1B], "pairedDevices: first is phone")
+check(pd.last ?? [] == [0xF8, 0x4D, 0x89, 0xC4, 0xB6, 0xED], "pairedDevices: last is iphone")
+// The two findings that motivated this parser:
+check(pd.contains([0x00, 0x1D, 0x43, 0xB8, 0x03, 0x01]), "pairedDevices: audikast IS paired")
+check(!pd.contains([0x14, 0xC1, 0x4E, 0xB7, 0xCB, 0x68]), "pairedDevices: tv is NOT paired")
+check(!pd.contains([0x48, 0xE1, 0x5C, 0x5D, 0x33, 0xB6]), "pairedDevices: appletv is NOT paired")
+
+// Wrong block/func, or too short to hold a MAC -> empty (never speculate).
+check(parsePairedDevices([0x05, 0x01, 0x03, 0x25, 0x10]).isEmpty, "pairedDevices: wrong block -> empty")
+check(parsePairedDevices([0x04, 0x04, 0x03, 0x01, 0x10]).isEmpty, "pairedDevices: no MACs -> empty")
+// Trailing partial MAC is dropped, not half-read.
+let ragged: [UInt8] = [0x04, 0x04, 0x03, 0x0B, 0x10,
+                       0xBC, 0xD0, 0x74, 0x11, 0xDB, 0x27, 0xAA, 0xBB]
+check(parsePairedDevices(ragged).count == 1, "pairedDevices: trailing partial MAC dropped")
+
 // Empty list (count 0).
 let zeroDevices: [UInt8] = [0x05, 0x01, 0x03, 0x01, 0x00, 0x00, 0x00]
 check(parseConnectedDevices(zeroDevices).isEmpty, "connectedDevices: count 0 -> empty")

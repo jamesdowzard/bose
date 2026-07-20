@@ -67,6 +67,10 @@ object BMAP {
         return intArrayOf(0x04, 0x02, 0x05, 0x06) + mac
     }
 
+    fun getListDevices(): IntArray {
+        return intArrayOf(0x04, 0x04, 0x01, 0x00)
+    }
+
     fun getDeviceInfo(mac: IntArray): IntArray {
         return intArrayOf(0x04, 0x05, 0x01, 0x06) + mac
     }

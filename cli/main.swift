@@ -48,6 +48,47 @@ func activeName(forMac mac: [UInt8]) -> String {
     BoseDeviceMap.name(forMac: mac) ?? "mac"
 }
 
+func isMacDevice(_ mac: [UInt8]) -> Bool {
+    BoseDeviceMap.mac("mac") == mac
+}
+
+/// Drop the macOS-side link when the device we just BMAP-disconnected is this Mac.
+///
+/// A BMAP 04,02 is headphone-side only: macOS still holds the headphones as a
+/// connected audio device and re-pages them within seconds, so the slot we thought
+/// we freed is reclaimed and `pair`/`profile`/eviction race and lose. See the note on
+/// `runBlueutil` for the measurement. Asymmetric by design — there is NO matching
+/// host-side `--connect`; #147 proved BMAP-only paging is the more reliable way IN.
+func dropMacHostLink(_ mac: [UInt8]) {
+    guard isMacDevice(mac) else { return }
+    runBlueutil(["--disconnect", Headphone.mac])
+}
+
+/// Preflight: refuse to page a device the HEADPHONES have never been paired with.
+///
+/// `devices.toml` is a host-side convenience map and drifts from the headset's own
+/// pairing table — verified live 2026-07-20: `tv` and `appletv` were both listed here
+/// and both ABSENT from the 04,04 list. Paging such a device ACKs and then never
+/// connects, so the user waited out a 20s poll for a result that was never possible.
+///
+/// Checked UP FRONT, not on the failure path, for a hard reason: after a failed page
+/// the headphones are still busy and a fresh RFCOMM session reliably returns nil (the
+/// same cold-second-session quirk as #132/#134 — measured here, the post-hoc read got
+/// `oneShot -> nil` every time). A diagnosis that can only run when the radio is quiet
+/// has to run BEFORE the noise. It also turns a 20s wait into an instant, accurate error
+/// and saves pointless radio traffic.
+///
+/// Silent no-op when the list can't be read — never block a connect on a failed
+/// diagnostic, and never speculate about a device we couldn't check.
+func preflightPaired(_ mac: [UInt8], _ deviceName: String) {
+    guard let resp = transport.oneShot(BMAP.getListDevices()) else { return }
+    let paired = parsePairedDevices(resp)
+    guard !paired.isEmpty, !paired.contains(mac) else { return }
+    fail("\(deviceName) is not in \(Headphone.name)'s paired list — it's in devices.toml, "
+       + "but the headphones have never been paired with it (or have forgotten it). "
+       + "Pair it from the device itself first; paging it can only time out.")
+}
+
 // MARK: - Commands
 
 /// Human-readable print of the cached snapshot — the no-ACL fallback for `status`
@@ -541,6 +582,7 @@ func evictLowestPriorityIfFull(target: [UInt8]) -> BoseDevice? {
             < effectiveRank($1.name, order: order, compiledPriority: $1.priority)
     }) else { return nil }
     _ = transport.oneShot(BMAP.disconnectDevice(mac: victim.mac))
+    dropMacHostLink(victim.mac)     // else macOS re-pages and reclaims the slot we just freed
     print("Evicted \(victim.name) (priority \(victim.priority)) to free a multipoint slot")
     Thread.sleep(forTimeInterval: 0.8)           // let the slot clear before paging the target
     return victim
@@ -555,6 +597,7 @@ func restoreEvicted(_ victim: BoseDevice, failedTarget: String) {
 /// connect / c <device> — poll-confirm via getConnectedDevices (ACK is NOT success).
 func cmdConnect(_ deviceName: String) {
     let mac = macForName(deviceName)
+    preflightPaired(mac, deviceName)     // don't evict a slot for a device that can't answer
     let evicted = evictLowestPriorityIfFull(target: mac)
 
     _ = transport.oneShot(BMAP.connectDevice(mac: mac), timeout: 5.0)
@@ -574,6 +617,7 @@ func cmdConnect(_ deviceName: String) {
 /// "Disconnect others" — it never disconnected anything; corrected here + in usage.)
 func cmdSwap(_ targetName: String) {
     let mac = macForName(targetName)
+    preflightPaired(mac, targetName)
     let evicted = evictLowestPriorityIfFull(target: mac)
 
     _ = transport.oneShot(BMAP.connectDevice(mac: mac), timeout: 5.0)
@@ -636,6 +680,7 @@ func cmdDisconnect(_ deviceName: String) {
     let mac = macForName(deviceName)
 
     _ = transport.oneShot(BMAP.disconnectDevice(mac: mac))
+    dropMacHostLink(mac)            // headphone-side drop alone doesn't stop macOS re-paging
 
     print("Disconnected \(deviceName)")
 }
@@ -675,6 +720,10 @@ func cmdPair(_ primary: String, _ secondary: String) {
     let pMac = macForName(primary)
     let sMac = macForName(secondary)
     if macString(pMac) == macString(sMac) { fail("pair needs two different devices") }
+    // Check BOTH before evicting anything — a pair that can't land shouldn't cost the
+    // user the slots they already had.
+    preflightPaired(pMac, primary)
+    preflightPaired(sMac, secondary)
     let keep = Set([macString(pMac), macString(sMac)])
 
     // Evict everything that isn't the intended pair so both slots are free for them.
@@ -683,6 +732,7 @@ func cmdPair(_ primary: String, _ secondary: String) {
         var evictedAny = false
         for m in held where !keep.contains(macString(m)) {
             _ = transport.oneShot(BMAP.disconnectDevice(mac: m))
+            dropMacHostLink(m)      // the Mac is the usual occupant here — must drop host-side too
             print("Evicted \(displayName(forMac: m)) to free a slot for the pair")
             evictedAny = true
         }
@@ -701,7 +751,9 @@ func cmdPair(_ primary: String, _ secondary: String) {
     switch pOut {
     case .active: print("Paired: \(primary) (active) + \(secondary) (\(secNote))")
     case .idle:   print("Paired: \(primary) (connected, idle) + \(secondary) (\(secNote))")
-    case .none:   fail("pair: \(primary) did not connect (target asleep, or a device is re-grabbing the slot — power it off)")
+    case .none:   fail("pair: \(primary) did not connect (target asleep or off — and note a "
+                     + "transmitter like the Audikast is the INITIATOR: it may not answer an "
+                     + "inbound page at all, in which case free a slot and let it connect itself)")
     }
 }
 

@@ -303,6 +303,23 @@ disconnect_mac = "04 02 05 06 BC D0 74 11 DB 27"
 [commands.disconnect_device.test_args]
 disconnect_mac = { mac = "BC:D0:74:11:DB:27" }
 
+[commands.list_devices]
+block = 0x04
+function = 0x04
+summary = "GET the headphones' OWN paired-device table. Ground truth for 'is this device even paired?' — distinct from the host-side devices.toml map, which drifts."
+# Response `04,04,03,<len>,<capacity>,{6-byte MAC}*`; capacity byte = 0x10 (16 slots).
+# Decoded by the hand-written parsePairedDevices (variable-length list, like
+# connected_devices), so the response side is NOT codegen'd — only the request is.
+
+[commands.list_devices.get]
+operator = "GET"
+payload = []
+
+[commands.list_devices.verified_bytes]
+# `04,04,01,00` — captured live 2026-07-20, fw 8.2.20. Response held 6 MACs:
+# phone, quest, audikast, ipad, mac, iphone (tv + appletv were ABSENT).
+get = "04 04 01 00"
+
 [commands.device_info]
 block = 0x04
 function = 0x05

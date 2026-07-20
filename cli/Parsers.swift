@@ -54,6 +54,30 @@ func parseConnectedDevices(_ resp: [UInt8]) -> [[UInt8]] {
     return devices
 }
 
+/// Parse 04,04 ListDevices RESP → the MACs the HEADPHONES themselves have paired.
+///
+/// This is the headphones' own pairing table, which is NOT the same thing as our
+/// `devices.toml` map — devices.toml is a host-side convenience list and can contain
+/// entries the headset has never been paired with (or has since forgotten). Paging
+/// such a device ACKs and then silently never connects, which reads as a 20s hang.
+/// Used to turn that into an accurate error.
+///
+/// Frame: `04 04 03 <len> <capacity> {6-byte MAC}*`
+/// Live capture (fw 8.2.20, 2026-07-20):
+///   0404032510 a87650d3b11b 78c4fac85c3d 001d43b80301 f481c4b5faab bcd07411db27 f84d89c4b6ed
+/// payload[0] = 0x10 (16 = max pairing slots), then 6 MACs — count is derived from
+/// the remaining length, not from that byte.
+func parsePairedDevices(_ resp: [UInt8]) -> [[UInt8]] {
+    guard resp.count >= 5, resp[0] == 0x04, resp[1] == 0x04, resp[2] == OP_RESP_BYTE else { return [] }
+    let macBytes = Array(resp.dropFirst(5))
+    guard macBytes.count >= 6 else { return [] }
+    var devices: [[UInt8]] = []
+    for offset in stride(from: 0, to: macBytes.count - 5, by: 6) {
+        devices.append(Array(macBytes[offset..<(offset + 6)]))
+    }
+    return devices
+}
+
 /// The 5-byte AudioModes SettingsConfig tuple (1F,0A RESP): payload from byte 4.
 struct CncConfig: Equatable {
     var level: UInt8        // 0-10
