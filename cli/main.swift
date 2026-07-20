@@ -10,9 +10,9 @@
 /// Shared files compiled into this binary:
 ///   protocol/generated/BMAP.generated.swift   — wire builders + enums
 ///   protocol/generated/Devices.generated.swift — headphone MAC + device map
-///   macos/BoseControl/Transport.swift          — IOBluetooth RFCOMM transport
-///   macos/BoseControl/Parsers.swift            — pure response decoders
-///   macos/BoseControl/Composites.swift         — connectedDevices / cncLevel / getAllState
+///   cli/Transport.swift                        — IOBluetooth RFCOMM transport
+///   cli/Parsers.swift                          — pure response decoders
+///   cli/Composites.swift                       — connectedDevices / cncLevel / getAllState
 
 import Foundation
 

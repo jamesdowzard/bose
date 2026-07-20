@@ -46,13 +46,21 @@ bose devices              Known devices: ● active / ○ connected / · offline
 bose connect <device>     Route audio to device (poll-confirmed)
 bose disconnect <device>  Disconnect a device
 bose swap <device>        Route audio to device (multipoint; keeps others)
-bose anc [mode]           Get/set ANC (quiet/aware/custom1/custom2)
+bose anc [mode]           Get/set ANC (quiet/aware/immersion/cinema/custom1/custom2, or slot 0-5)
 bose anc-level [0-10]     Get/set active mode noise level (0=max cancel … 10=transparent; custom modes only)
 bose name [new name]      Get/set headphone name (max 30 UTF-8 bytes)
 bose volume [0-31]        Get/set volume
 bose multipoint [on|off]  Get/set multipoint
 bose play|pause|next|prev Media transport
 bose eq [bass mid treble] Get/set EQ (each -10 to +10)
+bose spatial [off|still|motion]  Get/set Immersive Audio on the active mode (custom modes only)
+bose mode-name [--slot 4|5] [name]  Rename a custom mode slot in place
+bose pair <primary> <secondary>  Connect exactly that multipoint pair
+bose priority [--set n… | --clear]  Show/set the runtime eviction order
+bose auto-pause [on|off]  Get/set pause-on-removal (blank = read)
+bose auto-answer [on|off] Get/set answer-on-donning (blank = read)
+bose favorites            Show favourited mode slots (display-only)
+bose presence [--json]    Passive BLE scan — is verBosita on and nearby? (sends nothing)
 bose profile [name]       Apply a preset (bare = list); save <name> / rm <name>
 bose raw <hex>            Send raw BMAP bytes
 ```
@@ -60,8 +68,10 @@ bose raw <hex>            Send raw BMAP bytes
 ## Profiles
 
 A profile is a named bundle of settings — ANC mode, noise level, EQ, multipoint, volume —
-applied in one RFCOMM session. They live in `profiles.json` (versioned, hand-editable);
-ships with `flight`, `office`, `music`. A profile only sets the fields it defines.
+applied in one RFCOMM session, plus an optional `pair: [primary, secondary]` that reroutes the
+multipoint slots **first**, before any settings. They live in `profiles.json` (versioned,
+hand-editable); ships with `flight`, `office`, `music`, and `tv` (a pair-only profile). A
+profile only sets the fields it defines.
 
 ```bash
 bose profile                 # list
@@ -78,12 +88,15 @@ The cardinal rule is **no background polling of the headphones**. These hooks fi
 keypress or an OS event, then make one on-demand `bose` call.
 
 **Hammerspoon** (`hammerspoon/bose.lua`, reload Hammerspoon after editing):
-- `Opt+B` — show/hide the Bose app (press once to open/focus, again to hide) — switch devices/ANC/EQ from its tiles.
-- `Opt+⇧B` — toggle audio Mac ↔ phone (also warns if battery ≤ 20%, piggybacking the press).
-- `Opt+N` — cycle ANC quiet → aware → immersion.
-- `Opt+J` — bring the headphones to this Mac (always connects the Mac, no direction-guessing).
-- Launching a call app (Teams / Zoom / Meet) switches ANC to aware. Edit `AWARE_ON_LAUNCH`
-  / the chords at the top of `bose.lua` to taste.
+- `Opt+B` — show/hide the Bose app (press once to open/focus, again to hide) — switch devices/ANC/EQ from its tiles. **This is the only bound hotkey** as of 2026-06-20.
+- `Opt+⇧B` (Mac ↔ phone), `Opt+N` (cycle ANC), `Opt+I` (cycle Immersive Audio), `Opt+J` (connect → Mac)
+  remain in the file but are **commented out in `start()`** — everything else is driven from the
+  Bose app. Re-enabling any is a one-line uncomment + reload.
+- Two OS-event behaviours, no hotkey and no polling: the battery is **spoken** through the
+  headphones when they become the Mac output (`ANNOUNCE_BATTERY`), and launching a call app
+  (Teams/Zoom/FaceTime/Slack/Webex) routes the Mac's **input** to the MacBook mic — the Bose is
+  never allowed to be the system input, since its over-ear mics make callers hear the room
+  (`AUTO_ROUTE_ON_CALL` / `CALL_APPS`). Neither touches ANC.
 
 **macOS Focus → Shortcuts** (drive profiles from Focus modes, zero polling):
 1. Shortcuts app → new shortcut "Bose Office" → **Run Shell Script**: `~/bin/bose profile office`.
