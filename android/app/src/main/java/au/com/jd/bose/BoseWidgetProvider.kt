@@ -44,6 +44,23 @@ class BoseWidgetProvider : AppWidgetProvider() {
         private const val COLOR_BATTERY_MID = 0xFFAF3A03.toInt()  // burnt-orange, <= 30
         private const val COLOR_BATTERY_OK = 0xFF6E6A5E.toInt()   // secondary grey, healthy
         private const val PREFS_NAME = "bose_ctl"
+        // Provenance of the painted snapshot, so a system-triggered onUpdate repaint
+        // (which has no caller to tell it) can still say "this is last-known, not live".
+        private const val KEY_SNAPSHOT_STALE = "snapshot_stale"
+        private const val KEY_SNAPSHOT_AT = "snapshot_at"
+
+        /**
+         * Battery chip text. A cached snapshot carries a "· Xm" age suffix so an
+         * hours-old paint can never read as live — same staleness vocabulary as the
+         * in-app banner and the Mac (`StateCache.ageText`). Pure: unit-tested.
+         */
+        internal fun batteryText(batteryLevel: Int, staleAgeSeconds: Int?): String =
+            if (staleAgeSeconds == null) "${batteryLevel}%"
+            else "${batteryLevel}% · ${StateCache.ageText(staleAgeSeconds)}"
+
+        /** Age of a persisted snapshot at paint time. Pure: unit-tested. */
+        internal fun snapshotAge(snapshotAtMs: Long, nowMs: Long): Int =
+            ((nowMs - snapshotAtMs) / 1000).coerceAtLeast(0).toInt()
 
         fun updateAll(
             context: Context,
@@ -59,6 +76,10 @@ class BoseWidgetProvider : AppWidgetProvider() {
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
                 .putString("active_device", activeDevice)
                 .putStringSet("connected_devices", connectedDevices)
+                .putBoolean(KEY_SNAPSHOT_STALE, staleAgeSeconds != null)
+                // Store WHEN the data was true, not when we painted it, so a later
+                // repaint recomputes a current age instead of replaying a frozen one.
+                .putLong(KEY_SNAPSHOT_AT, System.currentTimeMillis() - (staleAgeSeconds ?: 0) * 1000L)
                 .apply {
                     if (batteryLevel >= 0) putInt("battery_level", batteryLevel)
                 }
@@ -127,7 +148,7 @@ class BoseWidgetProvider : AppWidgetProvider() {
             }
 
             if (batteryLevel >= 0) {
-                views.setTextViewText(R.id.txt_battery, "${batteryLevel}%")
+                views.setTextViewText(R.id.txt_battery, batteryText(batteryLevel, staleAgeSeconds))
                 views.setTextColor(R.id.txt_battery, when {
                     batteryLevel <= 15 -> COLOR_BATTERY_LOW
                     batteryLevel <= 30 -> COLOR_BATTERY_MID
@@ -143,9 +164,14 @@ class BoseWidgetProvider : AppWidgetProvider() {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val activeDevice = prefs.getString("active_device", null)
         val connectedDevices = prefs.getStringSet("connected_devices", emptySet()) ?: emptySet()
+        // The persisted snapshot was either live or cached when it was written; if cached,
+        // re-age it now rather than repainting it as if it were fresh.
+        val staleAgeSeconds = if (prefs.getBoolean(KEY_SNAPSHOT_STALE, false)) {
+            snapshotAge(prefs.getLong(KEY_SNAPSHOT_AT, System.currentTimeMillis()), System.currentTimeMillis())
+        } else null
 
         for (id in widgetIds) {
-            updateWidget(context, manager, id, activeDevice, connectedDevices)
+            updateWidget(context, manager, id, activeDevice, connectedDevices, staleAgeSeconds)
         }
 
         // Refresh status from headphones

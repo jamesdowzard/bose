@@ -5,12 +5,13 @@ import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothSocket
 import android.util.Log
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.UUID
+import java.util.concurrent.Executors
 import java.util.concurrent.locks.ReentrantLock
 
 /**
@@ -39,12 +40,25 @@ object Transport {
         get() = BluetoothAdapter.getDefaultAdapter()
 
     private val rfcommLock = ReentrantLock()
+
+    /**
+     * Single thread for the coroutine side of the transport. `rfcommLock` is thread-owned
+     * (`disconnect()` only unlocks `isHeldByCurrentThread`), so `connect()` and its matching
+     * `disconnect()` MUST run on the same thread. `Dispatchers.IO` is a pool and can resume a
+     * suspended block on a different thread, which would strand the lock held forever — and
+     * now that BoseService blocks on it rather than bypassing it, a stranded lock would hang
+     * the service permanently. One thread makes the pairing structural, not incidental.
+     */
+    private val rfcommDispatcher =
+        Executors.newSingleThreadExecutor { r -> Thread(r, "bose-rfcomm") }.asCoroutineDispatcher()
     private var socket: BluetoothSocket? = null
     private var inputStream: InputStream? = null
     private var outputStream: OutputStream? = null
 
-    val isConnected: Boolean
-        get() = socket?.isConnected == true
+    // Deliberately NO public `isConnected`. "A socket is open" is not "this thread owns
+    // the channel", and every caller that wanted the former actually needed the latter —
+    // gating on it let one thread reuse and then close another's socket. Acquire via
+    // connect()/withConnection() and let the lock arbitrate.
 
     /** The Bose BluetoothDevice (for A2DP insurance), MAC from the generated map. */
     @SuppressLint("MissingPermission")
@@ -119,7 +133,7 @@ object Transport {
      * On-demand connection pattern: connect, run block, disconnect. Each command gets
      * a fresh RFCOMM socket. connect() acquires rfcommLock; disconnect() releases it.
      */
-    suspend fun <T> withConnection(block: suspend () -> T): T = withContext(Dispatchers.IO) {
+    suspend fun <T> withConnection(block: suspend () -> T): T = withContext(rfcommDispatcher) {
         if (!connect()) throw IOException("Cannot connect to headphones")
         try {
             block()

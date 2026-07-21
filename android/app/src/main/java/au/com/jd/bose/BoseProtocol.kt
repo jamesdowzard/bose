@@ -20,7 +20,6 @@ object BoseProtocol {
 
     // ── Transport delegation (kept for call-site compatibility) ─────────────────
 
-    val isConnected: Boolean get() = Transport.isConnected
     fun connect(): Boolean = Transport.connect()
     fun disconnect() = Transport.disconnect()
     suspend fun <T> withConnection(block: suspend () -> T): T = Transport.withConnection(block)
@@ -45,34 +44,40 @@ object BoseProtocol {
 
     // ── ANC ──────────────────────────────────────────────────────────────────────
 
-    /**
-     * UI-facing ANC mode (label-carrying). Wire values are the real hardware slots
-     * (verBosita, fw 8.2.20, #91): 0 Quiet, 1 Aware, 2 Immersion, 3 Cinema (all fixed),
-     * 4/5 the adjustable custom slots whose noise level `anc-level` (1F,06) can set.
-     * Keep in sync with generated `AncMode` (custom1=4, custom2=5). `off` (255) is
-     * decode-only and intentionally NOT a settable mode/button.
-     */
-    enum class AncMode(val value: Int, val label: String) {
-        QUIET(0, "Quiet"),
-        AWARE(1, "Aware"),
-        IMMERSION(2, "Immersion"),
-        CINEMA(3, "Cinema"),
-        CUSTOM1(4, "Custom 1"),
-        CUSTOM2(5, "Custom 2");
+    // ANC modes bind to the GENERATED `AncMode` (from bmap.toml) — there is deliberately
+    // no hand-written copy. The old local enum omitted `off = 255`, which the spec has
+    // declared all along, and its `fromInt` fell back to QUIET on an unknown value: ANC
+    // genuinely disabled (255) rendered as "Quiet" and lit the Quiet button. Binding to
+    // the generated enum means a spec change can't silently miss Android.
 
-        companion object {
-            fun fromInt(v: Int): AncMode = entries.find { it.value == v } ?: QUIET
-        }
+    /** Wire value -> mode, or null when the firmware reports a slot we don't know. */
+    fun ancModeFromInt(v: Int): AncMode? = AncMode.entries.find { it.v == v }
+
+    /**
+     * Display label. Exhaustive `when` on purpose — adding a mode to bmap.toml then
+     * breaks this build rather than shipping an unlabelled button.
+     */
+    fun ancModeLabel(mode: AncMode): String = when (mode) {
+        AncMode.QUIET -> "Quiet"
+        AncMode.AWARE -> "Aware"
+        AncMode.IMMERSION -> "Immersion"
+        AncMode.CINEMA -> "Cinema"
+        AncMode.CUSTOM1 -> "Custom 1"
+        AncMode.CUSTOM2 -> "Custom 2"
+        AncMode.OFF -> "Off"
     }
+
+    /** The six selectable hardware slots. OFF (255) is a decode-only state, never a button. */
+    val settableAncModes: List<AncMode> = AncMode.entries.filter { it != AncMode.OFF }
 
     fun getAncMode(): AncMode? {
         val resp = Transport.send(BMAP.getAncMode()) ?: return null
-        if (resp.size >= 5 && resp[2] == OP_RESP) return AncMode.fromInt(resp[4])
+        if (resp.size >= 5 && resp[2] == OP_RESP) return ancModeFromInt(resp[4])
         return null
     }
 
     fun setAncMode(mode: AncMode): Boolean =
-        Transport.send(BMAP.setAncMode(mode.value)).isAccepted()
+        Transport.send(BMAP.setAncMode(mode.v)).isAccepted()
 
     // ── Volume ─────────────────────────────────────────────────────────────────
 
@@ -89,18 +94,25 @@ object BoseProtocol {
 
     // ── Media controls ───────────────────────────────────────────────────────────
 
-    enum class MediaAction(val value: Int) { PLAY(1), PAUSE(2), NEXT(3), PREV(4) }
+    // Media actions bind to the GENERATED `MediaAction` — the local copy that shadowed it
+    // is gone for the same reason as AncMode: codegen should be the only place the wire
+    // values live.
+
+    fun mediaActionFromInt(v: Int): MediaAction? = MediaAction.entries.find { it.v == v }
 
     fun mediaControl(action: MediaAction): Boolean =
-        Transport.send(BMAP.mediaControl(action.value)).isAccepted()
+        Transport.send(BMAP.mediaControl(action.v)).isAccepted()
 
     // ── Multipoint ───────────────────────────────────────────────────────────────
 
     fun getMultipoint(): Boolean? {
         val resp = Transport.send(BMAP.getMultipoint()) ?: return null
-        // Wire values are 07=on / 00=off. Use `!= 0` to match Parsers.parseAllState
-        // and macOS Parsers.swift (both treat any non-zero byte as enabled).
-        if (resp.size >= 5 && resp[2] == OP_RESP) return resp[4] != 0x00
+        // The RESPONSE byte is a BITFIELD, not a bool: bit 0 is the enable flag, the
+        // higher bits are slot flags the firmware retains. fw 8.2.20 reports multipoint
+        // off as 0x06, on as 0x07 — so the old `!= 0` here reported OFF as ON (#83).
+        // Mask bit 0 via the shared pure parser, matching Parsers.parseAllState and
+        // macOS `parseMultipointEnabled` (cli/Parsers.swift).
+        if (resp.size >= 5 && resp[2] == OP_RESP) return Parsers.parseMultipointEnabled(resp[4])
         return null
     }
 
@@ -146,8 +158,10 @@ object BoseProtocol {
 
     // ── EQ (SET_GET; band: 0=bass 1=mid 2=treble, value -10..+10) ─────────────────
 
-    data class EqBand(val id: Int, val value: Int)
-    data class EqSettings(val bass: EqBand, val mid: EqBand, val treble: EqBand)
+    /** One band's reading from a GET. Named `EqReading` so it can't shadow the generated
+     *  `EqBand` enum (BASS/MID/TREBLE) — this carries the band id + its signed value. */
+    data class EqReading(val id: Int, val value: Int)
+    data class EqSettings(val bass: EqReading, val mid: EqReading, val treble: EqReading)
 
     fun setEqBand(band: Int, value: Int): Boolean {
         if (band !in 0..2 || value !in -10..10) return false
@@ -168,7 +182,7 @@ object BoseProtocol {
     fun getEq(): EqSettings? {
         val resp = Transport.send(BMAP.getEqBand()) ?: return null
         if (resp.size < 16 || resp[2] != OP_RESP) return null
-        fun band(valueIdx: Int) = EqBand(resp[valueIdx - 1], resp[valueIdx].toByte().toInt())
+        fun band(valueIdx: Int) = EqReading(resp[valueIdx - 1], resp[valueIdx].toByte().toInt())
         return EqSettings(band(6), band(10), band(14))
     }
 

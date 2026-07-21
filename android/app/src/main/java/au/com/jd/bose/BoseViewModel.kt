@@ -3,6 +3,7 @@ package au.com.jd.bose
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,7 +22,9 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
         // Dashboard
         val batteryLevel: Int = -1,
         val batteryCharging: Boolean = false,
-        val ancMode: BoseProtocol.AncMode = BoseProtocol.AncMode.QUIET,
+        // null = not read yet / firmware reported a slot we don't know. Never defaulted to
+        // QUIET: that made "ANC off" (255) and "never read" both light the Quiet button.
+        val ancMode: AncMode? = null,
         val firmwareVersion: String = "",
         val deviceName: String = "",
 
@@ -87,8 +90,16 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
 
+    /**
+     * Every launch here is `Dispatchers.IO`, never the viewModelScope default (Main).
+     * The work before `withConnection` blocks: `SlotGate.awaitHoldsSlot` spins on
+     * `Thread.sleep(25)` for up to 700 ms waiting for the A2DP proxy to bind, and
+     * `StateCache.load` hits SharedPrefs. On Main that froze a cold app open for most of
+     * a second before the first frame. State lands via `MutableStateFlow`, which is
+     * thread-safe and Compose collects on Main regardless.
+     */
     fun refreshAll(forceLive: Boolean = false) {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             _state.value = _state.value.copy(loading = true, error = null)
             // Cached-first: with neither slot held, an RFCOMM read would page the
             // headphones — paint the cached snapshot instead (instant, zero radio).
@@ -181,7 +192,7 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun switchDevice(name: String) {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             _state.value = _state.value.copy(loading = true, error = null)
             try {
                 val mac = BoseDeviceMap.mac(name)?.toIntArray() ?: run {
@@ -214,7 +225,7 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
         action: suspend () -> Unit,
         onSuccess: () -> Unit = {},
     ) {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 BoseProtocol.withConnection { action() }
                 onSuccess()
@@ -231,8 +242,8 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
      * slider stayed stale until a manual Refresh (#96). Falls back to the optimistic
      * `ancMode` copy if the config read is unreachable.
      */
-    fun setAncMode(mode: BoseProtocol.AncMode) {
-        viewModelScope.launch {
+    fun setAncMode(mode: AncMode) {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 val cfg = BoseProtocol.withConnection {
                     BoseProtocol.setAncMode(mode)

@@ -91,15 +91,15 @@ explicit user action.
 ### Android (`android/`) — regenerated protocol on the kept architecture
 - `android/` -- Jetpack Compose app (package: `au.com.jd.bose`)
 - Protocol wire layer is GENERATED: `app/src/generated/java/au/com/jd/bose/BMAP.generated.kt` (from `bmap.toml`) + `Devices.generated.kt` (device map / headphone MAC from `devices.toml`). Refresh with `cd protocol && make gen` then `cd android && ./gradlew copyGeneratedProtocol` (the committed copies are the build inputs — do-not-edit banner)
-- `Transport.kt` -- RFCOMM transport (per-command open/drain-300ms/close, `ReentrantLock`, cold-start). Sends the `IntArray` frames the generated builders produce
+- `Transport.kt` -- RFCOMM transport (per-command open/drain-300ms/close, `ReentrantLock`, cold-start). Sends the `IntArray` frames the generated builders produce. **The lock is THREAD-OWNED** (`disconnect()` only unlocks `isHeldByCurrentThread`), so `withConnection` is pinned to a dedicated single-thread dispatcher (`bose-rfcomm`) — on a pool like `Dispatchers.IO` a coroutine that resumed on a different thread would silently fail to release and strand the channel forever. **Never gate channel acquisition on socket state**: `ensureConnected()` used to short-circuit on an `isConnected` accessor, which answers "a socket is open" and NOT "this thread owns it" — so a system-triggered widget refresh could interleave frames onto the app's open session and then close it mid-read. It now always goes through `connect()` and lets the lock arbitrate; the `isConnected` accessor was deleted so the shortcut can't be reintroduced (2026-07-20).
 - `Composites.kt` -- live-channel composites (connectDevice poll-confirm, cnc_level RMW, connected_devices list, getAllState) — same escape-hatch split as macOS
-- `Parsers.kt` -- pure, hardware-free response parsers (JVM-unit-tested in `app/src/test/`, against the same captured bytes as macOS `Parsers.swift`)
-- `BoseProtocol.kt` -- thin command facade: builds non-composite frames via generated `BMAP.*`, decodes responses. NO hand-written frame builders
+- `Parsers.kt` -- pure, hardware-free response parsers (JVM-unit-tested in `app/src/test/`, against the same captured bytes as macOS `Parsers.swift`). `parseMultipointEnabled` is the ONE masked decode (`& 0x01`) shared by `parseAllState` and `BoseProtocol.getMultipoint` — both previously used `!= 0` independently and both misread the 0x06 off-with-slot-bits value (#83, fixed 2026-07-20). `resp()` also requires the response's block/func to match the command it was issued for, so a late frame in the ~18-GET bulk session can't be decoded as the wrong field.
+- `BoseProtocol.kt` -- thin command facade: builds non-composite frames via generated `BMAP.*`, decodes responses. NO hand-written frame builders **and no hand-written protocol enums** — `AncMode`/`MediaAction` bind to the generated ones (the shadowing hand-written `AncMode` had no OFF case and mapped 255 → QUIET, so a disabled-ANC headset read as "Quiet" on the phone; deleted 2026-07-20). `ancModeFromInt` returns null on an unknown slot rather than defaulting, and `ancModeLabel` is an exhaustive `when` so adding a mode to `bmap.toml` breaks the build instead of shipping an unlabelled button.
 - `A2dpReflection.kt` -- the ONE isolated home for the hidden-API `BluetoothA2dp.connect()` reflection (phone-only insurance; don't expand)
 - `SlotGate.kt` -- does THIS phone hold a multipoint slot? Public-API A2DP-proxy connected-list check (zero radio) — the Android sibling of the Mac's `isHeadphoneConnected()`. null = unknown → allow live (never worse than pre-gate).
 - `StateCache.kt` -- timestamped last-good snapshot (SharedPrefs) — Android sibling of the Mac state cache (#148). Saved on every successful live refresh (service AND ViewModel); served when the phone holds no slot. `ageText` pure + JVM-tested (`StateCacheTest`).
 - `BoseService` -- foreground service (RFCOMM commands; phone-only A2DP nudge; notification media controls play/pause/next/prev). `refreshStatus()` is **cached-first**: no slot → cached broadcast (`EXTRA_REACHABLE`/`EXTRA_AGE_SECONDS`) + widget repaint with a "· Xm" battery-age suffix, NO RFCOMM; `EXTRA_FORCE_LIVE` overrides. The widget's `onUpdate` refresh therefore never pages the headphones.
-- `BoseWidgetProvider` -- home screen widget (button set derives from `BoseDeviceMap.widgetDevices` — tv is macOS-only, never a widget button)
+- `BoseWidgetProvider` -- home screen widget (button set derives from `BoseDeviceMap.widgetDevices` — tv is macOS-only, never a widget button). The battery's "· Xm" staleness suffix is `batteryText()`, formatting via the shared `StateCache.ageText` so widget / in-app banner / Mac all speak one vocabulary. It also persists `snapshot_stale` + `snapshot_at` (stamped as *when the data was true*) and re-ages via `snapshotAge()` in `onUpdate` — a system-triggered repaint reads SharedPrefs with no caller to tell it the provenance, so without that the suffix only appeared on the service-driven paint and a cached snapshot still rendered as a bare `%`.
 - `BoseTileService` -- Quick Settings tile (shows active source)
 - `DevicePickerActivity` -- dialog launched from QS tile
 - `BootReceiver` -- auto-start service on boot
@@ -286,7 +286,15 @@ primary active). The order is host-side only — never pushed to the headphones 
 priority hierarchy). **Android now replicates
 it too**: pure victim selection in `android/.../Eviction.kt` (`evictionVictim`, JVM-unit-
 tested), held-state read via `Composites.getDeviceStates`, wired into `BoseService.switchDevice`
-(evict-then-page, restore on failure).
+(evict-then-page, restore on failure). **The local phone is excluded from victim selection**
+(`localDeviceName`, default `"phone"`) — Android differs from the Mac here because the app runs
+*on* one of the two slots it arbitrates. `phone` is priority 2 and `mac` is 1, so with the
+everyday `{mac, phone}` pair held, plain victim selection chose THIS PHONE for any third target;
+BMAP-disconnecting it drops the ACL its own RFCOMM socket rides on, so the switch self-destructed
+mid-flight and the restore then no-op'd on a dead socket. Not a host-side-disconnect problem —
+do NOT add the Mac's `dropMacHostLink` equivalent here. (Fixed 2026-07-20; `EvictionTest` had
+been asserting the buggy `{mac,phone}+ipad → evict phone` behaviour, so the suite was defending
+the regression.)
 
 **The Mac is a plain device on the way IN, a special case on the way OUT (2026-07-20).**
 #147 stripped ALL Mac special-casing — both the `blueutil --connect` (+1.5s settle) and the

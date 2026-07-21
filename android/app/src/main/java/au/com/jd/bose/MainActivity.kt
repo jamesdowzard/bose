@@ -511,7 +511,7 @@ fun DashboardCard(state: BoseViewModel.UiState) {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                InfoChip("ANC", state.ancMode.label)
+                InfoChip("ANC", state.ancMode?.let { BoseProtocol.ancModeLabel(it) } ?: "—")
                 if (state.firmwareVersion.isNotEmpty()) {
                     InfoChip("FW", state.firmwareVersion)
                 }
@@ -620,13 +620,13 @@ fun DevicesSection(
 @Composable
 fun AncSection(
     state: BoseViewModel.UiState,
-    onSetAnc: (BoseProtocol.AncMode) -> Unit,
+    onSetAnc: (AncMode) -> Unit,
 ) {
     // Six hardware slots (Quiet/Aware/Immersion/Cinema fixed, C1/C2 adjustable) laid out
     // 3-per-row so the longer labels fit on a phone. The customs (slots 4/5) are what the
     // Noise Level slider needs — they were unreachable while this enum mislabelled 2/3.
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        BoseProtocol.AncMode.entries.chunked(3).forEach { rowModes ->
+        BoseProtocol.settableAncModes.chunked(3).forEach { rowModes ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -636,9 +636,9 @@ fun AncSection(
                     // Custom slots show their stored on-device name when set (via `mode-name`),
                     // falling back to C1/C2. Other modes use the enum label.
                     val label = when (mode) {
-                        BoseProtocol.AncMode.CUSTOM1 -> state.custom1Name.ifEmpty { "C1" }
-                        BoseProtocol.AncMode.CUSTOM2 -> state.custom2Name.ifEmpty { "C2" }
-                        else -> mode.label
+                        AncMode.CUSTOM1 -> state.custom1Name.ifEmpty { "C1" }
+                        AncMode.CUSTOM2 -> state.custom2Name.ifEmpty { "C2" }
+                        else -> BoseProtocol.ancModeLabel(mode)
                     }
                     Surface(
                         modifier = Modifier
