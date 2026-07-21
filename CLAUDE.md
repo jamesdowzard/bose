@@ -97,9 +97,9 @@ explicit user action.
 - The Swift core here and the Kotlin app share one protocol source (`protocol/spec/` → `generated/`), so they can't drift on wire encoding.
 
 ### Protocol (`protocol/`) — the single source of truth
-- `protocol/spec/bmap.toml` -- **canonical machine-readable BMAP spec.** Every command, operator, and enum lives here with `verified_bytes` golden captures. The command tables further down in this file are the human-readable mirror — **edit `bmap.toml` and regenerate; never hand-edit `generated/`.**
+- `protocol/spec/bmap.toml` -- **canonical machine-readable BMAP spec** for every codegen'd builder, with `verified_bytes` golden captures. **ONE exception: `1F,06` AudioModesModeConfig is deliberately NOT here** — its GET (48-byte) and SET_GET (40-byte, different layout) payloads can't be expressed in the DSL, so the RMW behind `anc-level`/`spatial`/`mode-name` is hand-written per platform (`parseModeConfig`/`buildModeConfigSet`, Swift + Kotlin). That makes 1F,06 the one place the two clients **can** drift on wire encoding — `make check` cannot catch it. Change one side, change both, and keep the byte-test corpora in lockstep. The command tables further down in this file are the human-readable mirror — **edit `bmap.toml` and regenerate; never hand-edit `generated/`.**
 - `protocol/spec/devices.toml` -- headphone MAC + device map (the one home for those literals).
-- `protocol/codegen/` + `protocol/generate.py` -- Python (uv) emitters → `protocol/generated/{BMAP,Devices}.generated.{swift,kt}`. `make gen` regenerates; `make check` proves the committed generated files are in sync + runs the golden byte tests.
+- `protocol/codegen/` (entry point `codegen/generate.py`, run via `make gen` as `python -m codegen.generate`) -- Python (uv) emitters → `protocol/generated/{BMAP,Devices}.generated.{swift,kt}`. `make gen` regenerates; `make check` proves the committed generated files **and the Android copies under `android/app/src/generated/`** are in sync + runs the golden byte tests.
 
 ## Build & Deploy
 
@@ -410,19 +410,21 @@ surface. Keep this in sync when adding a verb or control.
 | Device name | 01,02 | ✅ `name` | — | ✅ rename |
 | EQ band | 01,07 | ✅ `eq` | — | ✅ 3-band |
 | Multipoint | 01,0A | ✅ `multipoint` | — | ✅ toggle |
-| Auto-pause | **01,18** | ✅ `auto-pause` | — | — (parser only, no UI) |
-| Auto-answer | **01,1B** | ✅ `auto-answer` | — | — |
+| Auto-pause | **01,18** | ✅ `auto-pause` | — | ✅ toggle |
+| Auto-answer | **01,1B** | ✅ `auto-answer` | — | ✅ toggle |
 | Favorites | **1F,08** | ✅ `favorites` | — | — (parser only, no UI) |
 | Connect device | 04,01 | ✅ `connect`/`swap` | Opt+B opens app (Opt+⇧B/Opt+J disabled 2026-06-20) | ✅ widget/tile/picker |
+| Paired-device list | **04,04** | 👁 preflight in `connect`/`swap`/`pair` | — | — |
+| ~~CNC depth~~ | ~~1F,0A~~ | 👁 read-only GET inside `getAllState` — **NEVER write (#83)** | — | — |
 | Multipoint pair / priority | host-side (priority.json) | ✅ `pair` / `priority` | — | — (compiled `Eviction.kt` only) |
-| Disconnect device | 04,02 | ✅ `disconnect` | 👁 (toggle path) | — |
+| Disconnect device | 04,02 | ✅ `disconnect` | — | — |
 | Device info (ACL) | 04,05 | 👁 `devices` (○ state) | — | 👁 widget colour |
-| Connected devices | 05,01 | 👁 `devices`/`status`/`info` | 👁 toggle-direction | 👁 widget/tile active |
+| Connected devices | 05,01 | 👁 `devices`/`status`/`info` | — | 👁 widget/tile active |
 | Media control | 05,03 | ✅ `play`/`pause`/`next`/`prev` | — | ✅ notification controls |
 | Audio codec | 05,04 | 👁 `info` | — | 👁 state |
 | Volume | 05,05 | ✅ `volume` | — | ✅ slider |
 | Firmware | 00,05 | 👁 `status`/`info` | — | 👁 state |
-| Battery | 02,02 | 👁 `battery`/`status`/`info` | — | 👁 widget overlay |
+| Battery | 02,02 | 👁 `battery`/`status`/`info` | 👁 (battery announce on becoming Mac output) | 👁 widget overlay |
 
 ### Off-spec diagnostic GETs (issued directly in `getAllState`, not in `bmap.toml`)
 

@@ -86,11 +86,30 @@ get = {}
 # ANC depth (1F,0A, SET_GET) is a composite: read current state first, change
 # `level` (0-10), preserve autoCNC/spatial/windBlock/ancToggle. Hand-written
 # per-platform read-modify-write — NOT a plain builder.
+# ─────────────────────────────────────────────────────────────────────────────
+# AudioModes level/spatial: the SHIPPING command is 1F,06 — and it is deliberately
+# NOT in this file. Read this before adding anything to block 0x1F.
+#
+# `1F,06` AudioModesModeConfig carries a 48-byte GET payload and a DIFFERENT 40-byte
+# SET_GET payload (offset tables in CLAUDE.md). This DSL can't express either, so the
+# 1F,06 read-modify-write that backs `bose anc-level`, `bose spatial` and
+# `bose mode-name` is hand-written per platform:
+#     Swift  — cli/Parsers.swift    parseModeConfig / buildModeConfigSet
+#     Kotlin — android/.../Parsers.kt  (same names, same captured-byte corpus)
+#
+# CONSEQUENCE: 1F,06 is the ONE place the two clients CAN drift on wire encoding,
+# because codegen doesn't cover it. `make check` cannot catch a divergence here.
+# If you change either side, change both and keep the byte tests in lockstep.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ⚠ DO NOT USE — kept only so its block/func is documented and never re-derived.
+# This is NOT the noise-level command; `bose anc-level` uses 1F,06 (see the note above).
 [commands.cnc_level]
 block = 0x1F
 function = 0x0A
 composite = true
-summary = "ANC/CNC depth level 0-10 (read-modify-write, preserve other fields)."
+deprecated = true
+summary = "⚠ DO NOT WRITE (#83) — global CNC live-tuning; writing it DETACHES the active mode and disables ANC. The real level command is the 1F,06 RMW. Read-only: getAllState issues a 1F,0A GET for the current depth, which is harmless."
 # `1F,0A,02,05,{level},{autoCNC},{spatial},{windBlock},{ancToggle}` — SET_GET.
 # No verified_bytes: the payload depends on a prior read of live device state.
 # DANGER (#83, confirmed audibly fw 8.2.20): CNC depth is the SAME axis as the named

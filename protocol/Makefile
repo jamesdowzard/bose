@@ -15,6 +15,16 @@ gen:
 test:
 	uv run pytest -q
 
+# The Android committed copies are SEPARATE build inputs (app/src/generated/), copied by
+# `./gradlew copyGeneratedProtocol`. Checking only generated/ let a `make gen` without that
+# follow-up leave Android building against a stale wire layer while this gate passed green —
+# the exact drift the gate exists to catch. Both paths are checked now.
+ANDROID_GEN = ../android/app/src/generated/java/au/com/jd/bose
+
 check: gen
 	git diff --exit-code generated/
+	@cmp -s generated/BMAP.generated.kt $(ANDROID_GEN)/BMAP.generated.kt \
+	  || { echo "DRIFT: $(ANDROID_GEN)/BMAP.generated.kt is stale — run 'cd android && ./gradlew copyGeneratedProtocol'"; exit 1; }
+	@cmp -s generated/Devices.generated.kt $(ANDROID_GEN)/Devices.generated.kt \
+	  || { echo "DRIFT: $(ANDROID_GEN)/Devices.generated.kt is stale — run 'cd android && ./gradlew copyGeneratedProtocol'"; exit 1; }
 	uv run pytest -q
