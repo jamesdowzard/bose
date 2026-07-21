@@ -97,6 +97,29 @@ object Parsers {
     }
 
     /**
+     * Parse the 04,04 ListDevices RESPONSE → the MACs the HEADPHONES themselves have paired.
+     * This is the headset's OWN pairing table, not the host-side device map — the two drift, so
+     * a device can be in the map yet never paired (tv/appletv on verBosita), and paging one only
+     * times out. Layout:
+     *   [0x04, 0x04, RESP, len, capacity(0x10), {6-byte MAC}*]
+     * Variable-length with NO count byte — MACs run from byte 5 to the end, six at a time; a
+     * trailing partial MAC is dropped, never half-read. Returns [] on any malformed/short/non-RESP
+     * frame (never speculate). Mirrors the Swift `parsePairedDevices`; same captured-byte corpus.
+     */
+    fun parsePairedDevices(resp: IntArray): List<IntArray> {
+        if (resp.size < 5 || resp[0] != 0x04 || resp[1] != 0x04 || resp[2] != OP_RESP) {
+            return emptyList()
+        }
+        val devices = mutableListOf<IntArray>()
+        var offset = 5
+        while (offset + 6 <= resp.size) {
+            devices.add(resp.copyOfRange(offset, offset + 6))
+            offset += 6
+        }
+        return devices
+    }
+
+    /**
      * Parse a 1F,06 AudioModesModeConfig RESPONSE. Payload (resp[4..]) offsets, confirmed
      * live + against the decompiled AudioModesModeConfigResponse: [0]=index, [1..2]=prompt,
      * [3]=userConfigurable, [6..37]=32-byte name, [41]=mutability bitfield (bit0=cncMutable),

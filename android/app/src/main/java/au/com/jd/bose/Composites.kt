@@ -132,6 +132,26 @@ object Composites {
     }
 
     /**
+     * Preflight a connect target against the headphones' OWN paired table (04,04) — the Android
+     * parity of the CLI's `preflightPaired` (#157). The host-side device map drifts from the
+     * headset's pairing list (tv/appletv are mapped but were never paired), and paging an
+     * unpaired device ACKs then silently never connects — an indistinguishable ~20s timeout.
+     *
+     * Returns an abort hint ONLY when the device is provably absent from a readable paired list,
+     * so the caller can fail fast BEFORE evicting a multipoint slot for a device that can't
+     * answer. A no-op (null) when the list is unreadable or the device IS paired — it never
+     * blocks a connect on an unreadable list. Caller must hold an open RFCOMM channel.
+     */
+    fun unpairedHint(mac: IntArray, deviceName: String): String? {
+        val resp = Transport.send(BMAP.getListDevices()) ?: return null
+        val paired = Parsers.parsePairedDevices(resp)
+        if (paired.isEmpty() || paired.any { it.toList() == mac.toList() }) return null
+        return "$deviceName is not in the headphones' paired list — it's in the device map, but " +
+            "the headphones have never been paired with it (or have forgotten it). Pair it from " +
+            "the device itself first; paging it can only time out."
+    }
+
+    /**
      * Connect (switch audio to) a device by MAC. Sends connectDevice (04,01) for the
      * ACK, then polls getConnectedDevices on the SAME channel until the target MAC is
      * audio-active (up to ~16s). NEVER treats ACK as success (CLAUDE.md / #61-#64) — a

@@ -286,7 +286,11 @@ primary active). The order is host-side only — never pushed to the headphones 
 priority hierarchy). **Android now replicates
 it too**: pure victim selection in `android/.../Eviction.kt` (`evictionVictim`, JVM-unit-
 tested), held-state read via `Composites.getDeviceStates`, wired into `BoseService.switchDevice`
-(evict-then-page, restore on failure). **The local phone is excluded from victim selection**
+(evict-then-page, restore on failure). The **04,04 paired-list preflight** guards this too
+(`Composites.unpairedHint` + `Parsers.parsePairedDevices`, the port of the CLI's `preflightPaired`):
+`switchDevice` checks the headset's own pairing table BEFORE evicting, so it never sacrifices a
+slot for a mapped-but-unpaired target (tv/appletv) that can only time out — a no-op when the list
+is unreadable, so it never blocks a legitimate connect. **The local phone is excluded from victim selection**
 (`localDeviceName`, default `"phone"`) — Android differs from the Mac here because the app runs
 *on* one of the two slots it arbitrates. `phone` is priority 2 and `mac` is 1, so with the
 everyday `{mac, phone}` pair held, plain victim selection chose THIS PHONE for any third target;
@@ -441,7 +445,7 @@ surface. Keep this in sync when adding a verb or control.
 | Auto-answer | **01,1B** | ✅ `auto-answer` | — | ✅ toggle |
 | Favorites | **1F,08** | ✅ `favorites` | — | — (parser only, no UI) |
 | Connect device | 04,01 | ✅ `connect`/`swap` | Opt+B opens app (Opt+⇧B/Opt+J disabled 2026-06-20) | ✅ widget/tile/picker |
-| Paired-device list | **04,04** | 👁 preflight in `connect`/`swap`/`pair` | — | — |
+| Paired-device list | **04,04** | 👁 preflight in `connect`/`swap`/`pair` | — | 👁 preflight in `switchDevice` |
 | ~~CNC depth~~ | ~~1F,0A~~ | 👁 read-only GET inside `getAllState` — **NEVER write (#83)** | — | — |
 | Multipoint pair / priority | host-side (priority.json) | ✅ `pair` / `priority` | — | — (compiled `Eviction.kt` only) |
 | Disconnect device | 04,02 | ✅ `disconnect` | — | — |
