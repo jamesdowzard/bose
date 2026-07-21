@@ -27,21 +27,43 @@ private struct DeviceButton: Identifiable {
     let id: String  // name key
     let label: String
     let symbol: String
+    /// Compiled eviction priority (1 = highest), mirroring `protocol/spec/devices.toml`.
+    /// Duplicated here rather than read from `BoseDeviceMap` because the app target
+    /// deliberately compiles only the four SwiftUI files (macos/build.sh) — no protocol
+    /// sources — the same reason the labels above are duplicated. Keep in sync with
+    /// devices.toml; it is only ever a DISPLAY default (the CLI owns real victim
+    /// selection, and a saved priority.json overrides this on appear).
+    let priority: Int
 }
 
 private let deviceButtons: [DeviceButton] = [
-    DeviceButton(id: "mac", label: "Mac", symbol: "laptopcomputer"),
-    DeviceButton(id: "phone", label: "Phone", symbol: "iphone"),
-    DeviceButton(id: "ipad", label: "iPad", symbol: "ipad"),
-    DeviceButton(id: "iphone", label: "iPhone", symbol: "iphone"),
-    DeviceButton(id: "tv", label: "TV", symbol: "tv"),
-    DeviceButton(id: "appletv", label: "Katrina's Apple TV", symbol: "appletv"),
-    DeviceButton(id: "quest", label: "Quest", symbol: "visionpro"),
-    DeviceButton(id: "audikast", label: "Avantree Audikast", symbol: "antenna.radiowaves.left.and.right"),
+    DeviceButton(id: "mac", label: "Mac", symbol: "laptopcomputer", priority: 1),
+    DeviceButton(id: "phone", label: "Phone", symbol: "iphone", priority: 2),
+    DeviceButton(id: "ipad", label: "iPad", symbol: "ipad", priority: 4),
+    DeviceButton(id: "iphone", label: "iPhone", symbol: "iphone", priority: 7),
+    DeviceButton(id: "tv", label: "TV", symbol: "tv", priority: 6),
+    DeviceButton(id: "appletv", label: "Katrina's Apple TV", symbol: "appletv", priority: 3),
+    DeviceButton(id: "quest", label: "Quest", symbol: "visionpro", priority: 5),
+    DeviceButton(id: "audikast", label: "Avantree Audikast", symbol: "antenna.radiowaves.left.and.right", priority: 8),
 ]
 
-/// Live grid reorder: as a dragged tile passes over another, move it there; on drop,
-/// commit (persist the order + connect the pair if the top-2 changed).
+/// The compiled priority order: mac, phone, appletv, ipad, quest, tv, iphone, audikast.
+/// This — NOT `deviceButtons`' declaration order — is the honest default for the sidebar's
+/// rank badges when no `priority.json` override is saved. Seeding from the declaration
+/// order made the badges misstate real eviction rank on a fresh install.
+private let defaultDeviceOrder: [String] =
+    deviceButtons.sorted { $0.priority < $1.priority }.map { $0.id }
+
+/// Live row reorder: as a dragged row passes over another, move it there AND persist.
+/// Dragging only ranks — it never touches the radio (connecting is an explicit tap).
+///
+/// The commit happens in `dropEntered`, not just `performDrop`, because `performDrop`
+/// only fires when the release lands on a ROW. Releasing over the EQ panel, the caption,
+/// the window chrome, or outside the window entirely left the visual order changed and
+/// `priority.json` untouched — so the rank badges lied about real eviction order until
+/// the next relaunch. Committing on each hover-swap keeps the persisted order equal to
+/// the visible order at every instant, whatever ends the drag. `setPriority` writes
+/// priority.json only (no device I/O), so the extra writes are cheap and radio-free.
 private struct DeviceDropDelegate: DropDelegate {
     let targetId: String
     @Binding var draggingId: String?
@@ -55,7 +77,24 @@ private struct DeviceDropDelegate: DropDelegate {
         withAnimation(.easeInOut(duration: 0.15)) {
             order.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
         }
+        onCommit()
     }
+    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
+    func performDrop(info: DropInfo) -> Bool {
+        draggingId = nil
+        onCommit()
+        return true
+    }
+}
+
+/// Catches a release over the sidebar's own chrome (gaps, padding, the caption) rather
+/// than a row, so `draggingId` is cleared there too. The order itself is already
+/// persisted by `dropEntered`; this is purely drag-session hygiene, and a stale
+/// `draggingId` is self-correcting anyway (every `onDrag` reassigns it).
+private struct DeviceListDropDelegate: DropDelegate {
+    @Binding var draggingId: String?
+    let onCommit: () -> Void
+
     func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
     func performDrop(info: DropInfo) -> Bool {
         draggingId = nil
@@ -83,7 +122,7 @@ struct ContentView: View {
     // Multipoint pair picker: device order (index 0 = primary/active, 1 = secondary/held,
     // rest = eviction order). Seeded from the tile default, overridden by the saved
     // `bose priority` order on appear. `draggingId` tracks the in-flight drag.
-    @State private var deviceOrder: [String] = deviceButtons.map { $0.id }
+    @State private var deviceOrder: [String] = defaultDeviceOrder
     @State private var draggingId: String? = nil
 
     var body: some View {
@@ -110,8 +149,8 @@ struct ContentView: View {
             // Load the saved multipoint priority order; append any devices missing from it
             // (e.g. a newly-added device) so the list always shows every device.
             manager.loadPriorityOrder { saved in
-                guard !saved.isEmpty else { return }
-                let all = deviceButtons.map { $0.id }
+                guard !saved.isEmpty else { return }   // no override — keep the compiled order
+                let all = defaultDeviceOrder
                 deviceOrder = saved.filter { all.contains($0) } + all.filter { !saved.contains($0) }
             }
         }
@@ -125,7 +164,9 @@ struct ContentView: View {
             Button("Cancel", role: .cancel) {}
             Button("Save") { manager.renameCustomMode(slot: renameSlot, name: renameText) }
         } message: {
-            Text("Up to 30 characters. Names the custom mode on-device.")
+            // Bytes, not characters — `renameCustomMode` trims to the 1F,06 name field's
+            // 30 UTF-8 BYTE limit, so an emoji costs 4 and an accented letter 2.
+            Text("Up to 30 bytes (most emoji cost 4). Names the custom mode on-device.")
         }
     }
 
@@ -199,7 +240,35 @@ struct ContentView: View {
                 .background(offlineColor.opacity(0.18))
                 .overlay(Rectangle().fill(dividerColor).frame(height: 1), alignment: .bottom)
             }
+            errorBanner
             connectedPanels
+        }
+    }
+
+    /// Transient banner carrying the CLI's own diagnosis of the last failed write —
+    /// e.g. "quest is not in verBosita's paired list — pair it from the device itself
+    /// first". Before this, a failed tap span its spinner and silently reverted, and the
+    /// exit code + stderr that explained why were thrown away. Tap to dismiss.
+    @ViewBuilder
+    private var errorBanner: some View {
+        if let message = manager.lastError {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 10, weight: .medium))
+                Text(message)
+                    .font(.system(size: 11, weight: .medium))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .foregroundColor(warnColor)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+            .background(warnColor.opacity(0.10))
+            .overlay(Rectangle().fill(dividerColor).frame(height: 1), alignment: .bottom)
+            .contentShape(Rectangle())
+            .onTapGesture { manager.lastError = nil }
+            .transition(.opacity)
         }
     }
 
@@ -559,6 +628,10 @@ struct ContentView: View {
                         onCommit: applyOrder))
             }
         }
+        // Release over the sidebar's own chrome (gaps/padding) rather than a row.
+        .onDrop(of: [.text], delegate: DeviceListDropDelegate(
+            draggingId: $draggingId,
+            onCommit: applyOrder))
     }
 
     /// Persist the new priority order (index 0 = primary). Dragging ONLY ranks — it does
@@ -793,6 +866,10 @@ struct ContentView: View {
 
     private var disconnectedView: some View {
         VStack(spacing: 16) {
+            // Also here: a failed Connect is exactly when the CLI's diagnosis matters most
+            // ("mac is not in verBosita's paired list — …"), and this view has no other
+            // feedback channel at all.
+            errorBanner
             Spacer()
 
             Image(systemName: "headphones")
