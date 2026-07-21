@@ -67,7 +67,14 @@ explicit user action.
   confirming against the cache (fixed 2026-07-20), and that was not a race but a
   guarantee: after a write that drops the link (`disconnect mac`) there is no ACL, so the
   cache is the ONLY thing that can be served and the app repainted pre-write state every
-  time. **Corollary, and the thing a future change is most likely to get wrong again: any
+  time. **The ONE carve-out (2026-07-21): a local-Mac `disconnect` must NOT force `--page`.**
+  That write intentionally drops this Mac's ACL, and a forced `--page` confirm reopens
+  RFCOMM and re-pages the very device just disconnected — an audible disconnect-then-
+  reconnect. So `write()` forces `--page` for everything EXCEPT `disconnect mac`, which
+  confirms cached-first (serves the last-known snapshot behind the staleness banner —
+  the correct "disconnected" view — without re-paging). Every other write keeps the link,
+  so cached-first there still reads live; only the self-disconnect must skip the page.
+  **Corollary, and the thing a future change is most likely to get wrong again: any
   guard that reads `deviceStates` must also check `reachable`** — the painted state is
   last-known, not live. Both HIGH findings here were that mistake: the skip-if-active
   guard made the Mac row un-tappable exactly when you needed it (cached state said
