@@ -11,7 +11,7 @@ No persistent connections. No coordination. No Tailscale dependency.
 
 ```
 Mac:   bose (CLI)                     → IOBluetooth RFCOMM → Headphones
-Mac:   Raycast / Hammerspoon / Bose.app  ─shell→ bose → Headphones
+Mac:   Hammerspoon / Bose.app             ─shell→ bose → Headphones
 Phone: BoseControl (Android/Compose)      → Android RFCOMM     → Headphones
 ```
 
@@ -65,11 +65,6 @@ explicit user action.
   AND idle ACL probes in ONE warm session, so neither is lost to the cold-second-session
   quirk a separate `getDeviceStates` call hit, #132). It surfaces — but does not fix —
   the #83 flight/ancDepth behaviour; that fix lands in the CLI and the app inherits it.
-- `raycast/bose-connect.sh` / `bose-disconnect.sh` -- Raycast script commands with a device dropdown → `bose connect|disconnect <device>`
-- `raycast/bose-status.sh` / `bose-full-status.sh` -- `bose status` / `bose info` (both cached-first like `info --json` — no ACL → cached print with age, `--page` forces live)
-- `raycast/bose-anc-level.sh` / `bose-profile.sh` -- `bose anc-level [0-10]` (active mode's noise level, custom modes only) / `bose profile [name]` (text arg)
-- `raycast/bose-spatial.sh` -- `bose spatial [off|still|motion]` (active mode's Immersive Audio, custom modes only). Dropdown arg incl. a blank "Read current"; the script uses `${1:+"$1"}` so a blank omits the arg entirely (a literal `""` makes the CLI reject it) — the robust pattern the older bare-`"$1"` commands lack.
-- `raycast/bose-auto-pause.sh` / `bose-auto-answer.sh` -- `bose auto-pause [on|off]` / `bose auto-answer [on|off]` (blank arg = read); `bose-favorites.sh` -- `bose favorites` (display-only)
 - `profiles.json` (repo root) -- presets ({ANC mode, noise level, EQ, multipoint, volume} **+ optional `pair: [primary, secondary]`**) applied by `bose profile`; versioned + hand-editable, ships flight/office/music/**tv** (tv = pair audikast+phone, the one-tap watch-TV setup). A profile's `pair` applies FIRST via the same evict→held→active composite as `bose pair`, then any settings; a pair-only profile skips the settings session (`hasDeviceSettings`). The Mac app shows a **PROFILES chips row** (top of the left panel; list via `bose profile --json`, a pure file read). A profile's `noiseLevel` is applied via the `anc-level` (1F,06) RMW and ONLY takes effect on the adjustable custom modes (4/5, `cncMutable`) — named modes set the mode only (a level over quiet/aware/spatial is a no-op; the old 1F,0A depth write disabled ANC, #83). flight = {quiet, multipoint off}. Runtime JSON (not codegen'd TOML) because `profile save` writes it; loader resolves `$BOSE_PROFILES` → repo path → `~/.config/bose/`. Pure logic in `cli/Profiles.swift`, live apply in `cli/Composites.swift` (`applyProfile`).
 - `hammerspoon/bose.lua` -- Hammerspoon module, all **event-driven** (no timers). **Only Opt+B is bound now** (2026-06-20): **Opt+B shows/hides the Bose app** (the windowed control surface — press once to open/focus, again to hide; switch devices/ANC/EQ from its tiles). The other four hotkeys are **commented out in `start()`** — James drives everything else from the Bose app (Opt+I was cycling spatial audio unexpectedly). Their binds + `_MODS`/`_KEY` defaults remain in the file, so re-enabling any is a one-line uncomment + reload: **Opt+⇧B toggles Mac ↔ phone** (+ one-shot low-battery warn piggybacked on the press), **Opt+N cycles ANC** (quiet→aware→immersion), **Opt+I cycles Immersive Audio** (off→still→motion; custom modes only — shows a hint on a fixed named mode), **Opt+J connects the headphones to this Mac** (unconditional, no toggle direction-guessing; `CONNECT_TARGET` retargets it). Plus two **OS-event** behaviours (no hotkey, no poll — driven by `hs.audiodevice`/`hs.application` watchers): **battery announce** — `say`s the battery through the headphones when they become the Mac output (a stand-in for the power-on announcement Bose removed in fw 8.2.20; `ANNOUNCE_BATTERY`), and **auto-route on call** — a call app (Teams/Zoom/FaceTime/Slack/Webex) launching routes the Mac's *input* to the MacBook mic, and the audiodevice guard never lets the Bose be the system input (its over-ear mics make callers hear the room); input **stays** on the MacBook mic after calls — no restore, because `hs.application.watcher` doesn't reliably deliver `terminated` (verified 2026-06-20) and the MacBook mic is the right default. `AUTO_ROUTE_ON_CALL` + `CALL_APPS`. NB Teams can override the system input with its own setting — set its in-app mic once. Returns a table with `.start()`/`.stop()`. Wired in `init.lua` via `BoseCtl = dofile(os.getenv("HOME").."/code/personal/bose/hammerspoon/bose.lua"); BoseCtl.start()`. Edits apply on Hammerspoon reload.
 - The Swift core that does the actual RFCOMM work lives in `cli/` (see below). The macOS app target (`macos/BoseControl/`) is pure SwiftUI/Foundation and does NO RFCOMM — it shells `bose`, so the two never drift and the app can't reintroduce a transport/poll bug.
@@ -115,7 +110,6 @@ cd protocol && make gen      # or `make check` to also verify no drift + run tes
 # bose (CLI) → cli/build/bose, then install + the macOS front-ends
 bash cli/build.sh
 cp cli/build/bose ~/bin/bose                       # the engine
-cp raycast/*.sh ~/.config/raycast/script-commands/         # Raycast commands
 # hammerspoon/bose.lua is dofile'd from this repo path by init.lua — no copy needed
 
 # Bose.app (windowed) → Developer-ID signed, installed to /Applications
@@ -263,7 +257,7 @@ CLI's `connect`/`swap` enforce the hierarchy in software: when both slots are fu
 the target isn't already connected, it **disconnects the lowest-priority of the two held
 devices first**, then pages the target — and **restores the evicted device if the target
 fails to connect** (`evictLowestPriorityIfFull` / `restoreEvicted` in `cli/main.swift`).
-Mac app / Raycast / Hammerspoon inherit this (they shell `bose`). **Runtime override:** a
+Mac app / Hammerspoon inherit this (they shell `bose`). **Runtime override:** a
 user-chosen order in `~/.config/bose/priority.json` (`bose priority --set …`, or the Mac
 app's **draggable device sidebar** — drag up/down to rank, index 0 = primary, 1 = secondary;
 dragging only sets priority, tapping a row connects) takes
@@ -358,7 +352,7 @@ BMAP operator (SET/0x06 instead of SET_GET/0x02).
 | **EQ band** | 01,07 | **SET_GET** | `01,07,02,02,{value},{band}` | band: 0=bass 1=mid 2=treble, value: signed -10 to +10 |
 | **Noise level** | **1F,06** | **SET_GET** | per-mode read-modify-write (see below) | 0 = max cancel … 10 = transparency. The CORRECT level command (`bose anc-level`). Reads a mode's config, changes only the level, forces `ancToggle=1`, writes back — ANC stays anchored to the mode. Only on `cncMutable` modes (custom slots); Quiet/Aware/spatial modes are fixed. |
 | **Immersive Audio (spatial)** | **1F,06** | **SET_GET** | per-mode RMW, spatial byte (resp [44] / SET [37]) | 0 = off, 1 = Still (fixed-to-room), 2 = Motion (head-tracking). The CORRECT spatial command (`bose spatial off\|still\|motion`). Same 1F,06 RMW as noise level — changes only the spatial byte. Settable ONLY on `spatialMutable` modes (custom slots 4/5, payload[41] bit2); named modes carry it fixed (Immersion = Motion, Cinema = Still). The global 05,0F path is FuncNotSupp. |
-| ~~ANC depth~~ | ~~1F,0A~~ | — | — | **DO NOT USE.** `1F,0A` (AudioModesSettingsConfig) is GLOBAL live-tuning; writing it over an active mode DETACHES the mode → 1F,03 reads 255 = ANC OFF (#83, confirmed audibly). The old `anc-depth` command + Raycast used this — removed. Use `anc-level` (1F,06) instead. |
+| ~~ANC depth~~ | ~~1F,0A~~ | — | — | **DO NOT USE.** `1F,0A` (AudioModesSettingsConfig) is GLOBAL live-tuning; writing it over an active mode DETACHES the mode → 1F,03 reads 255 = ANC OFF (#83, confirmed audibly). The old `anc-depth` command used this — removed. Use `anc-level` (1F,06) instead. |
 
 **Not supported / write-locked on QC Ultra 2 (all re-verified live 2026-06-20, fw 8.2.20 — don't re-investigate):**
 - **StandbyTimer SET (01,04)**, **MotionAutoOff (01,14)**, **OnHeadDetection SET (01,10)**, **CncPresets (01,0F)**: reply **FuncNotSupp** (error op 0x04, code 4) to a GET. Dead.
@@ -385,7 +379,7 @@ ancToggle. **Level semantics: 0 = max cancellation (Quiet end), 10 = full transp
 - **1F,06 GET** request `1F 06 01 01 {index}`. RESPONSE `1F 06 03 30 {48-byte payload}`; offsets (payload = frame[4:]): `[0]`index, `[1..2]`prompt, `[3]`userConfigurable, `[6..37]`32-byte name, `[41]`mutability bitfield (**bit0 = cncMutable** = level editable; bit4 = ancToggleMutable), `[42]`cncLevel, `[43]`autoCNC, `[44]`spatial, `[46]`windBlock, `[47]`ancToggle.
 - **1F,06 SET_GET** (DIFFERENT layout) `1F 06 02 28 {payload}`: `[0]`index, `[1..2]`prompt, `[3..34]`32-byte name, `[35]`cncLevel, `[36]`autoCNC, `[37]`spatial, `[38]`windBlock, `[39]`ancToggle.
 - `bose anc-level [0-10]` does the GET→change-level→SET_GET RMW on the **active** mode, forcing `ancToggle=1`, and refuses if the mode's `cncMutable` is false (so it can never disable ANC). Pure parse/build = `parseModeConfig`/`buildModeConfigSet` (Parsers); session RMW = `setActiveModeLevel` (Composites).
-- `bose spatial [off|still|motion]` does the same 1F,06 RMW on the **active** mode's spatial byte (Immersive Audio), refusing if the mode's `spatialMutable` (payload[41] bit2) is false. Verified live 2026-06-20: custom slots 4/5 have spatialMutable=1; Immersion carries spatial=2 (Motion), Cinema spatial=1 (Still). Build = `buildModeConfigSet(_, newSpatial:)`; session RMW = `setActiveModeSpatial` (Composites). `ModeConfig.spatialMutable` is the bit2 read. Surfaced in the macOS app AND the Android app (`MainActivity.kt` SettingsSection → `BoseViewModel.setSpatial` → `Composites.setActiveModeSpatial`) as an Off/Still/Motion segmented control that greys out on fixed modes, like the Level slider. Also a Raycast command (`bose-spatial.sh`); the Hammerspoon Opt+I hotkey that cycled off→still→motion is **disabled** as of 2026-06-20 (commented out in `bose.lua` `start()`).
+- `bose spatial [off|still|motion]` does the same 1F,06 RMW on the **active** mode's spatial byte (Immersive Audio), refusing if the mode's `spatialMutable` (payload[41] bit2) is false. Verified live 2026-06-20: custom slots 4/5 have spatialMutable=1; Immersion carries spatial=2 (Motion), Cinema spatial=1 (Still). Build = `buildModeConfigSet(_, newSpatial:)`; session RMW = `setActiveModeSpatial` (Composites). `ModeConfig.spatialMutable` is the bit2 read. Surfaced in the macOS app AND the Android app (`MainActivity.kt` SettingsSection → `BoseViewModel.setSpatial` → `Composites.setActiveModeSpatial`) as an Off/Still/Motion segmented control that greys out on fixed modes, like the Level slider. The Hammerspoon Opt+I hotkey that cycled off→still→motion is **disabled** as of 2026-06-20 (commented out in `bose.lua` `start()`).
 - Implementation derived from decompiling `com.bose.bosemusic` (`AudioModesModeConfigResponse`, `FBlockAudioModesKt`); see `docs/plans/2026-06-08-cnc-mode-config-proper.md`.
 
 ### BMAP Function IDs (Block 0x05 — Audio)
@@ -408,37 +402,37 @@ surface. Keep this in sync when adding a verb or control.
 
 ### `bmap.toml` commands
 
-| Capability | Block,Func | `bose` | Raycast | Hammerspoon | Android |
-|------------|-----------|-----------|---------|-------------|---------|
-| ANC mode | 1F,03 | ✅ `anc` | 👁 (in status) | — (Opt+N disabled 2026-06-20) | ✅ mode selector |
-| Noise level (CNC) | **1F,06** | ✅ `anc-level` (custom modes) | ✅ `bose-anc-level` | — | ✅ slider (1F,06 RMW, custom modes only) |
-| Immersive Audio (spatial) | **1F,06** | ✅ `spatial` (custom modes) | ✅ `bose-spatial` | — (Opt+I disabled 2026-06-20) | ✅ Off/Still/Motion selector (custom modes only) |
-| Device name | 01,02 | ✅ `name` | — | — | ✅ rename |
-| EQ band | 01,07 | ✅ `eq` | 👁 (in status) | — | ✅ 3-band |
-| Multipoint | 01,0A | ✅ `multipoint` | — | — | ✅ toggle |
-| Auto-pause | **01,18** | ✅ `auto-pause` | ✅ `bose-auto-pause` | — | — (parser only, no UI) |
-| Auto-answer | **01,1B** | ✅ `auto-answer` | ✅ `bose-auto-answer` | — | — |
-| Favorites | **1F,08** | ✅ `favorites` | 👁 `bose-favorites` | — | — (parser only, no UI) |
-| Connect device | 04,01 | ✅ `connect`/`swap` | ✅ `bose-connect` | Opt+B opens app (Opt+⇧B/Opt+J disabled 2026-06-20) | ✅ widget/tile/picker |
-| Multipoint pair / priority | host-side (priority.json) | ✅ `pair` / `priority` | — | — | — (compiled `Eviction.kt` only) |
-| Disconnect device | 04,02 | ✅ `disconnect` | ✅ `bose-disconnect` | 👁 (toggle path) | — |
-| Device info (ACL) | 04,05 | 👁 `devices` (○ state) | — | — | 👁 widget colour |
-| Connected devices | 05,01 | 👁 `devices`/`status`/`info` | 👁 (in status) | 👁 toggle-direction | 👁 widget/tile active |
-| Media control | 05,03 | ✅ `play`/`pause`/`next`/`prev` | — | — | ✅ notification controls |
-| Audio codec | 05,04 | 👁 `info` | 👁 (full status) | — | 👁 state |
-| Volume | 05,05 | ✅ `volume` | 👁 (in status) | — | ✅ slider |
-| Firmware | 00,05 | 👁 `status`/`info` | 👁 (status) | — | 👁 state |
-| Battery | 02,02 | 👁 `battery`/`status`/`info` | 👁 (status) | — | 👁 widget overlay |
+| Capability | Block,Func | `bose` | Hammerspoon | Android |
+|------------|-----------|-----------|-------------|---------|
+| ANC mode | 1F,03 | ✅ `anc` | — (Opt+N disabled 2026-06-20) | ✅ mode selector |
+| Noise level (CNC) | **1F,06** | ✅ `anc-level` (custom modes) | — | ✅ slider (1F,06 RMW, custom modes only) |
+| Immersive Audio (spatial) | **1F,06** | ✅ `spatial` (custom modes) | — (Opt+I disabled 2026-06-20) | ✅ Off/Still/Motion selector (custom modes only) |
+| Device name | 01,02 | ✅ `name` | — | ✅ rename |
+| EQ band | 01,07 | ✅ `eq` | — | ✅ 3-band |
+| Multipoint | 01,0A | ✅ `multipoint` | — | ✅ toggle |
+| Auto-pause | **01,18** | ✅ `auto-pause` | — | — (parser only, no UI) |
+| Auto-answer | **01,1B** | ✅ `auto-answer` | — | — |
+| Favorites | **1F,08** | ✅ `favorites` | — | — (parser only, no UI) |
+| Connect device | 04,01 | ✅ `connect`/`swap` | Opt+B opens app (Opt+⇧B/Opt+J disabled 2026-06-20) | ✅ widget/tile/picker |
+| Multipoint pair / priority | host-side (priority.json) | ✅ `pair` / `priority` | — | — (compiled `Eviction.kt` only) |
+| Disconnect device | 04,02 | ✅ `disconnect` | 👁 (toggle path) | — |
+| Device info (ACL) | 04,05 | 👁 `devices` (○ state) | — | 👁 widget colour |
+| Connected devices | 05,01 | 👁 `devices`/`status`/`info` | 👁 toggle-direction | 👁 widget/tile active |
+| Media control | 05,03 | ✅ `play`/`pause`/`next`/`prev` | — | ✅ notification controls |
+| Audio codec | 05,04 | 👁 `info` | — | 👁 state |
+| Volume | 05,05 | ✅ `volume` | — | ✅ slider |
+| Firmware | 00,05 | 👁 `status`/`info` | — | 👁 state |
+| Battery | 02,02 | 👁 `battery`/`status`/`info` | — | 👁 widget overlay |
 
 ### Off-spec diagnostic GETs (issued directly in `getAllState`, not in `bmap.toml`)
 
-| Capability | Block,Func | `bose` | Raycast | Android |
-|------------|-----------|-----------|---------|---------|
-| Serial number | 00,07 | 👁 `info` | 👁 (full status) | 👁 state |
-| Product name | 00,0F | 👁 `info` | 👁 (full status) | 👁 state |
-| Platform | 12,0D | 👁 `info` | 👁 (full status) | 👁 state |
-| Codename | 12,0C | 👁 `info` | 👁 (full status) | 👁 state |
-| Auto-off timer | 01,0B | 👁 `info` (read-only) | 👁 (full status) | 👁 state |
+| Capability | Block,Func | `bose` | Android |
+|------------|-----------|-----------|---------|
+| Serial number | 00,07 | 👁 `info` | 👁 state |
+| Product name | 00,0F | 👁 `info` | 👁 state |
+| Platform | 12,0D | 👁 `info` | 👁 state |
+| Codename | 12,0C | 👁 `info` | 👁 state |
+| Auto-off timer | 01,0B | 👁 `info` (read-only) | 👁 state |
 
 > **No on-head / live wear state — not exposed on the QC Ultra 2 (verified, do not re-add).**
 > The real wear function is **`StatusInEar` = block `0x02` / func `0x09`** (a plain GET;
@@ -454,17 +448,26 @@ surface. Keep this in sync when adding a verb or control.
 > + the device's own `FuncNotSupp` reply. Removed from app/CLI/Android (#104-era cleanup).
 
 **Profiles** compose several of these capabilities at once — a `bose profile`
-applies {ANC mode, noise level, EQ, multipoint, volume} in one session (CLI +
-`bose-profile.sh` Raycast; drivable from macOS Focus via a Shortcut, see README).
+applies {ANC mode, noise level, EQ, multipoint, volume} in one session (CLI;
+drivable from macOS Focus via a Shortcut, see README).
 
 **Notable gaps (intentional):** Hammerspoon binds **only Opt+B (open app)** as of
 2026-06-20 — the other four (Opt+⇧B toggle, Opt+N ANC cycle, Opt+I Immersive Audio
 cycle, Opt+J connect → Mac) are commented out in `start()` (James uses the Bose app for
 those; the binds remain in-file for a one-line re-enable). Still all event-driven, no
-timers. Raycast covers the common dropdowns plus full-status / anc-level /
-spatial / profile; deeper config
-(EQ/name/multipoint) is CLI- or Android-only by design. The macOS surface has
-**no resident process** — every reading is on-demand, never polled.
+timers.
+
+**The Raycast surface is gone (2026-07-20).** `raycast/` and its ten deployed script
+commands were removed — the Mac surface is now **Bose.app + Hammerspoon Opt+B + the
+`bose` CLI**, the same consolidation the disabled hotkeys already reflected. Do NOT
+re-add it: it was a fourth thin wrapper over the same CLI, its argument handling was a
+standing bug source (a blank optional arg reached the CLI as `""` and made
+`bose-auto-pause`/`bose-auto-answer` silently WRITE OFF on what the placeholder called a
+read), and a stale `bose-toggle.sh` had survived deployed-but-untracked since April,
+doing raw `blueutil --connect/--disconnect` around the whole eviction/priority layer.
+Anything Raycast did is a `bose` verb or a click in the app.
+
+The macOS surface has **no resident process** — every reading is on-demand, never polled.
 
 ## connectDevice Behaviour (verified 2026-04-11 via raw BMAP captures)
 

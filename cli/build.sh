@@ -4,8 +4,8 @@
 # Compiles the generated BMAP/Devices Swift (from protocol/spec/bmap.toml) plus the
 # Swift core (Transport/Parsers/Composites, here in cli/) and main.swift. The Swift
 # core and the Kotlin app share one protocol source (protocol/spec/ → generated/) so
-# they can't drift on wire encoding. The macOS surface is Raycast commands + a
-# Hammerspoon hotkey (see raycast/ and hammerspoon/) that shell out to this binary —
+# they can't drift on wire encoding. The macOS surface is Bose.app + a Hammerspoon
+# hotkey (see macos/ and hammerspoon/) that shell out to this binary —
 # there is no resident menu-bar app.
 #
 # Output: cli/build/bose in the worktree. This script does NOT install over
