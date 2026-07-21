@@ -199,8 +199,20 @@ class BoseViewModel(application: Application) : AndroidViewModel(application) {
                     _state.value = _state.value.copy(loading = false)
                     return@launch
                 }
+                // Preflight the headphones' paired table (04,04) before paging — parity with the
+                // widget/service path (BoseService.switchDevice) and the CLI's #157 preflightPaired.
+                // An unpaired target (tv/appletv) can only be ERROR-rejected or time out, so fail
+                // fast with the real reason instead of the silent no-op the bare connect gave. A
+                // no-op when the list is unreadable — never blocks a legitimate connect. Shares the
+                // one channel session with the connect so nothing races in between.
+                var unpaired: String? = null
                 val result = BoseProtocol.withConnection {
-                    Composites.connectDevice(mac)
+                    unpaired = Composites.unpairedHint(mac, name)
+                    if (unpaired != null) null else Composites.connectDevice(mac)
+                }
+                if (unpaired != null) {
+                    _state.value = _state.value.copy(loading = false, error = unpaired)
+                    return@launch
                 }
                 if (result == Composites.SwitchResult.TARGET_OFFLINE) {
                     _state.value = _state.value.copy(

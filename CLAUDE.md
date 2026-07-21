@@ -445,7 +445,7 @@ surface. Keep this in sync when adding a verb or control.
 | Auto-answer | **01,1B** | ✅ `auto-answer` | — | ✅ toggle |
 | Favorites | **1F,08** | ✅ `favorites` | — | — (parser only, no UI) |
 | Connect device | 04,01 | ✅ `connect`/`swap` | Opt+B opens app (Opt+⇧B/Opt+J disabled 2026-06-20) | ✅ widget/tile/picker |
-| Paired-device list | **04,04** | 👁 preflight in `connect`/`swap`/`pair` | — | 👁 preflight in `switchDevice` |
+| Paired-device list | **04,04** | 👁 preflight in `connect`/`swap`/`pair` | — | 👁 preflight in both connect paths (service `switchDevice` + in-app `BoseViewModel`) |
 | ~~CNC depth~~ | ~~1F,0A~~ | 👁 read-only GET inside `getAllState` — **NEVER write (#83)** | — | — |
 | Multipoint pair / priority | host-side (priority.json) | ✅ `pair` / `priority` | — | — (compiled `Eviction.kt` only) |
 | Disconnect device | 04,02 | ✅ `disconnect` | — | — |
