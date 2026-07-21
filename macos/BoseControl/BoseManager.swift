@@ -540,7 +540,18 @@ final class BoseManager: ObservableObject {
             // (confirmWrite / connectDevice / applyProfile / applyPair) already forces
             // `--page`; this one was the hole. See CLAUDE.md: "a settle loop must never
             // confirm against the cache".
-            self.refreshState(forcePage: true)
+            //
+            // EXCEPTION — disconnecting the local Mac: that write intentionally drops
+            // THIS Mac's ACL (via `bose disconnect mac` → blueutil --disconnect, #157).
+            // Forcing `--page` here reopens RFCOMM and re-pages the very device we just
+            // disconnected, so the headphones route audio straight back — an audible
+            // disconnect-then-reconnect. With no link there is nothing to page anyway;
+            // confirm cached-first so the read serves the last-known snapshot behind the
+            // staleness banner (reachable:false = the correct "disconnected" view) and
+            // never re-pages. Every OTHER write keeps this Mac's link, so cached-first
+            // there still reads live — only the self-disconnect must skip the page.
+            let localMacDisconnect = args.first == "disconnect" && args.dropFirst().first == "mac"
+            self.refreshState(forcePage: !localMacDisconnect)
         }
     }
 
