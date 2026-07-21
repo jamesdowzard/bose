@@ -56,6 +56,56 @@ class ParsersTest {
         assertTrue(Parsers.parseConnectedDevices(intArrayOf()).isEmpty())
     }
 
+    // ── parsePairedDevices (04,04) ─────────────────────────────────────────────
+    // EXACT live capture, fw 8.2.20, 2026-07-20 — the same corpus as cli/Tests/main.swift.
+    // Header [04 04 RESP len], capacity byte 0x10 at [4], then 6 MACs: phone, quest, audikast,
+    // ipad, mac, iphone. NB tv (14:C1:4E:..) and appletv (48:E1:5C:..) are ABSENT — they're in
+    // the device map but the headphones have never paired with them (what the preflight reports).
+    private val pairedList = intArrayOf(
+        0x04, 0x04, 0x03, 0x25, 0x10,
+        0xA8, 0x76, 0x50, 0xD3, 0xB1, 0x1B, // phone
+        0x78, 0xC4, 0xFA, 0xC8, 0x5C, 0x3D, // quest
+        0x00, 0x1D, 0x43, 0xB8, 0x03, 0x01, // audikast
+        0xF4, 0x81, 0xC4, 0xB5, 0xFA, 0xAB, // ipad
+        0xBC, 0xD0, 0x74, 0x11, 0xDB, 0x27, // mac
+        0xF8, 0x4D, 0x89, 0xC4, 0xB6, 0xED, // iphone
+    )
+
+    @Test
+    fun pairedDevices_parsesAllSixFromLiveCapture() {
+        val pd = Parsers.parsePairedDevices(pairedList)
+        assertEquals(6, pd.size)
+        assertArrayEquals(intArrayOf(0xA8, 0x76, 0x50, 0xD3, 0xB1, 0x1B), pd.first()) // phone
+        assertArrayEquals(intArrayOf(0xF8, 0x4D, 0x89, 0xC4, 0xB6, 0xED), pd.last()) // iphone
+    }
+
+    @Test
+    fun pairedDevices_membershipMatchesTheMotivatingFindings() {
+        val pd = Parsers.parsePairedDevices(pairedList).map { it.toList() }
+        assertTrue(pd.contains(intArrayOf(0x00, 0x1D, 0x43, 0xB8, 0x03, 0x01).toList())) // audikast IS paired
+        assertFalse(pd.contains(intArrayOf(0x14, 0xC1, 0x4E, 0xB7, 0xCB, 0x68).toList())) // tv NOT paired
+        assertFalse(pd.contains(intArrayOf(0x48, 0xE1, 0x5C, 0x5D, 0x33, 0xB6).toList())) // appletv NOT paired
+    }
+
+    @Test
+    fun pairedDevices_wrongBlockIsEmpty() {
+        assertTrue(Parsers.parsePairedDevices(intArrayOf(0x05, 0x01, 0x03, 0x25, 0x10)).isEmpty())
+    }
+
+    @Test
+    fun pairedDevices_noMacsIsEmpty() {
+        assertTrue(Parsers.parsePairedDevices(intArrayOf(0x04, 0x04, 0x03, 0x01, 0x10)).isEmpty())
+    }
+
+    @Test
+    fun pairedDevices_trailingPartialMacDropped() {
+        val ragged = intArrayOf(
+            0x04, 0x04, 0x03, 0x0B, 0x10,
+            0xBC, 0xD0, 0x74, 0x11, 0xDB, 0x27, 0xAA, 0xBB,
+        )
+        assertEquals(1, Parsers.parsePairedDevices(ragged).size)
+    }
+
     // ── parseModeConfig (1F,06) + buildModeConfigSet ──────────────────────────
     // The CORRECT noise-level path (1F,06 RMW), replacing the 1F,0A footgun (#83).
     // Mirrors macOS `cli/Tests/main.swift` byte-for-byte (52-byte response).

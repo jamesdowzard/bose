@@ -262,6 +262,16 @@ class BoseService : Service() {
                 return
             }
 
+            // Preflight the headphones' OWN paired table (04,04) BEFORE evicting a slot — a device
+            // in the map the headset never paired with (tv/appletv) can only time out, so don't
+            // sacrifice a multipoint slot for it. Parity with the CLI's #157 preflightPaired; a
+            // no-op when the list is unreadable, so it never blocks a legitimate connect.
+            Composites.unpairedHint(mac, deviceName)?.let {
+                Log.w(TAG, "Preflight refused $deviceName: $it")
+                broadcastError(it)
+                return
+            }
+
             // Multipoint eviction (parity with the CLI's evictLowestPriorityIfFull): the
             // headset holds 2 devices and the firmware only evicts by its own LRU. When both
             // slots are full and the target isn't already held, drop the LOWEST-priority held
