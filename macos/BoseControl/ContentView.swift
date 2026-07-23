@@ -41,7 +41,7 @@ private let deviceButtons: [DeviceButton] = [
     DeviceButton(id: "phone", label: "Phone", symbol: "iphone", priority: 2),
     DeviceButton(id: "ipad", label: "iPad", symbol: "ipad", priority: 4),
     DeviceButton(id: "iphone", label: "iPhone", symbol: "iphone", priority: 7),
-    DeviceButton(id: "tv", label: "TV", symbol: "tv", priority: 6),
+    DeviceButton(id: "tv", label: "Living Room TV", symbol: "tv", priority: 6),
     DeviceButton(id: "appletv", label: "Katrina's Apple TV", symbol: "appletv", priority: 3),
     DeviceButton(id: "quest", label: "Quest", symbol: "visionpro", priority: 5),
     DeviceButton(id: "audikast", label: "Avantree Audikast", symbol: "antenna.radiowaves.left.and.right", priority: 8),

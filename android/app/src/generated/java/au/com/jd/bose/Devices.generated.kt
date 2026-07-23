@@ -41,7 +41,7 @@ object BoseDeviceMap {
         BoseDevice("quest", byteArrayOf(0x78, 0xC4.toByte(), 0xFA.toByte(), 0xC8.toByte(), 0x5C, 0x3D), widget = true, label = null, priority = 5),
         BoseDevice("ipad", byteArrayOf(0xF4.toByte(), 0x81.toByte(), 0xC4.toByte(), 0xB5.toByte(), 0xFA.toByte(), 0xAB.toByte()), widget = true, label = null, priority = 4),
         BoseDevice("iphone", byteArrayOf(0xF8.toByte(), 0x4D, 0x89.toByte(), 0xC4.toByte(), 0xB6.toByte(), 0xED.toByte()), widget = true, label = null, priority = 7),
-        BoseDevice("tv", byteArrayOf(0x14, 0xC1.toByte(), 0x4E, 0xB7.toByte(), 0xCB.toByte(), 0x68), widget = false, label = null, priority = 6),
+        BoseDevice("tv", byteArrayOf(0xB4.toByte(), 0x23, 0xA2.toByte(), 0x45, 0x9C.toByte(), 0x4D), widget = false, label = "Living Room TV", priority = 6),
         BoseDevice("appletv", byteArrayOf(0x48, 0xE1.toByte(), 0x5C, 0x5D, 0x33, 0xB6.toByte()), widget = false, label = "Katrina's Apple TV", priority = 3),
         BoseDevice("phone", byteArrayOf(0xA8.toByte(), 0x76, 0x50, 0xD3.toByte(), 0xB1.toByte(), 0x1B), widget = true, label = null, priority = 2),
         BoseDevice("audikast", byteArrayOf(0x00, 0x1D, 0x43, 0xB8.toByte(), 0x03, 0x01), widget = false, label = "Avantree Audikast Plus", priority = 8),
