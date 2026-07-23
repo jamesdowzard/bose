@@ -30,7 +30,7 @@ enum BoseDeviceMap {
         BoseDevice(name: "quest", mac: [0x78, 0xC4, 0xFA, 0xC8, 0x5C, 0x3D], widget: true, label: nil, priority: 5),
         BoseDevice(name: "ipad", mac: [0xF4, 0x81, 0xC4, 0xB5, 0xFA, 0xAB], widget: true, label: nil, priority: 4),
         BoseDevice(name: "iphone", mac: [0xF8, 0x4D, 0x89, 0xC4, 0xB6, 0xED], widget: true, label: nil, priority: 7),
-        BoseDevice(name: "tv", mac: [0x14, 0xC1, 0x4E, 0xB7, 0xCB, 0x68], widget: false, label: nil, priority: 6),
+        BoseDevice(name: "tv", mac: [0xB4, 0x23, 0xA2, 0x45, 0x9C, 0x4D], widget: false, label: "Living Room TV", priority: 6),
         BoseDevice(name: "appletv", mac: [0x48, 0xE1, 0x5C, 0x5D, 0x33, 0xB6], widget: false, label: "Katrina's Apple TV", priority: 3),
         BoseDevice(name: "phone", mac: [0xA8, 0x76, 0x50, 0xD3, 0xB1, 0x1B], widget: true, label: nil, priority: 2),
         BoseDevice(name: "audikast", mac: [0x00, 0x1D, 0x43, 0xB8, 0x03, 0x01], widget: false, label: "Avantree Audikast Plus", priority: 8),

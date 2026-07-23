@@ -34,10 +34,11 @@ widget = true
 notes = ""
 
 [devices.tv]
-mac = "14:C1:4E:B7:CB:68"          # verified 2026-07-18: read live off the Chromecast itself (adb settings get secure bluetooth_address — exact match)
+mac = "B4:23:A2:45:9C:4D"          # verified 2026-07-23: read live off the Google TV Streamer itself (adb settings get secure bluetooth_address — exact match)
 priority = 6
-widget = false          # CLAUDE.md: "macOS only" — no Android widget button
-notes = "Chromecast (macOS only)"
+label = "Living Room TV"
+widget = false          # macOS only — a TV source, never an Android home-screen button
+notes = "Google TV Streamer (kirkwood; BT name 'Living Room TV'). Replaced the old Chromecast (14:C1:4E:B7:CB:68) in this slot 2026-07-23."
 
 [devices.quest]
 mac = "78:C4:FA:C8:5C:3D"          # OUI verified 2026-07-18: 78:C4:FA = Meta Platforms, Inc. (IEEE registry); full MAC unverified (Quest not adb-reachable)
