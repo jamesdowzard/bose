@@ -242,16 +242,18 @@ own MAC. Use `getConnectedDevices` (05,01) for audio-active devices and
 
 ## Device Map
 
-| Name | MAC | Widget | Notes |
-|------|-----|--------|-------|
-| phone | A8:76:50:D3:B1:1B | yes | Samsung S21 (local device) |
-| mac | BC:D0:74:11:DB:27 | yes | MacBook |
-| ipad | F4:81:C4:B5:FA:AB | yes | |
-| iphone | F8:4D:89:C4:B6:ED | yes | |
-| tv | B4:23:A2:45:9C:4D | macOS only | Google TV Streamer (`kirkwood`, BT name "Living Room TV"). Replaced the old Chromecast (`14:C1:4E:B7:CB:68`) in this slot 2026-07-23. **⚠ Verify it's in the headphones' paired list (04,04) before relying on connect** — an unpaired target only times out until it's paired to verBosita from the streamer's Bluetooth settings |
-| appletv | 48:E1:5C:5D:33:B6 | macOS + S21 in-app | Katrina's Apple TV 4K (label "Katrina's Apple TV"; `widget=false` → no home-screen widget). **⚠ NOT in the headphones' paired list** (04,04, verified 2026-07-20) |
-| quest | 78:C4:FA:C8:5C:3D | yes | Meta Quest 3 |
-| audikast | 00:1D:43:B8:03:01 | macOS tile only | Avantree Audikast Plus BT transmitter (TV → headphones), Shenzhen G-link OUI. Lowest priority (evicted first); deliberately NOT in cycle_order (never cycle audio to a transmitter) |
+MACs live in `devices.toml`, which is the source — see the warning below.
+
+| Name | Widget | Notes |
+|------|--------|-------|
+| phone | yes | Samsung S21 (local device) |
+| mac | yes | MacBook |
+| ipad | yes | |
+| iphone | yes | |
+| tv | macOS only | Google TV Streamer (`kirkwood`, BT name "Living Room TV"). **⚠ Verify it's in the headphones' paired list (04,04) before relying on connect** — an unpaired target only times out until it's paired to verBosita from the streamer's Bluetooth settings |
+| appletv | macOS + S21 in-app | Apple TV 4K (`widget=false` → no home-screen widget). **⚠ NOT in the headphones' paired list** (04,04, verified 2026-07-20) |
+| quest | yes | Meta Quest 3 |
+| audikast | macOS tile only | Avantree Audikast Plus BT transmitter (TV → headphones). Lowest priority (evicted first); deliberately NOT in cycle_order (never cycle audio to a transmitter) |
 
 A device's optional `label` (devices.toml) is the friendly display name shared by the Mac app + S21 in-app tile; absent → fall back to the key.
 
@@ -548,3 +550,15 @@ and explicit verbs touch the radio from a non-slot Mac. Passive BLE scanning
 - Drain 300ms of initial data after RFCOMM connect (Bose firmware quirk)
 - Use pymobiledevice3 for iPad BT operations
 - minSdk 31 (Android 12) — no pre-O version checks needed
+
+## Structure
+
+```
+bose/
+├── android/
+├── cli/
+├── docs/
+├── hammerspoon/
+├── macos/
+└── protocol/
+```
