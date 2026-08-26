@@ -20,13 +20,17 @@
 --              power-on, Opt+J, or the toggle), speak the battery level through them.
 --              An event-driven replacement for the power-on announcement Bose removed
 --              in fw 8.2.20. Driven by hs.audiodevice change events — no poller.
---              Set ANNOUNCE_BATTERY=false to disable.
+--              DISABLED 2026-08-27 (ANNOUNCE_BATTERY=false); set true to re-enable.
 --   • Auto-route on call — a call app (Teams/Zoom/FaceTime/Slack/Webex) launching routes
---              the Mac's INPUT to the MacBook mic, and the audiodevice guard never lets the
---              Bose be the system input (its over-ear mics make callers hear the room).
---              Input stays on the MacBook mic after calls (no restore — the MacBook mic is
---              the right default, and `terminated` events aren't reliably delivered).
+--              the Mac's INPUT to the MacBook mic (its over-ear mics make callers hear the
+--              room). Input stays on the MacBook mic after calls (no restore — the MacBook
+--              mic is the right default, and `terminated` events aren't reliably delivered).
 --              Output (the Bose) is untouched. Event-driven, no poll; AUTO_ROUTE_ON_CALL.
+--   • MicLock (OFF since 2026-08-27) — the former second half of the above: an
+--              unconditional audiodevice-watcher guard that forced input → MacBook mic
+--              whenever the Bose became the system input. It ignored CALL_APPS, so it also
+--              caught WhatsApp calls, which should be free to use the Bose mic. Now its own
+--              flag, MIC_LOCK, defaulting false. Set it true to restore the old behaviour.
 --
 -- Wiring (init.lua dofiles this from the repo path; reload Hammerspoon to apply edits):
 --     BoseCtl = dofile(os.getenv("HOME").."/code/personal/bose/hammerspoon/bose.lua")
@@ -85,18 +89,33 @@ local LOW_BATTERY  = 20
 -- edge of "Bose is the default output" (auto on power-on, or via Opt+J / the toggle),
 -- reads battery ONCE, and `say`s it through the headphones. Still no poller — driven
 -- purely by hs.audiodevice change events.
-local ANNOUNCE_BATTERY   = true
+-- OFF since 2026-08-27 (James's call). With MIC_LOCK also false the audiodevice watcher
+-- no longer starts at all — see the gate in start(). Flip true to get the spoken battery back.
+local ANNOUNCE_BATTERY   = false
 local ANNOUNCE_DELAY     = 1.8   -- s: let the A2DP route + RFCOMM settle before read/speak
 local ANNOUNCE_COOLDOWN  = 10    -- s: ignore output flaps within this window
 
--- Auto-route on call: while a call app is running, keep the Mac's INPUT off the Bose
+-- Auto-route on call: when a call app LAUNCHES, put the Mac's INPUT on the MacBook mic
 -- (the over-ear mics force HFP + favour the room — see the bluetooth-audio dossier).
--- Sets input → MacBook mic when a call app opens, guards it if macOS flips input to the
--- Bose mid-call, and restores the prior input when the last call app closes. The Bose
--- OUTPUT is never touched. NB apps with their own device setting (Teams) may still
+-- That is now the whole of it: a one-shot nudge at launch. There is no mid-call guard
+-- (that was MicLock — see MIC_LOCK below, off since 2026-08-27) and no restore on quit
+-- (`terminated` isn't reliably delivered — verified 2026-06-20). So nothing stops an app
+-- taking the Bose mic later in a call. The Bose OUTPUT is never touched. NB apps with
+-- their own device setting (Teams) may still
 -- override this — set Teams' in-app Microphone to the MacBook mic once; this is the
 -- system-level backstop for apps that follow the default (Zoom/FaceTime/Meet).
 local AUTO_ROUTE_ON_CALL = true
+-- MicLock — the *unconditional* half of auto-route, split out 2026-08-27 and now OFF.
+-- It fired on EVERY audiodevice change and forced input → MacBook mic whenever the Bose
+-- became the system input. That is app-agnostic: `CALL_APPS` never gated it, so it also
+-- caught WhatsApp, whose calls should be free to use the Bose mic. WhatsApp is a Catalyst
+-- app that re-picks its devices at every call start (it persists no device preference),
+-- so a guard that keeps slapping input back to the MacBook mic fights it every time.
+-- Leaving this false lets HFP stand once an app actually opens the Bose mic. NB macOS
+-- still cannot pre-select a Bluetooth mic at rest — in pure A2DP the mic does not exist —
+-- so this only has any effect from the moment a call engages HFP.
+-- Flip back to true to restore the old always-MacBook-mic behaviour.
+local MIC_LOCK           = false
 local MAC_MIC            = "MacBook Pro Microphone"
 local CALL_APPS = {   -- bundle IDs of apps that take the mic for calls (editable)
   ["com.microsoft.teams2"]      = true,
@@ -180,7 +199,7 @@ local function onAudioChange()
   -- Auto-route guard (MicLock): never let the Bose be the Mac's system INPUT — its
   -- over-ear mics make callers hear the room, and on a Mac the call mic should always be
   -- the MacBook array. Catches macOS auto-selecting the Bose input on a connect.
-  if AUTO_ROUTE_ON_CALL and defaultInputIsBose() then
+  if MIC_LOCK and defaultInputIsBose() then
     setMacInput(MAC_MIC)
   end
 end
@@ -294,13 +313,14 @@ function M.start()
   -- M.ancHotkey = hs.hotkey.bind(ANC_MODS, ANC_KEY, cycleAnc)
   -- M.spatialHotkey = hs.hotkey.bind(SPATIAL_MODS, SPATIAL_KEY, cycleSpatial)
   -- M.connectHotkey = hs.hotkey.bind(CONNECT_MODS, CONNECT_KEY, connectHere)
-  -- The audiodevice watcher serves BOTH features: the battery announce AND the
-  -- "never let the Bose be the system input" guard inside onAudioChange (its over-ear
-  -- mics make callers hear the room). Gating it on ANNOUNCE_BATTERY alone meant turning
-  -- OFF the spoken battery — a cosmetic preference — silently disabled the mic guard
-  -- too, with no error. They're documented as independent toggles, so start the watcher
-  -- if EITHER wants it.
-  if ANNOUNCE_BATTERY or AUTO_ROUTE_ON_CALL then
+  -- The audiodevice watcher serves BOTH features: the battery announce AND the MicLock
+  -- guard inside onAudioChange. Gating it on ANNOUNCE_BATTERY alone meant turning OFF the
+  -- spoken battery — a cosmetic preference — silently disabled the mic guard too, with no
+  -- error. They're independent toggles, so start the watcher if EITHER wants it.
+  -- NB the gate is MIC_LOCK, not AUTO_ROUTE_ON_CALL: since the 2026-08-27 split it is
+  -- MicLock that lives in onAudioChange, while AUTO_ROUTE_ON_CALL now only drives the
+  -- app-launch routing below (which uses the application watcher, not this one).
+  if ANNOUNCE_BATTERY or MIC_LOCK then
     lastBoseOut = boseIsMacOutput()   -- seed so (re)starting doesn't announce
     hs.audiodevice.watcher.setCallback(onAudioChange)
     hs.audiodevice.watcher.start()
@@ -321,7 +341,7 @@ function M.stop()
   if M.ancHotkey then M.ancHotkey:delete(); M.ancHotkey = nil end
   if M.spatialHotkey then M.spatialHotkey:delete(); M.spatialHotkey = nil end
   if M.connectHotkey then M.connectHotkey:delete(); M.connectHotkey = nil end
-  if ANNOUNCE_BATTERY or AUTO_ROUTE_ON_CALL then hs.audiodevice.watcher.stop() end
+  if ANNOUNCE_BATTERY or MIC_LOCK then hs.audiodevice.watcher.stop() end
   if M.appWatcher then M.appWatcher:stop(); M.appWatcher = nil end
 end
 
