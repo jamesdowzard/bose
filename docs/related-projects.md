@@ -125,11 +125,16 @@ The gap leads above were probed **read-only** against the actual headset (`bose 
 | `01,09` **volume-strip shortcut** → BatteryLevel (`0x03`) | write ignored; supported mask = {VPA, Disabled, Spotify, SpatialAudio} | ❌ **not assignable** on the over-ears (earbuds-only action). *(verified 2026-06-20)* |
 | `01,03` voice-prompts | `01030100` → `01 03 03 07 41 00 00 81 02 00 00` | ⚠️ 7-byte payload, richer than bosectl's single-byte model; battery-on-power bit not safely decodable — left read-only. |
 
-**Net:** three genuinely-new *readable* commands on wolverine — `01,18` AutoPlayPause, `01,1B` AutoAnswer, `1F,08` Favorites — are candidates to add to `bmap.toml` once SET bytes are captured (GET-verified here; SET left unprobed because each would toggle a feature in active use). Three peer-claimed commands are confirmed **absent** (`05,0F`, `01,04`, `1F,05`), and the `01,0B`-sidetone claim is disproven. The "verify before adding" caveat on those rows is now discharged.
+**Net:** three genuinely-new *readable* commands on wolverine — `01,18` AutoPlayPause, `01,1B` AutoAnswer, `1F,08` Favorites. **All three SETs have since shipped**, so the "SET left unprobed" caveat that stood here is discharged: `bose favorites <indices>` (`buildFavoritesSetGet` — hand-written count+reversed-bitmask builder, Swift+Kotlin), `bose auto-pause [on|off]` and `bose auto-answer [on|off]` (`cli/main.swift`, SET_GET with a response check). Three peer-claimed commands are confirmed **absent** (`05,0F`, `01,04`, `1F,05`), and the `01,0B`-sidetone claim is disproven. The "verify before adding" caveat on those rows is now discharged.
 
 ---
 
-## ⭐ Leads on the lost power-on battery announcement
+## ~~Leads on~~ the lost power-on battery announcement — **CLOSED, both angles dead**
+
+> **Do not re-probe either of these.** Both were tried on-device 2026-06-20 and both came back
+> negative; the results are recorded in the probe table above (`01,09` and `01,03` rows). This
+> section is kept for the reasoning, not as work to do — it read as an open invitation to
+> re-run settled work and cost a session on 2026-08-31.
 
 Two BMAP-side angles at the v8.2.20 feature removal (background: `bluetooth-audio` dossier):
 
@@ -138,17 +143,26 @@ Two BMAP-side angles at the v8.2.20 feature removal (background: `bluetooth-audi
    `01 03 02 02 <flags|5bit-lang> <00/01 battery-on-power>`. **But** bosectl (wolverine, fw **8.2.20**)
    sees `01,03` as a *single* byte `(enabled<<5)|langId` — no battery-on-power field. **Hypothesis:**
    the battery-on-power toggle existed in earlier firmware and was **removed/relocated in 8.2.20**
-   (consistent with the documented feature removal). **Action:** probe `GET 01,03` on the actual
-   device and inspect the payload length/bytes — if the battery-on-power byte still exists, a `SETGET`
-   may restore it; if the payload is the single-byte form, it's confirmed gone from firmware.
+   (consistent with the documented feature removal).
+   **→ CLOSED 2026-06-20 (re-verified live 2026-08-31, byte-identical).** `GET 01,03` returns a
+   **7-byte** payload (`41 00 00 81 02 00 00`) — neither docentYT's trailing-byte form nor bosectl's
+   single-byte form. So a battery-on-power field may still exist, but the layout is not safely
+   decodable without the Bose-app parser, and `isTogglable` (config bit7) = 0 with the enable
+   SET_GET silently ignored. **Left read-only** — a blind write could change prompt language or
+   mute prompts outright.
 
-2. **Button action mode (`01,09`).** bosectl's `ActionButtonMode` enum includes **`3 = BatteryLevel`**
-   (the button *speaks the battery* on press). If `SETGET 01,09 [btnId, event, 0x03]` is accepted, the
-   physical button can be made to announce battery on demand — a partial replacement for the lost
-   auto-announce. **Action:** try remapping a shortcut to mode 3 and test.
+2. **Volume-strip shortcut action (`01,09`).** bosectl's `ActionButtonMode` enum includes
+   **`3 = BatteryLevel`** (the control *speaks the battery* on press). Note this is the **volume-strip
+   press-and-hold**, not the multi-function button — see the naming note in `bmap-reference.md`.
+   **→ CLOSED 2026-06-20: not assignable.** The write is silently ignored (device keeps `0x13`
+   SpatialAudioMode), and the response's supported-actions mask `0x00094002` decodes to action ids
+   **{1 Vpa, 14 Disabled, 16 SpotifyGoMode, 19 SpatialAudioMode}** — BatteryLevel (id 3) is simply
+   not in it. Mask decode independently re-derived 2026-08-31. BatteryLevel is an earbuds-only
+   action; on the over-ears there is nothing to remap.
 
-Either way, the host-side fallback (Mac reads `battery 02,02` and speaks it on connect) remains the
-guaranteed path — see the `bluetooth-audio` dossier's auto-route notes.
+Both angles being dead, the host-side fallback (Mac reads `battery 02,02` and speaks it on connect)
+is the **only** path — and it shipped, then was turned off: `ANNOUNCE_BATTERY = false` as of
+2026-08-27 at James's request. See the `bluetooth-audio` dossier's `verbosita-qc-ultra-2` page.
 
 ---
 

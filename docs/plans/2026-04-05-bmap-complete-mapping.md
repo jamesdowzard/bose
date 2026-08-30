@@ -1,6 +1,8 @@
 # BMAP Complete Function Mapping (from Bose Music APK decompilation)
 
 **Date:** 2026-04-05
+**Status:** superseded — the mapping shipped. Live-verified command tables now live in
+`docs/bmap-reference.md`; this doc is the historical decompilation record, not current truth.
 **Source:** Decompiled `com.bose.bosemusic` v25.3.x APK via jadx
 
 ## Key Findings
@@ -129,7 +131,7 @@ Observed values:
 - Mode 2 (Custom1): name="Immersion", prompt=00,22, spatial=2, ancToggle=1
 - Mode 3 (Custom2): name="Cinema", prompt=00,24, spatial=1, ancToggle=1
 
-### ModeConfig SET_GET (not yet verified — needs stable RFCOMM)
+### ModeConfig SET_GET (**verified and shipped** — see `bmap-reference.md`)
 
 `1F 06 02 {len} {payload}` using SET_GET operator.
 
@@ -146,9 +148,11 @@ Byte 37+:   optional: spatialAudioType, windBlockEnabled, ancToggleEnabled
 
 **cncLevel at byte 35 is how Custom 1/2 ANC depth is controlled.**
 
-Status: payload format decoded but SET not yet verified on headphones (connection
-instability during testing at 40% battery). The response payload has 3 extra bytes
-at offsets 3-5 that the SET payload doesn't include — the SET format is shorter.
+Status: **verified on-device 2026-06-20 and shipped** — `1F,06` SET_GET is the read-modify-write
+behind `bose anc-level`, `bose spatial` and `bose mode-name`. The "connection instability at 40%
+battery" caveat below is historical. The response payload has 3 extra bytes at offsets 3-5 that the
+SET payload doesn't include — the SET format is shorter; both layouts are tabulated in
+`docs/bmap-reference.md`.
 
 ### AudioModes SettingsConfig (1F,0A)
 
