@@ -51,7 +51,7 @@ BMAP operator (SET/0x06 instead of SET_GET/0x02).
 
 | Setting | Block,Func | Operator | Bytes | Notes |
 |---------|-----------|----------|-------|-------|
-| ANC mode | 1F,03 | START | `1F,03,05,02,{mode},01` | slots: 0=quiet 1=aware 2=immersion 3=cinema (fixed) 4=custom1 5=custom2 (adjustable); reads 255 = OFF (genuinely disabled — confirmed audibly #83). 255 is REACHABLE: writing a raw CNC depth (1F,0A) over a named mode knocks 1F,03 to 255. ANC here is mode-based; depth is the same axis. |
+| ANC mode | 1F,03 | START | `1F,03,05,02,{mode},01` | slots: 0=quiet 1=aware 2=immersion 3=cinema (fixed) 4=custom1 5=custom2 (adjustable); reads 255 = OFF (genuinely disabled — confirmed audibly #83). 255 is REACHABLE: writing a raw CNC depth (1F,0A) over a named mode knocks 1F,03 to 255. ANC here is mode-based; depth is the same axis. **255 also turns up in the wild with no 1F,0A write from us** (the `anc-depth` command that did it was removed) — seen 2026-06-20 and again 2026-08-31; cause still unknown. **Do not read a 255 as a bad read:** `bose anc` has no cache path (`transport.oneShot`, hard-fails "not reachable" rather than printing a mode), so a printed `off` was genuinely read off the device. Recover with any `bose anc <mode>`. |
 | Volume | 05,05 | SET_GET | `05,05,02,01,{level}` | 0-31 |
 | Device name | 01,02 | SET | `01,02,06,{len},00,{utf8}` | max 30 UTF-8 bytes |
 | Multipoint | 01,0A | SET_GET | `01,0A,02,01,{07/00}` | SET 07=on/00=off. RESPONSE is a bitfield — bit 0 = enable; fw 8.2.20: on→0x07, off→0x06 (slot bits persist). Parse `& 0x01`, NOT `!= 0` (that misread 0x06 as on, #83). |
@@ -70,9 +70,25 @@ BMAP operator (SET/0x06 instead of SET_GET/0x02).
 - **StandbyTimer SET (01,04)**, **MotionAutoOff (01,14)**, **OnHeadDetection SET (01,10)**, **CncPresets (01,0F)**: reply **FuncNotSupp** (error op 0x04, code 4) to a GET. Dead.
 - **Global Immersive/Spatial Audio (05,0F SpatialAudioMode, 05,10 SpatialAudioStatus)**: FuncNotSupp. The dedicated AudioManagement spatial functions don't exist here — spatial is per-mode only (see AudioModes 1F,06 below).
 - **VoicePrompts (01,03)**: GET works (`01 03 03 07 41 00 00 81 02 00 00` → enabled=0, lang=UsEnglish), but `isTogglable` (config bit7) = 0 and the enable SET_GET is **silently ignored** (response byte unchanged, cold + warm). Read-only on this firmware.
-- **Buttons / action-button mode (01,09)**: GET works (`01 09 03 07 80 09 13 …` → button id 0x80, eventType 0x09, **already SpatialAudioMode (0x13)**; only Vpa/Disabled/SpotifyGoMode/SpatialAudioMode assignable), but the SET_GET (op 0x02) **and** plain SET (op 0x06) both return **No response** and leave state unchanged, cold + warm. Write-locked — Bose's app likely uses a privileged channel we don't replicate.
+- **Volume-strip shortcut (01,09)** — *not* "the action button"; see the naming note under AudioModes below: GET works (`01 09 03 07 80 09 13 …` → button id 0x80, eventType 0x09, **already SpatialAudioMode (0x13)**; only Vpa/Disabled/SpotifyGoMode/SpatialAudioMode assignable), but the SET_GET (op 0x02) **and** plain SET (op 0x06) both return **No response** and leave state unchanged, cold + warm. Write-locked — Bose's app likely uses a privileged channel we don't replicate.
 - **Sidetone**: no settable opcode (the 01,0B the generic BMAP enum labels "Sidetone" is the read-only **auto-off timer** here — returns `01 0b 03 03 01 02 0f`).
 - Auto-off timer (01,0B) is read-only over RFCOMM — distinct from StandbyTimer (01,04).
+
+### Which physical control is which (naming note, settled 2026-08-31)
+
+Three control inputs, **all on the right earcup**. The repo used to call `01,09` "the
+action button" / "the over-ear button", which merged two controls that do different
+things — and that merge is what made a mode change look like a tool bug.
+
+| Control | Where | Gesture | Wire |
+|---|---|---|---|
+| **Multi-function button** | back of the right earcup | **press and hold → cycles the favourited listening modes** (spoken aloud). Press/double/triple = play-pause / skip / back. | Mode changes land as `1F,03`; the presses themselves are **AVRCP media keys**, never a BMAP event. Favourites = `1F,08`. |
+| **Volume strip** (capacitive) | back edge of the right earcup | swipe = volume; **press and hold = the configurable shortcut** (Immersive Audio / Spotify Tap / voice assistant) | **`01,09`** — this is the one `01,09` reassigns. Write-locked on this fw; reads `0x13` SpatialAudioMode. |
+| Bluetooth/power | bottom of the right earcup | power, pairing, device cycling | — |
+
+The assignable mask on `01,09` ({Vpa, Disabled, SpotifyGoMode, SpatialAudioMode}) maps
+exactly onto Bose's documented *shortcut* options, which is the independent confirmation
+that `01,09` is the strip and not the button.
 
 ### AudioModes (block 0x1F) — ANC is MODE-based (reverse-engineered from the Bose app, confirmed live fw 8.2.20)
 
