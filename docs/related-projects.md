@@ -120,9 +120,9 @@ The gap leads above were probed **read-only** against the actual headset (`bose 
 | `05,01` source/connected | `05010100` → `05 01 03 09 00 0f 01 bc d0 74 11 db 27` (active = Mac MAC) | ✅ confirms existing `connected_devices`. |
 | `05,0F` spatial standalone | `050F0100` → `05 0f 04 01 04` | ❌ **absent (FuncNotSupp)** — spatial only via `1F,06` mode config. *(verified 2026-06-20)* |
 | `01,04` standby-timer | `01040100` → `01 04 04 01 04` | ❌ **absent (FuncNotSupp)** — even GET errors; confirms "StandbyTimer not supported". *(verified 2026-06-20)* |
-| `1F,05` remember-last-mode | `1F050100` → `1f 05 04 01 04` | ❌ **absent (FuncNotSupp)**. *(verified 2026-06-20)* |
+| `1F,05` remember-last-mode | `1F050100` → `1f 05 04 01 04` | ❌ **absent (FuncNotSupp)**. So **"Remember My Mode" cannot be read over BMAP** — the only ways to settle it are the Bose Music app (NOT installed on the S21 — `pm list packages` shows only our own `au.com.jd.bose`) or a power-cycle behaviour test. *(verified 2026-06-20; re-verified live 2026-08-31, byte-identical response)* |
 | `01,0B` (peers: "sidetone") | `010B0100` → `01 0b 03 03 01 02 0f` | ⚠️ **conflict resolved:** `01,0B` is our **auto-off readout** (matches `bose info`), NOT sidetone. bosectl/docentYT mislabel it; our label wins. |
-| `01,09` button → BatteryLevel (`0x03`) | write ignored; supported mask = {VPA, Disabled, Spotify, SpatialAudio} | ❌ **not assignable** on the over-ear button (earbuds-only action). *(verified 2026-06-20)* |
+| `01,09` **volume-strip shortcut** → BatteryLevel (`0x03`) | write ignored; supported mask = {VPA, Disabled, Spotify, SpatialAudio} | ❌ **not assignable** on the over-ears (earbuds-only action). *(verified 2026-06-20)* |
 | `01,03` voice-prompts | `01030100` → `01 03 03 07 41 00 00 81 02 00 00` | ⚠️ 7-byte payload, richer than bosectl's single-byte model; battery-on-power bit not safely decodable — left read-only. |
 
 **Net:** three genuinely-new *readable* commands on wolverine — `01,18` AutoPlayPause, `01,1B` AutoAnswer, `1F,08` Favorites — are candidates to add to `bmap.toml` once SET bytes are captured (GET-verified here; SET left unprobed because each would toggle a feature in active use). Three peer-claimed commands are confirmed **absent** (`05,0F`, `01,04`, `1F,05`), and the `01,0B`-sidetone claim is disproven. The "verify before adding" caveat on those rows is now discharged.
@@ -163,7 +163,8 @@ From **NoQCNoLife** (native Swift `IOBluetooth`) and **boss** (Rust+Swift):
 6. **Verified writes:** SETGET then re-GET to confirm; retry on recoverable errors (`0x09 Timeout`, `0x0C Busy`, `0x14 InsecureTransport`) with ~750ms–1s backoff; return "inconclusive" rather than throwing.
 7. **Capability-from-bitset:** resolve features from the `00,02` all-fblocks bitset, don't compile-in a fixed list.
 8. **Discovery** — for our RFCOMM path the **SPP UUID `00001101-…` is the channel** (resolve the channel ID from its SDP record). ⚠️ **Do NOT adopt bosectl's discovery UUID `00000000-deca-fade-deca-deafdecacaff`** — we already verified that is **Apple iAP2, not BMAP** (CLAUDE.md "deca-fade UUID is Apple iAP2 … don't use it"). bosectl matching on it is a divergence from our ground truth, not a lead. (boss uses BLE service `0000FEBE-…`, irrelevant to our RFCOMM transport.)
-9. **The action button is NOT a BMAP event** — it's emitted as AVRCP **media keys**. To act on a press, use a macOS `CGEventTap` on the media keys (separate Accessibility-gated subsystem); BMAP only lets you *reassign* the button (`01,09`). Don't hunt for a press-notification over RFCOMM.
+9. **The multi-function button is NOT a BMAP event** — it's emitted as AVRCP **media keys**. To act on a press, use a macOS `CGEventTap` on the media keys (separate Accessibility-gated subsystem). Don't hunt for a press-notification over RFCOMM.
+   > ⚠️ **`01,09` does not reassign that button** — it reassigns the *other* control. See the naming note below.
 
 (Battery on macOS: boss-qt's idea of re-publishing battery to the OS via the BlueZ `BatteryProvider1` D-Bus API → the macOS analog is feeding a status-bar item / IOKit. "Surface battery to the host OS, not just our own UI" is the lesson.)
 

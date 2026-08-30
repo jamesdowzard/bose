@@ -313,7 +313,16 @@ func cmdInfoJSON(forcePage: Bool = false) {
 }
 
 func ancModeName(_ mode: Int) -> String {
-    AncMode(rawValue: UInt8(truncatingIfNeeded: mode))
+    // 255 = "no mode" — ANC genuinely DISABLED (the detached state, #83), not a
+    // transparency mode. Spell that out rather than printing a bare "off": to a
+    // listener `off` and `aware` are indistinguishable (the room is audible either
+    // way), so a bare "off" reads as "it must be on aware, the tool is lying" and
+    // sends you hunting for a caching bug in a read that has no cache (this read is
+    // a bare `transport.oneShot` — it hard-fails rather than printing a stale mode).
+    // Misdiagnosed exactly that way on 2026-08-31. The word `off` stays the first
+    // token so hammerspoon's `ANC:%s*(%w+)` match is unaffected.
+    if mode == Int(AncMode.off.rawValue) { return "off (no mode active — ANC disabled)" }
+    return AncMode(rawValue: UInt8(truncatingIfNeeded: mode))
         .map { "\($0)" } ?? "unknown(\(mode))"
 }
 

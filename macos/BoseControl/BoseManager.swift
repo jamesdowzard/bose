@@ -646,7 +646,14 @@ final class BoseManager: ObservableObject {
     // MARK: - Computed
 
     var ancModeName: String {
-        ["Quiet", "Aware", "Immersion", "Cinema", "Custom 1", "Custom 2"][safe: ancMode] ?? "Unknown"
+        // 255 is a REAL state (no mode active — ANC disabled, #83), not a gap in the
+        // table. Indexing straight into the 6-name array rendered it as "Unknown",
+        // which reads as "the app failed to parse" when in fact ANC is genuinely off
+        // and the user is hearing the room. Name it. (2026-08-31)
+        // 255 literal, not AncMode.off: this app compiles only the four SwiftUI
+        // files and links no generated protocol layer (see macos/build.sh).
+        if ancMode == 255 { return "Off (no mode)" }
+        return ["Quiet", "Aware", "Immersion", "Cinema", "Custom 1", "Custom 2"][safe: ancMode] ?? "Unknown"
     }
 }
 
