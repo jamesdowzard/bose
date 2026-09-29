@@ -16,7 +16,13 @@ android {
     }
 
     buildTypes {
+        // Separate package so a debug build installs beside the real app instead of replacing it.
+        debug {
+            applicationIdSuffix = ".debug"
+            resValue("string", "app_name", "Bose debug")
+        }
         release {
+            resValue("string", "app_name", "Bose")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
